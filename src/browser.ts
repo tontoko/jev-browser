@@ -275,6 +275,8 @@ export class JevBrowser {
     let command: NativeCommand;
     switch(action.kind){
       case 'click':command={command:'click',...target};break;
+      case 'hover':command={command:'hover',...target};break;
+      case 'dialog':command={command:'handle_dialog',accept:action.accept===true};break;
       case 'fill':command={command:'type',...target,text:values[action.valueKey!]!};break;
       case 'check':case 'uncheck':command={command:'check',...target,checked:action.kind==='check'};break;
       case 'select':case 'deselect':command={command:'select_option',...target,indices:action.optionIndices ?? (action.target!.multiple ? action.target!.options!.filter(o=>o.index===action.option!.index?action.kind==='select':o.selected).map(o=>o.index) : [action.option!.index])};break;
@@ -282,14 +284,18 @@ export class JevBrowser {
       case 'scroll':command={command:'mouse',action:'wheel',deltaY:captured.data.scroll.height*(action.direction==='down'?0.8:-0.8)};break;
     }
     const parsed=parseNative(command);
+    if(action.kind==='dialog' && (!action.dialog || !this.nativeBrowser.isCurrentDialog(action.dialog)))throw new BrowserError('STALE_DIALOG','The observed dialog changed before it could be answered.');
     if(this.options.allowCommand && await this.options.allowCommand(structuredClone(parsed),op())!==true)
       throw new BrowserError('ACTION_DENIED','The caller policy denied this action.');
     operation.signal.throwIfAborted();
     if(ref)await verifyTarget(ref);
     operation.signal.throwIfAborted();
+    if(action.kind==='dialog' && !this.nativeBrowser.isCurrentDialog(action.dialog!))throw new BrowserError('STALE_DIALOG','The dialog changed during authorization; nothing was accepted.');
     started();
     try{
-      const outcome=action.kind==='scroll'
+      const outcome=action.kind==='dialog'
+        ? await this.nativeBrowser.execute(parsed,op())
+        : action.kind==='scroll'
         ? await this.nativeBrowser.action(()=>this.page.evaluate(top=>window.scrollBy({top,behavior:'instant'}),captured.data.scroll.height*(action.direction==='down'?0.8:-0.8)))
         : await this.nativeBrowser.executeResolved(parsed,ref!.handle,op());
       if(outcome.status==='dialog')return {status:'dialog',dialog:outcome.dialog as ActResult['dialog'],plan:structuredClone(plan),url:publicURL(this.page.url())};

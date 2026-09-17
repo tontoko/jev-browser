@@ -13,6 +13,7 @@ export interface ElementInfo {
   fieldName?: string;
   formId?: string;
   formName?: string;
+  popup?: string;
   required?: boolean;
   disabled: boolean;
   readOnly: boolean;
@@ -45,13 +46,15 @@ export interface Snapshot {
   truncatedTexts: boolean;
   scroll: { y: number; maxY: number; height: number };
 }
-export type ActionKind = 'click' | 'fill' | 'check' | 'uncheck' | 'select' | 'deselect' | 'press' | 'scroll';
+export type ActionKind = 'click' | 'fill' | 'check' | 'uncheck' | 'select' | 'deselect' | 'press' | 'scroll' | 'hover' | 'dialog';
 export interface GroundedAction {
   kind: ActionKind;
   target?: ElementInfo;
   valueKey?: string;
   option?: { index: number; label: string; value: string };
   optionIndices?: number[];
+  dialog?: BrowserDialog;
+  accept?: boolean;
   key?: 'Enter';
   direction?: 'up' | 'down';
 }
@@ -62,7 +65,8 @@ export interface ActionPlan {
   confidence: number;
   decision: Omit<DecisionResult, 'answers'>;
 }
-export interface ActResult { status: 'executed' | 'dialog'; plan: ActionPlan; url: string; dialog?: { type: string; message: string; defaultValue: string } }
+export interface BrowserDialog { id: number; type: string; message: string; defaultValue: string }
+export interface ActResult { status: 'executed' | 'dialog'; plan: ActionPlan; url: string; dialog?: BrowserDialog }
 export interface OperationOptions { signal?: AbortSignal; scope?: string; timeoutMs?: number }
 export interface ExtractOptions extends OperationOptions { recordsScope?: string }
 /** Remaining operation budget at callback entry. Awaited callbacks must honor signal. */

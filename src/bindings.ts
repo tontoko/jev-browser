@@ -92,7 +92,7 @@ export async function readControl(ref: ElementRef): Promise<ControlState> {
       const checked = el.getAttribute('aria-checked'); value = checked === 'true' ? true : checked === 'false' ? false : undefined;
     } else if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) value = input.value;
     else if (el instanceof HTMLElement && el.isContentEditable) value = el.innerText;
-    return { connected: el.isConnected, value, valid: !('validity' in el) || input.validity.valid };
+    return { connected: el.isConnected, value, valid: (!('validity' in el) || input.validity.valid) && el.getAttribute('aria-invalid') !== 'true' };
   });
 }
 
@@ -147,7 +147,20 @@ export async function sameNativeForm(a: ElementRef, b: ElementRef): Promise<bool
 export async function nativeFormValid(ref: ElementRef): Promise<boolean> {
   return ref.handle.evaluate(el=>{
     const form=(el as HTMLInputElement).form??el.closest('form');
-    return !!form&&Array.from(form.elements).every(control=>!('validity' in control)||(control as HTMLInputElement).validity.valid);
+    return !!form&&Array.from(form.elements).every(control=>(!('validity' in control)||(control as HTMLInputElement).validity.valid)&&control.getAttribute('aria-invalid')!=='true');
   });
+}
+export async function nativeFormBusy(ref: ElementRef): Promise<boolean> {
+  return ref.handle.evaluate(el => {
+    const form = (el as HTMLInputElement).form ?? el.closest('form');
+    return !!form && (!!form.closest('[aria-busy="true"]') || Array.from(form.querySelectorAll('[aria-busy="true"]')).some(node => node.getClientRects().length > 0));
+  });
+}
+export function reuseQuestions(controls: ElementInfo[], inputs: InputBinding[]): DecisionRequest['questions'] {
+  return Object.fromEntries(controls.map((control, index) => [`reuse_${index}`, {
+    type: 'choice' as const,
+    instructions: `The supplied primary fields have been filled. For required control ${modelElementId(control.id)} in state.controls, decide whether it is a confirmation/repeated entry of an already supplied field. Preserve the person/address context. Select that field only when repetition is actually requested by this control; do not repurpose unrelated data to fill an unknown required field.`,
+    criteria: { ...Object.fromEntries(inputs.map(input => [input.path, { input: input.path, meaning: input.label }])), __none__: 'This control is not a confirmation of any supplied value; leave it unchanged.' },
+  }]));
 }
 export const matchesControl = (state: ControlState, expected: ControlState['value']) => state.connected && JSON.stringify(state.value) === JSON.stringify(expected);

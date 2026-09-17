@@ -43,6 +43,7 @@ export function describe(el: Element) {
     tag: el.tagName.toLowerCase(),
     inputType: el instanceof HTMLInputElement ? input.type : '',
     fieldName: el.getAttribute('name') ?? '',
+    popup: el.getAttribute('aria-haspopup') ?? undefined,
     ...('form' in el && (el as HTMLInputElement).form ? {
       formId: `form${Array.from(document.forms).indexOf((el as HTMLInputElement).form!)}`,
       formName: computeAccessibleName((el as HTMLInputElement).form!),
