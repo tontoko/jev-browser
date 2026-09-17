@@ -79,3 +79,16 @@ test('native selectors can address child frames explicitly', async t => {
  assert.equal(await page.frameLocator('iframe').getByRole('textbox').inputValue(), 'Inside');
  assert.equal(await page.locator('input').inputValue(), '');
 });
+
+test('model observation IDs stay readable and stable while public refs expire', async t => {
+ const engine = select(c => c.kind === 'fill' && c.valueKey === 'name');
+ const { core } = await fixture(t, '<label>Name<input value="old"></label>', { engine });
+ const a = await core.observe('Fill name', { values: { name: 'New' } });
+ const b = await core.observe('Fill name', { values: { name: 'New' } });
+ assert.notEqual(a.action.target.id, b.action.target.id);
+ const first = engine.requests[0], second = engine.requests[1];
+ assert.equal(first.state.page.elements[0].id, second.state.page.elements[0].id);
+ assert.equal(first.state.page.elements[0].id, 'e0_0');
+ const candidate = Object.values(second.questions.action.criteria).find(c => c?.kind === 'fill');
+ assert.equal(candidate.target.id, 'e0_0');
+});
