@@ -1,3 +1,4 @@
+import {fileURLToPath} from 'node:url';
 import {test,before,after} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
@@ -38,7 +39,7 @@ for(const explicit of [false,true])test(`goal CLI: one invocation completes nest
 });
 for(const fail of [false,true])test(`goal MCP: real stdio ${fail?'preserves partial progress on errors':'completes a nested goal and verifies readback'}`,async t=>{
  const app=await setup(t,{fail});const client=new Client({name:'goal-adapter-tests',version:'1'});
- const transport=new StdioClientTransport({command:process.execPath,args:['dist/mcp-stdio.js'],cwd:new URL('..',import.meta.url).pathname,env:app.env,stderr:'pipe'});
+ const transport=new StdioClientTransport({command:process.execPath,args:['dist/mcp-stdio.js'],cwd:fileURLToPath(new URL('..',import.meta.url)),env:app.env,stderr:'pipe'});
  t.after(()=>client.close());await client.connect(transport);
  const navigation=await client.callTool({name:'browser_goto',arguments:{url:app.url}});assert.notEqual(navigation.isError,true);
  const result=await client.callTool({name:'browser_run',arguments:{instruction:'Open Add, fill student details and Save',values}});
