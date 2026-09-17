@@ -3,7 +3,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { mkdtemp, rm, readFile, readdir, lstat } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, readdir, lstat, mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { httpServer } from './helpers.mjs';
@@ -59,4 +59,20 @@ test('invalid session names cannot become filesystem paths', async () => {
 test('a one-shot native command uses shared dispatch and supports JSON arguments', async () => {
   const r = await cli(['assert', '--url', service.url, '--args', JSON.stringify({ target: 'h1', property: 'text', expected: 'Pending' })]);
   assert.equal(r.code, 0, r.stdout); assert.equal(JSON.parse(r.stdout).result.reason, 'verified');
+});
+
+test('open recovers an owned descriptor only after its worker process is proven dead', async t => {
+  const name = 'recover-' + randomUUID().slice(0, 8); t.after(() => cli(['close', '--session', name]));
+  const opened = await cli(['open', service.url, '--session', name]); assert.equal(opened.code, 0, opened.stdout);
+  const root = join(cwd, 'sessions'); let directory, descriptor;
+  for (const entry of await readdir(root)) {
+    try { const data = JSON.parse(await readFile(join(root, entry, 'session.json'), 'utf8')); if (data.name === name) { directory = join(root, entry); descriptor = data; } } catch {}
+  }
+  assert.ok(descriptor);
+  const closed = await cli(['close', '--session', name]); assert.equal(closed.code, 0, closed.stdout);
+  const pid = await new Promise((resolve, reject) => { const p = spawn(process.execPath, ['-e', ''], { stdio: 'ignore' }); p.once('error', reject); p.once('close', () => resolve(p.pid)); });
+  await mkdir(directory, { mode: 0o700 });
+  await writeFile(join(directory, 'session.json'), JSON.stringify({ ...descriptor, pid }), { mode: 0o600, flag: 'wx' });
+  const recovered = await cli(['open', service.url, '--session', name]); assert.equal(recovered.code, 0, recovered.stdout + recovered.stderr);
+  assert.equal(JSON.parse(recovered.stdout).result.reused, false);
 });
