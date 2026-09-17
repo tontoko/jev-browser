@@ -19,7 +19,7 @@ test('LIVE goal: sixteen fields are bound together and a single new record is in
 test('LIVE goal: one nested request differentiates student and guardian and selects locally',async t=>{
   const fields=[{path:'/student/name',label:'Student name'},{path:'/student/email',label:'Student email'}, {path:'/guardian/name',label:'Guardian name'},{path:'/guardian/email',label:'Guardian email'},{path:'/course',label:'Instrument',type:'select',options:['Choose','Viola da gamba','Piano']}];
   const values={student:{name:'Student One',email:'student-one@example.invalid'},guardian:{name:'Guardian Two',email:'guardian-two@example.invalid'},course:'Viola da gamba'};
-  const {core,records,attempts}=await goalFixture(t,browser,fields,{live:true,delayMs:400});const start=performance.now();
+  const {core,records,attempts}=await goalFixture(t,browser,fields,{live:true,delayMs:400,title:'Students',formName:'New student'});const start=performance.now();
   const result=await core.run('Add a new student. Fill their name and email, their guardian name and email, and select the supplied course. Save and verify the created contact.',{values});
   report('nested',result,start);assert.equal(result.status,'complete',JSON.stringify(result));assert.equal(attempts.length,1);assert.equal(records.length,1);
   assert.equal(records[0]['/student/email'],values.student.email);assert.equal(records[0]['/guardian/email'],values.guardian.email);assert.equal(records[0]['/course'],values.course);

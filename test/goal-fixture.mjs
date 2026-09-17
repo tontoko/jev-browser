@@ -29,11 +29,11 @@ export async function goalFixture(t, browser, fields, options = {}) {
   const controls = fields.map(field => `<label>${esc(field.label ?? field.path)}${field.type === 'select'
     ? `<select name="${esc(field.path)}"${field.multiple ? ' multiple' : ''}>${field.options.map((value,i)=>`<option value="${esc(value)}"${field.selected?.includes(value) ? ' selected':''}>${esc(value)}</option>`).join('')}</select>`
     : `<input name="${esc(field.path)}" type="${field.type ?? 'text'}"${field.required === false ? '' : ' required'}${field.checked ? ' checked' : ''} value="${esc(field.value ?? (field.type === 'checkbox' ? 'on' : ''))}">`}</label>`).join('');
-  const body = `<h1>Contacts</h1><button id="add">Add</button><div id="editor"></div><section id="results"></section>
+  const body = `<h1>${esc(options.title ?? 'Contacts')}</h1><button id="add">Add</button><div id="editor"></div><section id="results"></section>
     <script>
     document.getElementById('add').onclick=()=>{
       document.getElementById('add').remove();
-      setTimeout(()=>{document.getElementById('editor').innerHTML=${JSON.stringify(`<form aria-label="New contact">${controls}<button>Save</button><p role="status"></p></form>`)};
+      setTimeout(()=>{document.getElementById('editor').innerHTML=${JSON.stringify(`<form aria-label="${esc(options.formName ?? 'New contact')}">${controls}<button>Save</button><p role="status"></p></form>`)};
       const form=document.querySelector('form');form.onsubmit=async event=>{
         event.preventDefault();const data=Object.fromEntries(new FormData(form));
         for(const select of form.querySelectorAll('select[multiple]'))data[select.name]=Array.from(select.selectedOptions,o=>o.value);
