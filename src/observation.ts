@@ -45,7 +45,7 @@ export async function capture(page: Page, options: { scope?: string; maxElements
         const description = observed.elements[Number(index)];
         const element = handle.asElement();
         if (!element || !description) continue;
-        const id = `e${frameIndex}_${index}`;
+        const id = `r${data.id.replaceAll('-', '').slice(0, 12)}_e${frameIndex}_${index}`;
         const info = { ...description.info, id, frame: frameIndex };
         data.elements.push(info);
         refs.set(id, { handle: element as ElementHandle<Element>, signature: description.signature, info });

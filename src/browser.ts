@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { chromium, type Browser, type Page } from 'playwright';
+import { chromium, firefox, webkit, type Page, type ElementHandle } from 'playwright';
 import { z } from 'zod';
 import type { EntryType } from '@typesafe-ai/sdk';
 import { JevDecisionEngine, type DecisionEngine, type DecisionRequest } from './decision.js';
@@ -7,6 +7,8 @@ import { BrowserError } from './errors.js';
 import { capture, publicURL, verifyTarget, type Captured } from './observation.js';
 import { actionCandidates, actionDescription } from './actions.js';
 import { extractGrounded } from './extract.js';
+import { NativeBrowser } from './native.js';
+import { parseNative, nativeReadOnly, type NativeCommand } from './native-schemas.js';
 import type { ActionPlan, ActOptions, ActResult, BrowserOptions, BrowserLaunchOptions, ExtractResult, OperationOptions, RunOptions, RunResult, Snapshot } from './types.js';
 
 interface Operation { signal: AbortSignal; deadline: number }
@@ -19,23 +21,33 @@ function positiveInteger(value: number, name: string): number {
 
 /** One Page and one decision/execution loop, shared by SDK, CLI and MCP. */
 export class JevBrowser {
-  readonly page: Page;
+  private currentPage: Page;
+  get page(): Page { return this.currentPage; }
+  get isClosed(): boolean { return this.closed; }
+  private readonly nativeBrowser: NativeBrowser;
+  private snapshotCapture?: Captured;
   private readonly options: BrowserOptions;
   private readonly timeoutMs: number;
   private readonly limits: { maxElements: number; maxTexts: number; maxCandidates: number };
   private readonly lifetime = new AbortController();
   private engineInstance?: DecisionEngine;
-  private ownedBrowser?: Browser;
+  private ownedCleanup?: () => Promise<void>;
   private pending?: Pending;
   private active?: Promise<unknown>;
   private closed = false;
   private closePromise?: Promise<void>;
 
   constructor(options: BrowserOptions) {
-    this.page = options.page;
+    this.currentPage = options.page;
     this.options = { ...options };
     this.engineInstance = options.engine;
     this.timeoutMs = positiveInteger(options.timeoutMs ?? 30_000, 'timeoutMs');
+    this.nativeBrowser = new NativeBrowser({
+      page: () => this.page,
+      select: async page => { await this.invalidate(); this.currentPage = page; },
+      resolve: (target, frame) => this.resolveNative(target, frame),
+      validateURL: async url => this.validURL(url),
+    }, options);
     this.limits = {
       maxElements: positiveInteger(options.maxElements ?? 120, 'maxElements'),
       maxTexts: positiveInteger(options.maxTexts ?? 160, 'maxTexts'),
@@ -43,22 +55,68 @@ export class JevBrowser {
     };
   }
   static async launch(options: BrowserLaunchOptions = {}): Promise<JevBrowser> {
-    const browser = await chromium.launch({ headless: options.headless ?? true, ...options.launchOptions });
+    if ([options.userDataDir, options.cdpEndpoint, options.wsEndpoint].filter(Boolean).length > 1)
+      throw new BrowserError('CONFIG', 'Choose only one persistent profile, CDP endpoint, or WebSocket endpoint.');
+    const type = { chromium, firefox, webkit }[options.browser ?? 'chromium'];
+    const contextOptions = { ...options.contextOptions, ...(options.storageState ? { storageState: options.storageState } : {}) };
+    if (options.userDataDir) {
+      const context = await type.launchPersistentContext(options.userDataDir, { ...contextOptions, headless: options.headless ?? true, ...options.launchOptions });
+      try { const core = new JevBrowser({ ...options, page: context.pages()[0] ?? await context.newPage() }); core.ownedCleanup = () => context.close(); return core; }
+      catch (error) { await context.close(); throw error; }
+    }
+    const browser = options.cdpEndpoint ? await chromium.connectOverCDP(options.cdpEndpoint)
+      : options.wsEndpoint ? await type.connect(options.wsEndpoint)
+      : await type.launch({ headless: options.headless ?? true, ...options.launchOptions });
     try {
-      const page = await browser.newPage();
+      const attached = !!(options.cdpEndpoint || options.wsEndpoint);
+      const context = attached && browser.contexts()[0] || await browser.newContext(contextOptions);
+      const page = attached && context.pages()[0] || await context.newPage();
       const core = new JevBrowser({ ...options, page });
-      core.ownedBrowser = browser;
+      // Playwright disconnects a connected Browser; borrowed remote pages are not individually closed.
+      core.ownedCleanup = () => browser.close();
       return core;
     } catch (error) { await browser.close(); throw error; }
+  }
+  private validURL(url: string): string {
+    let parsed: URL;
+    try { parsed = new URL(url); } catch { throw new BrowserError('INVALID_URL', 'A valid HTTP(S) URL is required.'); }
+    if (!['http:', 'https:'].includes(parsed.protocol)) throw new BrowserError('INVALID_URL', 'Only HTTP(S) navigation is supported.');
+    return parsed.href;
+  }
+  private async resolveNative(target: string, frameIndex?: number) {
+    const id = target.startsWith('ref:') ? target.slice(4) : target;
+    if (/^r[0-9a-f]+_e[0-9]+_[0-9]+$/.test(id)) {
+      const captured = this.snapshotCapture?.refs.has(id) ? this.snapshotCapture : this.pending?.captured;
+      const ref = captured?.refs.get(id);
+      if (!captured || !ref || this.page.url() !== captured.rawURL) throw new BrowserError('STALE_TARGET', 'Snapshot reference is expired or from another page. Take a new snapshot.');
+      await verifyTarget(ref); return ref.handle;
+    }
+    const frame = frameIndex === undefined ? this.page.mainFrame() : this.page.frames()[frameIndex];
+    if (!frame) throw new BrowserError('INVALID_ARGUMENT', 'Frame index is not present.');
+    return frame.locator(target);
+  }
+  async native(command: NativeCommand, options: OperationOptions = {}): Promise<Record<string, unknown>> {
+    const parsed = parseNative(command);
+    return this.exclusive(options, async operation => {
+      const context = { signal: operation.signal, timeoutMs: this.remaining(operation) };
+      if (this.options.allowCommand && (await this.options.allowCommand(structuredClone(command), context)) !== true)
+        throw new BrowserError('ACTION_DENIED', 'The caller policy denied this native operation.');
+      operation.signal.throwIfAborted();
+      const mutates = !nativeReadOnly.has(parsed.command) && !(parsed.command === 'tabs' && parsed.action === 'list') && !(parsed.command === 'downloads' && parsed.action === 'list');
+      try { return await this.nativeBrowser.execute(parsed, { signal: operation.signal, timeoutMs: this.remaining(operation) }); }
+      finally { if (mutates) await this.invalidate(); }
+    }, parsed.command);
   }
   private engine(): DecisionEngine {
     return this.engineInstance ??= new JevDecisionEngine(this.options);
   }
-  private async exclusive<T>(options: OperationOptions, fn: (operation: Operation) => Promise<T>): Promise<T> {
+  private async exclusive<T>(options: OperationOptions, fn: (operation: Operation) => Promise<T>, command?: string): Promise<T> {
     if (this.closed) throw new BrowserError('CLOSED', 'This browser session is closed.');
     if (this.active) throw new BrowserError('BUSY', 'This Page already has an active operation. Await it, or use a separate Page.');
-    const signal = AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(this.timeoutMs), ...(options.signal ? [options.signal] : [])]);
-    const operation = { signal, deadline: performance.now() + this.timeoutMs };
+    this.nativeBrowser.guard(command);
+    const timeoutMs = positiveInteger(options.timeoutMs ?? this.timeoutMs, 'timeoutMs');
+    const signal = AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(timeoutMs), ...(options.signal ? [options.signal] : [])]);
+    const operation = { signal, deadline: performance.now() + timeoutMs };
     signal.throwIfAborted();
     const task = Promise.resolve().then(() => fn(operation));
     this.active = task;
@@ -68,14 +126,14 @@ export class JevBrowser {
   private async invalidate(): Promise<void> {
     const previous = this.pending; this.pending = undefined;
     await previous?.captured.dispose();
+    const snapshot = this.snapshotCapture; this.snapshotCapture = undefined;
+    await snapshot?.dispose();
   }
   async goto(url: string, options: OperationOptions = {}): Promise<{ url: string }> {
-    let parsed: URL;
-    try { parsed = new URL(url); } catch { throw new BrowserError('INVALID_URL', 'A valid HTTP(S) URL is required.'); }
-    if (!['http:', 'https:'].includes(parsed.protocol)) throw new BrowserError('INVALID_URL', 'Only HTTP(S) navigation is supported.');
+    const validated = this.validURL(url);
     return this.exclusive(options, async operation => {
       await this.invalidate(); operation.signal.throwIfAborted();
-      await this.page.goto(parsed.href, { waitUntil: 'domcontentloaded', timeout: this.remaining(operation), signal: operation.signal });
+      await this.page.goto(validated, { waitUntil: 'domcontentloaded', timeout: this.remaining(operation), signal: operation.signal });
       return { url: publicURL(this.page.url()) };
     });
   }
@@ -83,8 +141,8 @@ export class JevBrowser {
     return this.exclusive(options, async operation => {
       await this.invalidate(); operation.signal.throwIfAborted();
       const observed = await capture(this.page, { ...this.limits, scope: options.scope });
-      try { operation.signal.throwIfAborted(); return observed.data; }
-      finally { await observed.dispose(); }
+      try { operation.signal.throwIfAborted(); this.snapshotCapture = observed; return observed.data; }
+      catch (error) { await observed.dispose(); throw error; }
     });
   }
   async screenshot(options: OperationOptions = {}): Promise<Buffer> {
@@ -137,6 +195,7 @@ export class JevBrowser {
             : { status: 'stopped', reason: 'no-match', steps };
         }
         steps.push(await this.executePlan(plan.id, operation));
+        if (steps.at(-1)?.status === 'dialog') return { status: 'stopped', reason: 'dialog', steps };
       }
       throw new BrowserError('INTERNAL', 'Unreachable step budget.');
     });
@@ -202,6 +261,7 @@ export class JevBrowser {
       operation.signal.throwIfAborted();
       try {
         const actionOptions = { timeout: this.remaining(operation), signal: operation.signal };
+        const outcome = await this.nativeBrowser.action(async () => {
         switch (action.kind) {
           case 'click': await ref!.handle.click(actionOptions); break;
           case 'fill': await ref!.handle.fill(values[action.valueKey!]!, actionOptions); break;
@@ -218,6 +278,8 @@ export class JevBrowser {
           case 'press': await ref!.handle.press(action.key!, actionOptions); break;
           case 'scroll': await this.page.evaluate(top => window.scrollBy({ top, behavior: 'instant' }), captured.data.scroll.height * (action.direction === 'down' ? 0.8 : -0.8)); break;
         }
+        });
+        if (outcome.status === 'dialog') return { ...outcome, plan: structuredClone(plan), url: publicURL(this.page.url()) };
       } catch {
         if (operation.signal.aborted) throw new BrowserError('ACTION_INTERRUPTED', 'Execution was interrupted. It may have had side effects; inspect state before trying again.');
         throw new BrowserError('ACTION_FAILED', 'Action did not finish normally; it may have changed the page. Inspect state before trying again. No automatic retry occurred.');
@@ -230,10 +292,11 @@ export class JevBrowser {
     return this.closePromise ??= (async () => {
       this.closed = true;
       this.lifetime.abort();
-      // Playwright mutations are awaited rather than falsely claimed cancelled.
+      // Dismiss our pending dialog before draining the action it is blocking.
+      await this.nativeBrowser.dispose();
       await this.active?.catch(() => undefined);
       await this.invalidate();
-      await this.ownedBrowser?.close();
+      await this.ownedCleanup?.();
     })();
   }
   async [Symbol.asyncDispose](): Promise<void> { await this.close(); }

@@ -1,4 +1,5 @@
-import type { Page, LaunchOptions } from 'playwright';
+import type { Page, LaunchOptions, BrowserContextOptions } from 'playwright';
+import type { NativeCommand } from './native-schemas.js';
 import type { DecisionEngine, DecisionResult, JevOptions } from './decision.js';
 
 export interface ElementInfo {
@@ -52,8 +53,9 @@ export interface ActionPlan {
   confidence: number;
   decision: Omit<DecisionResult, 'answers'>;
 }
-export interface ActResult { status: 'executed'; plan: ActionPlan; url: string }
-export interface OperationOptions { signal?: AbortSignal; scope?: string }
+export interface ActResult { status: 'executed' | 'dialog'; plan: ActionPlan; url: string; dialog?: { type: string; message: string; defaultValue: string } }
+export interface OperationOptions { signal?: AbortSignal; scope?: string; timeoutMs?: number }
+export interface ExtractOptions extends OperationOptions { recordsScope?: string }
 /** Remaining operation budget at callback entry. Awaited callbacks must honor signal. */
 export interface OperationContext { readonly signal: AbortSignal; readonly timeoutMs: number }
 export interface ActOptions extends OperationOptions { values?: Record<string, string> }
@@ -64,11 +66,15 @@ export interface RunOptions extends ActOptions {
 }
 export interface RunResult {
   status: 'complete' | 'unverified' | 'stopped';
-  reason: 'verified' | 'model-complete' | 'no-match' | 'step-limit';
+  reason: 'verified' | 'model-complete' | 'no-match' | 'step-limit' | 'dialog';
   steps: ActResult[];
 }
 export interface BrowserOptions extends JevOptions {
   page: Page;
+  fileRoots?: string[];
+  outputDir?: string;
+  allowEvaluate?: boolean;
+  allowCommand?: (command: NativeCommand, operation: OperationContext) => boolean | Promise<boolean>;
   engine?: DecisionEngine;
   maxElements?: number;
   maxTexts?: number;
@@ -79,6 +85,12 @@ export interface BrowserOptions extends JevOptions {
 export interface BrowserLaunchOptions extends Omit<BrowserOptions, 'page'> {
   headless?: boolean;
   launchOptions?: LaunchOptions;
+  browser?: 'chromium' | 'firefox' | 'webkit';
+  contextOptions?: BrowserContextOptions;
+  storageState?: BrowserContextOptions['storageState'];
+  userDataDir?: string;
+  cdpEndpoint?: string;
+  wsEndpoint?: string;
 }
 export interface ExtractResult<T> {
   data: T;
