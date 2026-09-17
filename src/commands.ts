@@ -61,7 +61,7 @@ export function parseCommand(input: unknown): Command {
   return { command: name, ...parsed.data } as Command;
 }
 export async function executeCommand(browser: JevBrowser, request: Command, signal?: AbortSignal): Promise<object> {
-  const options = { signal, ...('scope' in request ? { scope: request.scope } : {}), ...('values' in request ? { values: request.values } : {}) };
+  const options = { signal, ...('scope' in request ? { scope: request.scope } : {}), ...('values' in request && !Array.isArray(request.values) ? { values: request.values } : {}) };
   switch (request.command) {
     case 'goto': return browser.goto(request.url, options);
     case 'snapshot': return browser.snapshot(options);
