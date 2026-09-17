@@ -17,7 +17,7 @@ export const commandSchemas = {
     .refine(v => Number(v.instruction !== undefined) + Number(v.planId !== undefined) === 1, { message: 'Provide exactly one of instruction or planId.' }),
   extract: z.object({ instruction, fields: z.record(z.string().min(1), field).optional(), schema: z.record(z.string(), z.unknown()).optional(), scope, recordsScope: scope }).strict()
     .refine(v => Number(v.fields !== undefined) + Number(v.schema !== undefined) === 1, { message: 'Provide exactly one of fields or schema (JSON Schema).' }),
-  run: z.object({ instruction, values, scope, maxSteps: z.number().int().positive().optional() }).strict(),
+  run: z.object({ instruction, values: z.record(z.string(),z.json()).optional(), scope, maxSteps: z.number().int().positive().optional(), maxDecisions:z.number().int().positive().optional(),settleTimeoutMs:z.number().int().positive().optional(),timeoutMs:z.number().int().positive().optional(),expect:z.union([nativeSchemas.assert,z.array(nativeSchemas.assert).min(1)]).optional() }).strict(),
   screenshot: z.object({}).strict(),
   close: z.object({}).strict(),
 };
@@ -30,7 +30,7 @@ const descriptions: Partial<Record<CommandName, string>> = {
   observe: 'Use Jev to choose one grounded action without executing it. Values are explicit named local inputs. Returns a single-use plan or null.',
   act: 'Use Jev to execute one instruction, or execute a previous planId. Literal input text belongs in named values. No automatic mutation retries.',
   extract: 'Copy source-grounded data. Use fields for scalar fields or JSON Schema for nested objects and arrays. recordsScope selects repeated DOM rows/cards. Returns data and source evidence.',
-  run: 'Attempt a bounded sequence of grounded actions. A model completion opinion is unverified, not a test pass. Use browser_assert to verify facts.',
+  run: 'Complete a goal with supplied nested JSON inputs. Independent field judgments are batched; browser writes are serial. Saved results require readback or explicit expect assertions. Returns input coverage, effect state, usage and partial progress on errors.',
   assert: 'Deterministically assert a page/element fact with Playwright polling. Failure is an error, never a model opinion.',
   click: 'Click a snapshot ref or caller-authored Playwright selector. element is a human-readable description, not a selector. No model call.',
   type: 'Fill or type literal text into a snapshot ref or selector. submit presses Enter.',
@@ -61,13 +61,13 @@ export function parseCommand(input: unknown): Command {
   return { command: name, ...parsed.data } as Command;
 }
 export async function executeCommand(browser: JevBrowser, request: Command, signal?: AbortSignal): Promise<object> {
-  const options = { signal, ...('scope' in request ? { scope: request.scope } : {}), ...('values' in request && !Array.isArray(request.values) ? { values: request.values } : {}) };
+  const options = { signal, ...('scope' in request ? { scope: request.scope } : {}), ...(request.command==='act'||request.command==='observe'?{values:request.values}:{}) };
   switch (request.command) {
     case 'goto': return browser.goto(request.url, options);
     case 'snapshot': return browser.snapshot(options);
     case 'observe': return { plan: await browser.observe(request.instruction, options) };
     case 'act': return browser.act(request.planId ? { id: request.planId } : request.instruction!, options);
-    case 'run': return browser.run(request.instruction, { ...options, maxSteps: request.maxSteps });
+    case 'run': { const {command,instruction,...runOptions}=request;return browser.run(instruction,{...runOptions,signal}); }
     case 'extract': {
       let schema: z.ZodType;
       if (request.schema) {

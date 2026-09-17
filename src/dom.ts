@@ -42,6 +42,12 @@ export function describe(el: Element) {
     context: context(el),
     tag: el.tagName.toLowerCase(),
     inputType: el instanceof HTMLInputElement ? input.type : '',
+    fieldName: el.getAttribute('name') ?? '',
+    ...('form' in el && (el as HTMLInputElement).form ? {
+      formId: `form${Array.from(document.forms).indexOf((el as HTMLInputElement).form!)}`,
+      formName: computeAccessibleName((el as HTMLInputElement).form!),
+    } : {}),
+    required: el.matches('[required],[aria-required="true"]'),
     disabled: el.matches(':disabled,[aria-disabled="true"]'),
     readOnly: el.matches('[readonly],[aria-readonly="true"]'),
     fillable: isFillable(el),
@@ -105,7 +111,7 @@ export function observe(options: { maxElements: number; maxTexts: number }, scop
   const recordNodes = (explicitRecords ?? [...visited].filter(el => el.matches('tbody tr,[role="row"],li,[role="listitem"],article'))).filter(el => visited.has(el) && visible(el));
   const records = recordNodes.map((el, index) => {
     const parent = recordNodes.findIndex(other => other !== el && other.contains(el) && !recordNodes.some(between => between !== other && between !== el && other.contains(between) && between.contains(el)));
-    return { index, parent: parent < 0 ? undefined : parent, context: normalize((el as HTMLElement).innerText).slice(0, 1000), texts: textNodes.flatMap((node, i) => el === node || el.contains(node) ? [i] : []) };
+    return { index, parent: parent < 0 ? undefined : parent, readOnly: !el.matches('form,input,textarea,select,[contenteditable="true"]') && !el.querySelector('input,textarea,select,[contenteditable="true"]'), context: normalize((el as HTMLElement).innerText).slice(0, 1000), texts: textNodes.flatMap((node, i) => el === node || el.contains(node) ? [i] : []) };
   });
-  return { nodes, elements, texts, records, truncatedElements, truncatedTexts };
+  return { nodes, elements, texts, records, truncatedElements, truncatedTexts, busy: !!document.querySelector('[aria-busy="true"]') };
 }

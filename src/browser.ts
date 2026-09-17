@@ -1,3 +1,4 @@
+import { runGoal } from './runner.js';
 import { randomUUID } from 'node:crypto';
 import { chromium, firefox, webkit, type Page, type ElementHandle } from 'playwright';
 import { z } from 'zod';
@@ -12,6 +13,7 @@ import { parseNative, nativeReadOnly, type NativeCommand } from './native-schema
 import type { ActionPlan, ActOptions, ActResult, BrowserOptions, BrowserLaunchOptions, ExtractResult, ExtractOptions, OperationOptions, RunOptions, RunResult, Snapshot } from './types.js';
 
 interface Operation { signal: AbortSignal; deadline: number }
+const pageLeases = new WeakMap<Page, JevBrowser>();
 interface Pending { plan: ActionPlan; captured: Captured; values: Record<string, string> }
 const json = (value: unknown): EntryType => JSON.parse(JSON.stringify(value)) as EntryType;
 function positiveInteger(value: number, name: string): number {
@@ -22,6 +24,7 @@ function positiveInteger(value: number, name: string): number {
 /** One Page and one decision/execution loop, shared by SDK, CLI and MCP. */
 export class JevBrowser {
   private currentPage: Page;
+  private readonly leasedPages = new Set<Page>();
   get page(): Page { return this.currentPage; }
   get isClosed(): boolean { return this.closed; }
   private readonly nativeBrowser: NativeBrowser;
@@ -49,7 +52,11 @@ export class JevBrowser {
     };
     this.nativeBrowser = new NativeBrowser({
       page: () => this.page,
-      select: async page => { await this.invalidate(); this.currentPage = page; },
+      select: async page => {
+        const owner=pageLeases.get(page); if(owner && owner!==this)throw new BrowserError('BUSY','Another core is operating this Page.');
+        if(this.active){pageLeases.set(page,this);this.leasedPages.add(page);}
+        await this.invalidate(); this.currentPage = page;
+      },
       resolve: (target, frame) => this.resolveNative(target, frame),
       validateURL: async url => this.validURL(url),
     }, options);
@@ -114,16 +121,17 @@ export class JevBrowser {
   }
   private async exclusive<T>(options: OperationOptions, fn: (operation: Operation) => Promise<T>, command?: string): Promise<T> {
     if (this.closed) throw new BrowserError('CLOSED', 'This browser session is closed.');
-    if (this.active) throw new BrowserError('BUSY', 'This Page already has an active operation. Await it, or use a separate Page.');
+    if (this.active || pageLeases.has(this.page)) throw new BrowserError('BUSY', 'This Page already has an active operation. Await it, or use a separate Page.');
     this.nativeBrowser.guard(command);
     const timeoutMs = positiveInteger(options.timeoutMs ?? this.timeoutMs, 'timeoutMs');
     const signal = AbortSignal.any([this.lifetime.signal, AbortSignal.timeout(timeoutMs), ...(options.signal ? [options.signal] : [])]);
     const operation = { signal, deadline: performance.now() + timeoutMs };
     signal.throwIfAborted();
+    pageLeases.set(this.page,this); this.leasedPages.add(this.page);
     const task = Promise.resolve().then(() => fn(operation));
     this.active = task;
     try { const result = await task; signal.throwIfAborted(); return result; }
-    finally { if (this.active === task) this.active = undefined; }
+    finally { if (this.active === task) this.active = undefined; for(const page of this.leasedPages)if(pageLeases.get(page)===this)pageLeases.delete(page);this.leasedPages.clear(); }
   }
   private async invalidatePlan(): Promise<void> {
     const previous = this.pending; this.pending = undefined;
@@ -184,30 +192,19 @@ export class JevBrowser {
     } };
   }
   async run(instruction: string, options: RunOptions = {}): Promise<RunResult> {
-    const maxSteps = positiveInteger(options.maxSteps ?? 10, 'maxSteps');
-    return this.exclusive(options, async operation => {
-      const steps: ActResult[] = [];
-      const verified = async () => {
-        if (!options.until) return false;
-        const complete = await options.until(this.page, { signal: operation.signal, timeoutMs: this.remaining(operation) });
-        operation.signal.throwIfAborted();
-        return complete === true;
-      };
-      for (let i = 0; i <= maxSteps; i++) {
-        operation.signal.throwIfAborted();
-        if (await verified()) return { status: 'complete', reason: 'verified', steps };
-        if (i === maxSteps) return { status: 'stopped', reason: 'step-limit', steps };
-        const plan = await this.chooseAction(instruction, options, operation, steps.map(step => actionDescription(step.plan.action)), true);
-        if (plan === 'done' || !plan) {
-          if (await verified()) return { status: 'complete', reason: 'verified', steps };
-          return plan === 'done'
-            ? { status: 'unverified', reason: 'model-complete', steps }
-            : { status: 'stopped', reason: 'no-match', steps };
-        }
-        steps.push(await this.executePlan(plan.id, operation));
-        if (steps.at(-1)?.status === 'dialog') return { status: 'stopped', reason: 'dialog', steps };
-      }
-      throw new BrowserError('INTERNAL', 'Unreachable step budget.');
+    return this.exclusive({ ...options, timeoutMs: options.timeoutMs ?? this.options.timeoutMs ?? 60_000 }, async operation => {
+      await this.invalidate();
+      return runGoal({
+        page: () => this.page, capture: () => capture(this.page,{...this.limits,scope:options.scope}),
+        engine: () => this.engine(), operation: () => ({signal:operation.signal,timeoutMs:this.remaining(operation)}),
+        perform: (plan,observed,values,started) => this.executeCaptured(plan,observed,values,operation,started),
+        assert: async condition => {
+          const command=parseNative({command:'assert',...condition});
+          if(this.options.allowCommand && await this.options.allowCommand(command,{signal:operation.signal,timeoutMs:this.remaining(operation)})!==true)
+            throw new BrowserError('ACTION_DENIED','The caller policy denied the assertion.');
+          await this.nativeBrowser.execute(command,{signal:operation.signal,timeoutMs:this.remaining(operation)});
+        }, candidateLimit:this.limits.maxCandidates,
+      },instruction,options);
     });
   }
   private async chooseAction(instruction: string, options: ActOptions, operation: Operation, history: unknown[], allowDone: boolean): Promise<ActionPlan | null | 'done'> {
@@ -254,49 +251,47 @@ export class JevBrowser {
     return Math.max(1, Math.ceil(operation.deadline - performance.now()));
   }
   private async executePlan(id: string, operation: Operation): Promise<ActResult> {
-    const pending = this.pending;
-    if (!pending || pending.plan.id !== id) throw new BrowserError('STALE_PLAN', 'This plan is expired, consumed, or belongs to a different browser session. Observe again.');
-    // Consume BEFORE any potentially mutating operation, including a failed attempt.
-    this.pending = undefined;
-    const { plan, captured, values } = pending;
-    try {
-      operation.signal.throwIfAborted();
-      if (this.options.allowAction && (await this.options.allowAction(structuredClone(plan), { signal: operation.signal, timeoutMs: this.remaining(operation) })) !== true)
-        throw new BrowserError('ACTION_DENIED', 'The caller policy denied this action.');
-      if (this.page.url() !== captured.rawURL) throw new BrowserError('STALE_TARGET', 'The page navigated after observation. Observe again.');
-      const action = plan.action;
-      const ref = action.target ? captured.refs.get(action.target.id) : undefined;
-      if (action.target && !ref) throw new BrowserError('STALE_TARGET', 'The observed element is no longer available.');
-      if (ref) await verifyTarget(ref);
-      operation.signal.throwIfAborted();
-      try {
-        const actionOptions = { timeout: this.remaining(operation), signal: operation.signal };
-        const outcome = await this.nativeBrowser.action(async () => {
-        switch (action.kind) {
-          case 'click': await ref!.handle.click(actionOptions); break;
-          case 'fill': await ref!.handle.fill(values[action.valueKey!]!, actionOptions); break;
-          case 'check': await ref!.handle.setChecked(true, actionOptions); break;
-          case 'uncheck': await ref!.handle.setChecked(false, actionOptions); break;
-          case 'select':
-          case 'deselect': {
-            const indices = action.target!.multiple
-              ? action.target!.options!.filter(option => option.index === action.option!.index ? action.kind === 'select' : option.selected).map(({ index }) => ({ index }))
-              : { index: action.option!.index };
-            await ref!.handle.selectOption(indices, actionOptions);
-            break;
-          }
-          case 'press': await ref!.handle.press(action.key!, actionOptions); break;
-          case 'scroll': await this.page.evaluate(top => window.scrollBy({ top, behavior: 'instant' }), captured.data.scroll.height * (action.direction === 'down' ? 0.8 : -0.8)); break;
-        }
-        });
-        if (outcome.status === 'dialog') return { ...outcome, plan: structuredClone(plan), url: publicURL(this.page.url()) };
-      } catch {
-        if (operation.signal.aborted) throw new BrowserError('ACTION_INTERRUPTED', 'Execution was interrupted. It may have had side effects; inspect state before trying again.');
-        throw new BrowserError('ACTION_FAILED', 'Action did not finish normally; it may have changed the page. Inspect state before trying again. No automatic retry occurred.');
-      }
-      if (operation.signal.aborted) throw new BrowserError('ACTION_INTERRUPTED', 'Cancellation arrived during execution. The action may have completed; inspect state before trying again.');
-      return { status: 'executed', plan: structuredClone(plan), url: publicURL(this.page.url()) };
-    } finally { await captured.dispose(); }
+    const pending=this.pending;
+    if(!pending || pending.plan.id!==id)throw new BrowserError('STALE_PLAN','This plan is expired, consumed, or belongs to a different browser session. Observe again.');
+    this.pending=undefined;
+    try{return await this.executeCaptured(pending.plan,pending.captured,pending.values,operation);}
+    finally{await pending.captured.dispose();}
+  }
+  private async executeCaptured(plan: ActionPlan, captured: Captured, values: Record<string,string>, operation: Operation, started: ()=>void=()=>{}): Promise<ActResult> {
+    operation.signal.throwIfAborted();
+    const op=()=>({signal:operation.signal,timeoutMs:this.remaining(operation)});
+    if(this.options.allowAction && await this.options.allowAction(structuredClone(plan),op())!==true)
+      throw new BrowserError('ACTION_DENIED','The caller policy denied this action.');
+    if(this.page.url()!==captured.rawURL)throw new BrowserError('STALE_TARGET','The page navigated after observation. Observe again.');
+    const action=plan.action, ref=action.target?captured.refs.get(action.target.id):undefined;
+    if(action.target&&!ref)throw new BrowserError('STALE_TARGET','The observed target is no longer available.');
+    if(ref)await verifyTarget(ref);
+    const target=action.target?{ref:action.target.id,element:action.target.name,frame:action.target.frame}:{};
+    let command: NativeCommand;
+    switch(action.kind){
+      case 'click':command={command:'click',...target};break;
+      case 'fill':command={command:'type',...target,text:values[action.valueKey!]!};break;
+      case 'check':case 'uncheck':command={command:'check',...target,checked:action.kind==='check'};break;
+      case 'select':case 'deselect':command={command:'select_option',...target,indices:action.optionIndices ?? (action.target!.multiple ? action.target!.options!.filter(o=>o.index===action.option!.index?action.kind==='select':o.selected).map(o=>o.index) : [action.option!.index])};break;
+      case 'press':command={command:'press_key',...target,key:action.key!};break;
+      case 'scroll':command={command:'mouse',action:'wheel',deltaY:captured.data.scroll.height*(action.direction==='down'?0.8:-0.8)};break;
+    }
+    const parsed=parseNative(command);
+    if(this.options.allowCommand && await this.options.allowCommand(structuredClone(parsed),op())!==true)
+      throw new BrowserError('ACTION_DENIED','The caller policy denied this action.');
+    operation.signal.throwIfAborted();
+    started();
+    try{
+      const outcome=action.kind==='scroll'
+        ? await this.nativeBrowser.action(()=>this.page.evaluate(top=>window.scrollBy({top,behavior:'instant'}),captured.data.scroll.height*(action.direction==='down'?0.8:-0.8)))
+        : await this.nativeBrowser.executeResolved(parsed,ref!.handle,op());
+      if(outcome.status==='dialog')return {status:'dialog',dialog:outcome.dialog as ActResult['dialog'],plan:structuredClone(plan),url:publicURL(this.page.url())};
+    }catch{
+      if(operation.signal.aborted)throw new BrowserError('ACTION_INTERRUPTED','Execution was interrupted. It may have had side effects; inspect state before trying again.');
+      throw new BrowserError('ACTION_FAILED','Action did not finish normally; it may have changed the page. Inspect state before trying again. No automatic retry occurred.');
+    }
+    if(operation.signal.aborted)throw new BrowserError('ACTION_INTERRUPTED','Cancellation arrived during execution; inspect state before trying again.');
+    return {status:'executed',plan:structuredClone(plan),url:publicURL(this.page.url())};
   }
   async close(): Promise<void> {
     return this.closePromise ??= (async () => {

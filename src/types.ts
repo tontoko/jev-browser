@@ -10,6 +10,10 @@ export interface ElementInfo {
   context: string;
   tag: string;
   inputType: string;
+  fieldName?: string;
+  formId?: string;
+  formName?: string;
+  required?: boolean;
   disabled: boolean;
   readOnly: boolean;
   fillable: boolean;
@@ -27,9 +31,10 @@ export interface TextEvidence {
   context: string;
   value?: boolean;
 }
-export interface RecordEvidence { id: string; frame: number; context: string; textIds: string[]; parentId?: string }
+export interface RecordEvidence { id: string; frame: number; context: string; textIds: string[]; parentId?: string; readOnly?: boolean }
 export interface Snapshot {
   records?: RecordEvidence[];
+  busy?: boolean;
   id: string;
   url: string;
   title: string;
@@ -46,6 +51,7 @@ export interface GroundedAction {
   target?: ElementInfo;
   valueKey?: string;
   option?: { index: number; label: string; value: string };
+  optionIndices?: number[];
   key?: 'Enter';
   direction?: 'up' | 'down';
 }
@@ -62,14 +68,27 @@ export interface ExtractOptions extends OperationOptions { recordsScope?: string
 /** Remaining operation budget at callback entry. Awaited callbacks must honor signal. */
 export interface OperationContext { readonly signal: AbortSignal; readonly timeoutMs: number }
 export interface ActOptions extends OperationOptions { values?: Record<string, string> }
-export interface RunOptions extends ActOptions {
+export type RunValue = string | number | boolean | null | RunValue[] | { [key: string]: RunValue };
+export type RunAssertion = Omit<Extract<NativeCommand, { command: 'assert' }>, 'command'>;
+export interface RunOptions extends OperationOptions {
+  values?: Record<string, RunValue>;
+  expect?: RunAssertion | RunAssertion[];
   maxSteps?: number;
+  maxDecisions?: number;
+  settleTimeoutMs?: number;
   /** Must be a read-only, deterministic check. True is the only verified completion. */
   until?: (page: Page, operation: OperationContext) => Promise<boolean> | boolean;
 }
+export interface RunInput { path: string; applied: boolean; readback: boolean; target?: string }
+export interface RunEffect { id: string; kind: 'input' | 'advance' | 'commit'; status: 'attempted' | 'observed' | 'unknown'; input?: string }
+export interface RunVerification { source: 'caller' | 'inferred'; basis: 'ui-readback' | 'assertion' | 'condition'; recordId?: string; readback: string[]; unobserved: string[] }
 export interface RunResult {
+  inputs?: RunInput[];
+  effects?: RunEffect[];
+  verification?: RunVerification;
+  usage?: { requests: number; questions: number; inputTokens: number; outputTokens: number };
   status: 'complete' | 'unverified' | 'stopped';
-  reason: 'verified' | 'model-complete' | 'no-match' | 'step-limit' | 'dialog';
+  reason: 'verified' | 'ui-readback' | 'model-complete' | 'no-match' | 'step-limit' | 'dialog' | 'ambiguous' | 'missing-input' | 'permission-required' | 'validation' | 'value-mismatch' | 'effect-unknown' | 'error' | 'observation-limit';
   steps: ActResult[];
 }
 export interface BrowserOptions extends JevOptions {

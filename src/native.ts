@@ -8,6 +8,20 @@ import { BrowserEvents } from './browser-events.js';
 import type { ParsedNativeCommand } from './native-schemas.js';
 import type { OperationContext } from './types.js';
 export class NativeBrowser extends BrowserEvents {
+  async executeResolved(c: ParsedNativeCommand, target: Locator | ElementHandle<Element>, op: OperationContext): Promise<Record<string, unknown>> {
+    const time = { timeout: op.timeoutMs, signal: op.signal }; op.signal.throwIfAborted();
+    return this.action(async () => {
+      switch (c.command) {
+        case 'click': await target.click({ ...time, button: c.button, clickCount: c.doubleClick ? 2 : 1, modifiers: c.modifiers }); break;
+        case 'hover': await target.hover(time); break;
+        case 'type': if (c.slowly) { await target.fill('',time); await target.type(c.text,{...time,delay:30}); } else await target.fill(c.text,time); if(c.submit)await target.press('Enter',time); break;
+        case 'press_key': await target.press(c.key,time); break;
+        case 'check': await target.setChecked(c.checked,time); break;
+        case 'select_option': await target.selectOption(c.indices ? c.indices.map(index=>({index})) : c.by==='label' ? c.values!.map(label=>({label})) : c.values!,time); break;
+        default: throw new BrowserError('INVALID_ARGUMENT','This command is not an element primitive.');
+      }
+    });
+  }
   async execute(c: ParsedNativeCommand, op: OperationContext): Promise<Record<string, unknown>> {
     const page = this.host.page(), time = { timeout: op.timeoutMs, signal: op.signal };
     op.signal.throwIfAborted();
@@ -16,15 +30,9 @@ export class NativeBrowser extends BrowserEvents {
       case 'navigate_back': await page.goBack({ ...time, waitUntil: 'domcontentloaded' }); return { url: publicURL(page.url()) };
       case 'navigate_forward': await page.goForward({ ...time, waitUntil: 'domcontentloaded' }); return { url: publicURL(page.url()) };
       case 'reload': await page.reload({ ...time, waitUntil: 'domcontentloaded' }); return { url: publicURL(page.url()) };
-      case 'click': { const t = await this.target(c); return this.action(() => t.click({ ...time, button: c.button, clickCount: c.doubleClick ? 2 : 1, modifiers: c.modifiers })); }
-      case 'hover': { const t = await this.target(c); await t.hover(time); return { status: 'executed' }; }
-      case 'type': {
-        const t = await this.target(c);
-        return this.action(async () => { if (c.slowly) { await t.fill('', time); await t.type(c.text, { ...time, delay: 30 }); } else await t.fill(c.text, time); if (c.submit) await t.press('Enter', time); });
-      }
-      case 'press_key': return this.action(async () => { if (c.target || c.ref) await (await this.target(c)).press(c.key, time); else await page.keyboard.press(c.key); });
-      case 'check': { const t = await this.target(c); return this.action(() => t.setChecked(c.checked, time)); }
-      case 'select_option': { const t = await this.target(c); return this.action(() => t.selectOption(c.by === 'label' ? c.values.map(label => ({ label })) : c.values, time)); }
+      case 'click': case 'hover': case 'type': case 'check': case 'select_option':
+        return this.executeResolved(c,await this.target(c),op);
+      case 'press_key': return c.target || c.ref ? this.executeResolved(c,await this.target(c),op) : this.action(()=>page.keyboard.press(c.key));
       case 'fill_form': {
         // Resolve all targets first. A missing/expired reference must not partially fill the form.
         const fields = await Promise.all(c.fields.map(async field => {

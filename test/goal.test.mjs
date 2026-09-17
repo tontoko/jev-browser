@@ -17,8 +17,13 @@ function formEngine({ collide = false, forbidden = false } = {}) {
       const target = collide ? controls.find(e => e.fillable) : controls.find(e => e.name === input?.label || e.fieldName === input?.path);
       return target && Object.hasOwn(question.criteria,target.id) ? target.id : '__none__';
     }
-    if (name.startsWith('effect_')) return forbidden ? 'forbidden' : question.instructions.includes('Save') ? 'commit' : 'advance';
+    if (name.startsWith('effect_')) return forbidden ? 'forbidden' : question.instructions.includes('"name":"Save"') ? 'commit' : 'advance';
     if (name === 'completion') return 'complete';
+    if(name.startsWith('read_')) {
+      const input=request.state.inputs.find(input=>question.instructions.includes(JSON.stringify(input.path)));
+      const source=request.state.sources.find(source=>source.context.startsWith(input.path+' ') && source.text === '[input:'+input.path+']');
+      return source?.id ?? '__none__';
+    }
     if (name === 'action') return candidate => candidate && typeof candidate === 'object' && candidate.kind === 'click' && ['Add','Save','Next'].includes(candidate.target?.name);
     return '__none__';
   });
@@ -40,7 +45,7 @@ async function fixture(t, fields, options = {}) {
         const response=await fetch('/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
         const saved=await response.json();
         if(saved.error){form.querySelector('[role=status]').textContent=saved.error;return;}
-        ${options.noReadback ? "form.querySelector('[role=status]').textContent='Saved';" : "form.remove();const article=document.createElement('article');const heading=document.createElement('h2');heading.textContent='Contact created';article.append(heading);for(const value of Object.values(saved)){const p=document.createElement('p');p.textContent=Array.isArray(value)?value.join(', '):String(value);article.append(p);}document.getElementById('results').append(article);"}
+        ${options.noReadback ? "form.querySelector('[role=status]').textContent='Saved';" : "form.remove();const article=document.createElement('article');const heading=document.createElement('h2');heading.textContent='Contact created';article.append(heading);for(const [key,value] of Object.entries(saved)){const dl=document.createElement('dl'),dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=key;dd.textContent=Array.isArray(value)?value.join(', '):String(value);dl.append(dt,dd);article.append(dl);}document.getElementById('results').append(article);"}
       };
       },${options.delayMs ?? 0});
     };
