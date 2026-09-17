@@ -1,3 +1,4 @@
+import { version } from './version.js';
 import { McpServer } from '@modelcontextprotocol/server';
 import type { z } from 'zod';
 import type { JevBrowser } from './browser.js';
@@ -6,7 +7,7 @@ import { publicError } from './errors.js';
 
 /** The caller owns the borrowed core, or its lazy factory's lifetime. */
 export function createMcpServer(browser: JevBrowser | (() => Promise<JevBrowser>)): McpServer {
-  const server = new McpServer({ name: 'jev-browser', version: '0.1.0' });
+  const server = new McpServer({ name: 'jev-browser', version });
   for (const name of Object.keys(commandSchemas) as CommandName[]) {
     const inputSchema: z.ZodType = commandSchemas[name];
     const readOnly = commandReadOnly(name);

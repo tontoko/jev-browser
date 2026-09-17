@@ -1,64 +1,78 @@
 #!/usr/bin/env node
-import { parseArgs } from 'node:util';
 import { createInterface } from 'node:readline';
 import { once } from 'node:events';
 import { JevBrowser } from './browser.js';
-import { parseCommand, executeCommand } from './commands.js';
+import { parseCommand, executeCommand, commandSchemas } from './commands.js';
 import { BrowserError, publicError } from './errors.js';
 import { startMcpStdio } from './stdio.js';
+import { openSession, sendSession, listSessions, hasSession } from './sessions.js';
+import { parseCLI, commandFromCLI, positive, readJSON } from './cli-options.js';
+import { version } from './version.js';
+const help = `jev-browser — grounded Jev decisions and native Playwright, one SDK / CLI / MCP core
 
-const help = `jev-browser — one Jev/Playwright core, three interfaces
+  jev-browser open https://example.com --session work
+  jev-browser snapshot --session work
+  jev-browser click REF_OR_SELECTOR --session work
+  jev-browser fill REF_OR_SELECTOR 'literal text' --session work
+  jev-browser act 'Click Save' --session work
+  jev-browser extract 'Read title' --fields '{"title":"string"}' --session work
+  jev-browser assert --args '{"target":"h1","property":"text","expected":"Saved"}' --session work
+  jev-browser close --session work
+  jev-browser sessions                  List sessions for this working directory
+  jev-browser session                   JSONL stdin commands, one browser
+  jev-browser mcp                       Official MCP stdio server
 
-  jev-browser snapshot --url https://example.com
-  jev-browser act "Click Save" --url https://example.com
-  jev-browser extract "Read the title" --url https://example.com --fields '{"title":"string"}'
-  jev-browser session                    JSONL commands; keeps one browser alive
-  jev-browser mcp                        official MCP stdio server
+All native commands accept --args JSON. 'call COMMAND --args JSON' is equivalent.
+Aliases: open, fill, press, select, uncheck, back, forward, upload, screenshot-file.
+Commands: ${Object.keys(commandSchemas).join(', ')}
 
-Commands: goto, snapshot, observe, act, extract, run, screenshot, session, mcp
-Options: --url URL  --scope CSS  --values JSON  --fields JSON  --plan-id ID
-         --max-steps N  --timeout-ms N  --model NAME  --headed  --help  --version
+Options:
+  --session NAME / -s NAME    Persistent session; open defaults to 'default'
+  --url URL                  One-shot initial URL (fresh browser without --session)
+  --args JSON                Exact command arguments; '-' reads JSON from stdin
+  --values JSON              Named AI input bindings (literal values stay local)
+  --fields JSON              Scalar extraction fields
+  --schema JSON              JSON Schema for nested objects / arrays
+  --records-scope CSS        Repeated record roots for array extraction
+  --scope CSS  --frame N     Bound observation or select a native frame
+  --plan-id ID  --max-steps N  --timeout-ms N
+  --max-elements N  --max-texts N  --max-candidates N
+  --browser chromium|firefox|webkit  --headed
+  --cdp-endpoint URL  --ws-endpoint URL  --user-data-dir DIR
+  --storage-state FILE  --output-dir DIR  --file-root DIR (repeatable)
+  --allow-evaluate           Enable trusted page JS; never Node code execution
+  --model NAME  --idle-timeout-ms N  --help  --version
 
-Session input example: {"id":1,"command":"act","instruction":"Fill the email","values":{"email":"test@example.com"}}
-All commands return JSON. Session returns one JSON object per line, preserving id.
-One-shot invocations use fresh browsers: use session/MCP/SDK to keep state.
-Input values must be explicit named bindings. Set JEV_API_KEY (or TYPESAFE_API_KEY).
-Exit status: 0 command succeeded, 1 error, 2 run stopped or completion unverified.
-No generated JavaScript, no automatic mutation retries, no deterministic pass from an AI opinion.
+Native operations, snapshots and assertions need no API key. AI operations require
+JEV_API_KEY (or TYPESAFE_API_KEY). Sessions are local to the current directory.
+Exit codes: 0 succeeded, 1 error, 2 stopped/unverified run or pending dialog.
+Mutation failures are never automatically retried. Input values may appear on the page.
 `;
 async function write(value: unknown): Promise<void> {
   if (!process.stdout.write(`${JSON.stringify(value)}\n`)) await once(process.stdout, 'drain');
 }
-function readJSON(value: string, name: string): unknown {
-  try { return JSON.parse(value); } catch { throw new BrowserError('INVALID_ARGUMENT', `${name} must be valid JSON.`); }
-}
 async function main(): Promise<void> {
-  const { values, positionals } = parseArgs({ allowPositionals: true, options: {
-    help: { type: 'boolean', short: 'h' }, version: { type: 'boolean' }, headed: { type: 'boolean' },
-    url: { type: 'string' }, scope: { type: 'string' }, values: { type: 'string' }, fields: { type: 'string' },
-    'plan-id': { type: 'string' }, 'max-steps': { type: 'string' }, 'timeout-ms': { type: 'string' }, model: { type: 'string' },
-  } });
-  if (values.version) { process.stdout.write('0.1.0\n'); return; }
+  const { values, positionals, options } = parseCLI();
+  if (values.version) { process.stdout.write(`${version}\n`); return; }
   if (values.help || !positionals.length) { process.stdout.write(help); return; }
-  const [name, ...words] = positionals;
-  const options = { headless: !values.headed, timeoutMs: values['timeout-ms'] ? Number(values['timeout-ms']) : undefined, model: values.model };
+  let [name, ...words] = positionals;
   if (name === 'mcp') { startMcpStdio(options); return; }
-  let request;
-  if (name !== 'session') {
-    request = parseCommand({ command: name,
-      ...(name === 'goto' ? { url: words.join(' ') || values.url } : words.length ? { instruction: words.join(' ') } : {}),
-      ...(values.scope ? { scope: values.scope } : {}),
-      ...(values.values ? { values: readJSON(values.values, '--values') } : {}),
-      ...(values.fields ? { fields: readJSON(values.fields, '--fields') } : {}),
-      ...(values['plan-id'] ? { planId: values['plan-id'] } : {}),
-      ...(values['max-steps'] ? { maxSteps: Number(values['max-steps']) } : {}),
-    });
+  if (name === 'sessions') { await write({ ok: true, result: await listSessions() }); return; }
+  if (name === 'open') {
+    const result = await openSession(values.session ?? 'default', options, words[0] ?? values.url, positive(values['idle-timeout-ms'], '--idle-timeout-ms'));
+    await write({ ok: true, result }); return;
   }
-  const browser = await JevBrowser.launch(options);
-  const interrupt = () => { void browser.close().finally(() => process.exit(130)); };
+  if (name === 'call') { name = words.shift(); if (!name) throw new BrowserError('INVALID_ARGUMENT', 'call requires a command name.'); }
+  const request = name === 'session' ? undefined : commandFromCLI(name!, words, values);
+  const session = values.session ?? (name === 'close' || !values.url && await hasSession('default') ? 'default' : undefined);
+  const abort = new AbortController();
+  const interrupt = () => { abort.abort(); process.exitCode = 130; };
   process.once('SIGINT', interrupt); process.once('SIGTERM', interrupt);
+  const browser = session ? undefined : await JevBrowser.launch(options);
+  const signal = AbortSignal.any([abort.signal, AbortSignal.timeout(options.timeoutMs ?? 300_000)]);
+  const execute = (request: ReturnType<typeof parseCommand>) => session ? sendSession(session, request, signal) : executeCommand(browser!, request, signal);
   try {
-    if (values.url && name !== 'goto') await browser.goto(values.url);
+    if (values.url && !['goto', 'navigate'].includes(name!)) await execute(parseCommand({ command: 'goto', url: values.url }));
     if (name === 'session') {
       const lines = createInterface({ input: process.stdin, crlfDelay: Infinity });
       for await (const line of lines) {
@@ -66,23 +80,17 @@ async function main(): Promise<void> {
         let id: unknown;
         try {
           const raw = readJSON(line, 'Session command');
-          if (typeof raw !== 'object' || raw === null) throw new BrowserError('INVALID_ARGUMENT', 'Session commands must be JSON objects.');
+          if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) throw new BrowserError('INVALID_ARGUMENT', 'Session command must be an object.');
           const { id: requestId, ...input } = raw as Record<string, unknown>; id = requestId;
-          const result = await executeCommand(browser, parseCommand(input));
-          await write({ ...(id !== undefined ? { id } : {}), ok: true, result });
-        } catch (error) {
-          process.exitCode = 1;
-          await write({ ...(id !== undefined ? { id } : {}), ok: false, error: publicError(error) });
-        }
+          await write({ ...(id !== undefined ? { id } : {}), ok: true, result: await execute(parseCommand(input)) });
+        } catch (error) { process.exitCode = 1; await write({ ...(id !== undefined ? { id } : {}), ok: false, error: publicError(error) }); }
       }
     } else {
-      const result = await executeCommand(browser, request!);
-      await write({ ok: true, result });
-      if ('status' in result && ['stopped', 'unverified'].includes(String(result.status))) process.exitCode = 2;
+      const result = await execute(request!); await write({ ok: true, result });
+      if ('status' in result && ['stopped', 'unverified', 'dialog'].includes(String(result.status))) process.exitCode = 2;
     }
   } finally {
-    process.removeListener('SIGINT', interrupt); process.removeListener('SIGTERM', interrupt);
-    await browser.close();
+    process.off('SIGINT', interrupt); process.off('SIGTERM', interrupt); await browser?.close();
   }
 }
 main().catch(async error => { process.exitCode = 1; await write({ ok: false, error: publicError(error) }); });

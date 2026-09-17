@@ -1,3 +1,3 @@
 #!/usr/bin/env node
-import { startMcpStdio } from './stdio.js';
-startMcpStdio();
+process.argv.splice(2, 0, 'mcp');
+await import('./cli.js');
