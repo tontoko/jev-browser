@@ -1,7 +1,7 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { JevBrowser } from '../dist/index.js';
-import { fixtureBrowser, select } from './helpers.mjs';
+import { fixtureBrowser, select, engine } from './helpers.mjs';
 let browser;
 before(async () => { browser = await fixtureBrowser(); });
 after(async () => { await browser?.close(); });
@@ -30,7 +30,7 @@ test('explicit named bindings take precedence and remain withheld from the provi
  assert.ok(!decider.requests[0].state.inputs.some(i => i.key === 'quoted_0'));
 });
 test('agent execute shares the same bounded loop and deterministic completion', async t => {
- const { core, page } = await fixture(t, `<button onclick="document.body.dataset.saved='yes'">Save</button>`, select(c => c.kind === 'click'));
+ const { core, page } = await fixture(t, `<button onclick="document.body.dataset.saved='yes'">Save</button>`, engine((q,r,n) => n.startsWith('effect_') ? 'commit' : c => c?.kind === 'click'));
  const result = await core.agent({ maxSteps: 2, until: p => p.evaluate(() => document.body.dataset.saved === 'yes') }).execute({ instruction: 'Save the page' });
  assert.equal(result.status, 'complete'); assert.equal(result.reason, 'verified'); assert.equal(result.steps.length, 1);
 });

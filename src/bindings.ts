@@ -41,22 +41,25 @@ export const inputMetadata = (inputs: InputBinding[]) => inputs.map(input => ({
   available: true, applied: input.applied,
 }));
 
-/** Known literal echoes are filtered at the shared model/result boundary, not by a second model. */
+/** Redact known value echoes, never protocol identifiers or generated replacement tokens. */
 export function privateFilter(inputs: InputBinding[]): <T>(data: T) => T {
-  const secrets = inputs.flatMap(input => (Array.isArray(input.value) ? input.value : [input.value])
-    .filter((value): value is string => typeof value === 'string' && value.length > 0)
-    .map(value => ({ value, replacement: `[input:${input.path}]` }))).sort((a,b) => b.value.length - a.value.length);
+  const replacements = new Map<string,string>();
+  for (const input of inputs) for (const value of Array.isArray(input.value) ? input.value : [input.value])
+    if (typeof value === 'string' && value && !replacements.has(value)) replacements.set(value, `[input:${input.path}]`);
+  const publicTokens = new Set(inputs.flatMap(input => [input.path, `[input:${input.path}]`]));
+  const escape = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const alternatives = [...publicTokens, ...[...replacements.keys()].filter(value => value.length >= 3)].sort((a,b) => b.length-a.length);
+  const pattern = alternatives.length ? new RegExp(alternatives.map(escape).join('|'), 'g') : undefined;
+  const identifiers = new Set(['id','snapshotId','recordId','parentId','sourceId','control','path','valueKey','fieldName','formId','kind','status','reason','role','tag','inputType','type','key','direction','source','basis','choice','model']);
   function walk(value: unknown): unknown {
     if (typeof value === 'string') {
-      let text=value;
-      for (const secret of secrets) {
-        if (text === secret.value) return secret.replacement;
-        if (secret.value.length >= 3) text = text.split(secret.value).join(secret.replacement);
-      }
-      return text;
+      const exact = replacements.get(value);
+      if (exact) return exact;
+      return pattern ? value.replace(pattern, match => publicTokens.has(match) ? match : replacements.get(match)!) : value;
     }
     if (Array.isArray(value)) return value.map(walk);
-    if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, child]) => [key,walk(child)]));
+    if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, child]) =>
+      [key, identifiers.has(key) || key === 'label' && Object.hasOwn(value,'path') ? child : walk(child)]));
     return value;
   }
   return <T>(data: T) => walk(data) as T;

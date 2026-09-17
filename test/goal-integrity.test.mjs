@@ -27,14 +27,14 @@ test('goal integrity: input form and commit form must agree before any writes',a
 test('goal integrity: unrelated required search controls do not block the correct form',async t=>{
  const {core,page,attempts}=await fixture(t,[email]);
  await page.evaluate(()=>{const form=document.createElement('form');form.innerHTML='<label>Search<input name="search" required></label>';document.body.prepend(form);});
- const result=await core.run('Add and Save email',{values:{email:'valid@example.invalid'},settleTimeoutMs:80});
+ const result=await core.run('Add and Save email',{values:{email:'valid@example.invalid'}});
  assert.equal(result.status,'complete');assert.equal(attempts.length,1);assert.equal(await page.locator('[name=search]').inputValue(),'');
 });
 test('goal integrity: a later input resetting an earlier input is repaired before saving',async t=>{
  const {core,page,records,attempts}=await fixture(t,[email,{path:'/name',label:'Name'}]);
  await page.locator('#add').click();await page.locator('form').waitFor();
  await page.locator('[name="/name"]').evaluate(el=>el.addEventListener('input',()=>{document.querySelector('[name="/email"]').value='';},{once:true}));
- const result=await core.run('Fill and Save',{values:{email:'reset@example.invalid',name:'Reset Example'},settleTimeoutMs:80});
+ const result=await core.run('Fill and Save',{values:{email:'reset@example.invalid',name:'Reset Example'}});
  assert.equal(result.status,'complete',JSON.stringify({reason:result.reason,inputs:result.inputs,steps:result.steps.map(s=>s.plan.action.kind)}));assert.equal(attempts.length,1);assert.equal(records[0]['/email'],'reset@example.invalid');
 });
 test('goal integrity: updated select options are observed again rather than using an old index',async t=>{
@@ -47,11 +47,11 @@ test('goal integrity: updated select options are observed again rather than usin
 test('goal integrity: a task constraint can disable a prechecked unbound notification',async t=>{
  const base=formEngine();const decider={async decide(req,options){const r=await base.decide(req,options);if(req.questions.action){const off=Object.entries(req.questions.action.criteria).find(([,c])=>c?.kind==='uncheck');if(off)r.answers.action.choice=off[0];}return r;}};
  const {core,records,attempts}=await fixture(t,[email,{path:'/notify',label:'Send notification',type:'checkbox',checked:true,required:false}],{engine:decider});
- const result=await core.run('Add email, disable notification, and Save without sending a notification',{values:{email:'no-notify@example.invalid'},settleTimeoutMs:80});
+ const result=await core.run('Add email, disable notification, and Save without sending a notification',{values:{email:'no-notify@example.invalid'}});
  assert.equal(result.status,'complete');assert.equal(attempts.length,1);assert.equal(records[0]['/notify'],undefined);
 });
 test('goal integrity: a declarative assertion verifies a run without named input values',async t=>{
  const page=await browser.newPage();await page.setContent('<button onclick="this.remove();document.querySelector(\'p\').textContent=\'Saved\'">Save</button><p role="status">Pending</p>');
- const core=new JevBrowser({page,engine:engine(q=>Object.entries(q.criteria).find(([,c])=>c?.kind==='click')?.[0]??'__done__')});t.after(async()=>{await core.close();await page.close();});
+ const core=new JevBrowser({page,engine:engine((q,r,n)=>n.startsWith('effect_')?'commit':Object.entries(q.criteria).find(([,c])=>c?.kind==='click')?.[0]??'__done__')});t.after(async()=>{await core.close();await page.close();});
  const result=await core.run('Save',{expect:{target:'[role=status]',property:'text',expected:'Saved'},settleTimeoutMs:80});assert.equal(result.status,'complete');assert.equal(result.verification.source,'caller');
 });
