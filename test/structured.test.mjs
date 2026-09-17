@@ -13,7 +13,7 @@ async function fixture(t, html, decider) {
 }
 function recordsEngine(only) {
   return engine((q, req) => {
-    if ('include' in q.criteria) return only && !q.instructions.includes(only) ? 'exclude' : 'include';
+    if ('include' in q.criteria) return only && !q.criteria.include.record.includes(only) ? 'exclude' : 'include';
     const kind = q.instructions.includes('"amount"') ? 'number' : 'string';
     return c => c && typeof c.value === kind && (kind === 'number' || ['Alice', 'Bob', 'Invoice A'].includes(c.value));
   });

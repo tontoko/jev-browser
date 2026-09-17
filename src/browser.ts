@@ -6,10 +6,10 @@ import { JevDecisionEngine, type DecisionEngine, type DecisionRequest } from './
 import { BrowserError } from './errors.js';
 import { capture, publicURL, verifyTarget, type Captured } from './observation.js';
 import { actionCandidates, actionDescription } from './actions.js';
-import { extractGrounded } from './extract.js';
+import { extractStructured } from './structured.js';
 import { NativeBrowser } from './native.js';
 import { parseNative, nativeReadOnly, type NativeCommand } from './native-schemas.js';
-import type { ActionPlan, ActOptions, ActResult, BrowserOptions, BrowserLaunchOptions, ExtractResult, OperationOptions, RunOptions, RunResult, Snapshot } from './types.js';
+import type { ActionPlan, ActOptions, ActResult, BrowserOptions, BrowserLaunchOptions, ExtractResult, ExtractOptions, OperationOptions, RunOptions, RunResult, Snapshot } from './types.js';
 
 interface Operation { signal: AbortSignal; deadline: number }
 interface Pending { plan: ActionPlan; captured: Captured; values: Record<string, string> }
@@ -165,11 +165,11 @@ export class JevBrowser {
       return this.executePlan(plan.id, operation);
     });
   }
-  async extract<S extends Record<string, z.ZodType>>(instruction: string, schema: z.ZodObject<S>, options: OperationOptions = {}): Promise<ExtractResult<z.output<z.ZodObject<S>>>> {
+  async extract<S extends z.ZodType>(instruction: string, schema: S, options: ExtractOptions = {}): Promise<ExtractResult<z.output<S>>> {
     return this.exclusive(options, async operation => {
       await this.invalidate(); operation.signal.throwIfAborted();
-      const observed = await capture(this.page, { ...this.limits, scope: options.scope });
-      try { return await extractGrounded(observed.data, instruction, schema, () => this.engine(), operation.signal, this.limits.maxCandidates); }
+      const observed = await capture(this.page, { ...this.limits, scope: options.scope, recordsScope: options.recordsScope });
+      try { return await extractStructured(observed.data, instruction, schema, () => this.engine(), operation.signal, this.limits.maxCandidates); }
       finally { await observed.dispose(); }
     });
   }

@@ -98,9 +98,9 @@ test('missing required extraction fields fail, nullable fields become null',asyn
   await assert.rejects(core.extract('値',z.object({amount:z.number()})),{code:'EXTRACTION_MISSING'});
   const result=await core.extract('値',z.object({amount:z.number().nullable()}));assert.equal(result.data.amount,null);
 });
-test('unsupported nested extraction schemas are refused explicitly',async t=>{
+test('unsupported date extraction schemas are refused explicitly',async t=>{
   const {core}=await fixture(t,'<p>A</p>');
-  await assert.rejects(core.extract('値',z.object({person:z.object({name:z.string()})})),{code:'UNSUPPORTED_SCHEMA'});
+  await assert.rejects(core.extract('値',z.object({date:z.date()})),{code:'UNSUPPORTED_SCHEMA'});
 });
 test('an invented extraction source cannot return fabricated data',async t=>{
   const {core}=await fixture(t,'<p>A</p>',engine(()=> 'invented'));

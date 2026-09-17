@@ -19,6 +19,7 @@ export interface ElementInfo {
   options?: { index: number; label: string; value: string; selected: boolean; disabled: boolean }[];
 }
 export interface TextEvidence {
+  attribute?: string;
   role: string;
   id: string;
   frame: number;
@@ -26,7 +27,9 @@ export interface TextEvidence {
   context: string;
   value?: boolean;
 }
+export interface RecordEvidence { id: string; frame: number; context: string; textIds: string[]; parentId?: string }
 export interface Snapshot {
+  records?: RecordEvidence[];
   id: string;
   url: string;
   title: string;
@@ -97,4 +100,5 @@ export interface ExtractResult<T> {
   evidence: Record<string, TextEvidence & { copiedValue: string | number | boolean }>;
   snapshotId: string;
   decision?: Omit<DecisionResult, 'answers'>;
+  decisions?: Omit<DecisionResult, 'answers'>[];
 }

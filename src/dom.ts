@@ -57,10 +57,11 @@ export function describe(el: Element) {
   return { info, signature, connected: el.isConnected, visible: visible(el) };
 }
 const actionableRoles = new Set(['button','link','textbox','searchbox','checkbox','radio','switch','combobox','listbox','menuitem','menuitemcheckbox','menuitemradio','tab','option']);
-export function observe(options: { maxElements: number; maxTexts: number }, scopedRoots?: Element[]) {
+export function observe(options: { maxElements: number; maxTexts: number }, scopedRoots?: Element[], explicitRecords?: Element[]) {
   const nodes: Element[] = [];
   const elements: ReturnType<typeof describe>[] = [];
-  const texts: { text: string; context: string; role: string; value?: boolean }[] = [];
+  const texts: { text: string; context: string; role: string; value?: boolean; attribute?: string }[] = [];
+  const textNodes: Element[] = [];
   let truncatedElements = false, truncatedTexts = false, scanned = 0;
   const roots: (Element | Document | ShadowRoot)[] = scopedRoots ? [...scopedRoots] : [document];
   const visited = new Set<Element>();
@@ -86,16 +87,25 @@ export function observe(options: { maxElements: number; maxTexts: number }, scop
         const text = normalize((el as HTMLElement).innerText ?? el.textContent);
         if ((hasOwnText || semanticText) && text && text.length <= 700 && !el.querySelector('input,textarea,select,[contenteditable="true"]')) {
           if (texts.length >= options.maxTexts) truncatedTexts = true;
-          else texts.push({ text, context: context(el), role });
+          else { textNodes.push(el); texts.push({ text, context: context(el), role }); }
         }
+      }
+      if (el instanceof HTMLAnchorElement && el.hasAttribute('href')) {
+        if (texts.length >= options.maxTexts) truncatedTexts = true;
+        else { textNodes.push(el); texts.push({ text: el.href, context: `${computeAccessibleName(el)} ${context(el)}`, role: 'link', attribute: 'href' }); }
       }
       if (['checkbox','radio','switch'].includes(role)) {
         const d = describe(el);
         if (texts.length >= options.maxTexts) truncatedTexts = true;
-        else texts.push({ text: d.info.name, context: d.info.context, role, ...(typeof d.info.checked === 'boolean' ? { value: d.info.checked } : {}) });
+        else { textNodes.push(el); texts.push({ text: d.info.name, context: d.info.context, role, ...(typeof d.info.checked === 'boolean' ? { value: d.info.checked } : {}) }); }
       }
     }
     if (scanned > 6000) break;
   }
-  return { nodes, elements, texts, truncatedElements, truncatedTexts };
+  const recordNodes = (explicitRecords ?? [...visited].filter(el => el.matches('tbody tr,[role="row"],li,[role="listitem"],article'))).filter(el => visited.has(el) && visible(el));
+  const records = recordNodes.map((el, index) => {
+    const parent = recordNodes.findIndex(other => other !== el && other.contains(el) && !recordNodes.some(between => between !== other && between !== el && other.contains(between) && between.contains(el)));
+    return { index, parent: parent < 0 ? undefined : parent, context: normalize((el as HTMLElement).innerText).slice(0, 1000), texts: textNodes.flatMap((node, i) => el === node || el.contains(node) ? [i] : []) };
+  });
+  return { nodes, elements, texts, records, truncatedElements, truncatedTexts };
 }
