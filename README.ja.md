@@ -11,7 +11,7 @@ Playwright MCP／CLIのブラウザー操作と、Stagehand型の自然言語操
 Node.js 22.15以上。[GitHub Releases](https://github.com/tontoko/jev-browser/releases)のtarballをプロジェクトへインストールします。
 
 ```sh
-npm install --save-dev ./tontoko-jev-browser-0.2.0.tgz
+npm install --save-dev ./tontoko-jev-browser-0.3.0.tgz
 npx playwright install chromium
 npx jev-browser open https://example.com --session work
 npx jev-browser snapshot --session work
@@ -19,6 +19,25 @@ npx jev-browser close --session work
 ```
 
 `open`で作成した名前付きセッションは、別々のCLI呼び出しでもブラウザー状態を維持します。全コマンドは`--args JSON`で呼び出せます。MCPでは同じ操作を`browser_click`、`browser_type`、`browser_assert`などのツールとして公開します。
+
+## 一度の依頼で、入力から保存・結果確認まで
+
+```ts
+const result = await browser.run(
+  '生徒の新規追加フォームを開き、渡した情報を入力して保存する。招待メールは送らない。',
+  { values: {
+      student: { name: '検証用の生徒', email: 'student@example.invalid' },
+      guardian: { name: '検証用の保護者', email: 'guardian@example.invalid' },
+      course: 'ヴィオラ・ダ・ガンバ',
+  } },
+);
+```
+
+フォームの入口、項目の対応、入力順序、画面変化の待機、通常の保存確認をコアが担当します。同じ画面から答えられる質問はJevへまとめ、書き込みはPlaywrightで直列に実行します。CLIの`run`とMCPの`browser_run`にも、同じ`instruction`と入れ子の`values`を渡せます。
+
+保存後の新しいレコードを特定し、入力値と表示値をローカルで照合できた場合は`complete / ui-readback`です。`verification.readback`と`unobserved`で確認範囲を区別します。これは画面上の確認で、全フィールドのDB永続化を保証するものではありません。厳密なテストには共通の`expect`、SDKの`until`、通常のPlaywright assertionを加えられます。
+
+自分で立てる合成HTTPアプリに対して、一度の依頼と実際の保存内容の独立検証まで行う`examples/goal.mjs`を同梱しています。APIキーを環境に設定し、`npm run example:goal`で実行できます。
 
 ## 自然言語とSDK
 
@@ -39,7 +58,7 @@ await expect(page.getByText('保存済み', { exact: true })).toBeVisible();
 
 Jevは観測済みの候補から操作を選び、Playwrightが実行します。存在しないセレクターやJavaScriptをモデルに生成させません。ただし、実在する候補の選び間違いまでなくなるわけではありません。
 
-`agent().execute()`／`run()`では、呼び出し元の読取専用`until`が`true`を返した場合だけ検証済み完了にします。モデルが完了と判断しただけなら`unverified`です。操作失敗時の自動再実行はありません。
+`run()`は入力の実値、新しい保存結果、呼び出し元の追加条件を区別して結果に残します。モデルが完了と判断しただけなら`unverified`です。保存要求の結果が不明な場合は再送せず、部分実行記録を返します。対応範囲・予算・追加権限が必要な場面は[goal runtime](docs/goal-runtime.md)に記載しています。
 
 ページ本文・リンク・表示された入力値などは機密情報を含む可能性があります。認証済みブラウザーの接続やファイルアクセスを無制限に第三者へ公開しないでください。[SECURITY.md](SECURITY.md)に権限とデータ送信範囲を記載しています。
 

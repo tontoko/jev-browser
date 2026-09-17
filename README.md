@@ -13,7 +13,7 @@ Native operations and assertions run **without an AI key**. Natural-language ope
 Node.js **22.15 or newer**. Download the package from [GitHub Releases](https://github.com/tontoko/jev-browser/releases), then install it into your project:
 
 ```sh
-npm install --save-dev ./tontoko-jev-browser-0.2.0.tgz
+npm install --save-dev ./tontoko-jev-browser-0.3.0.tgz
 npx playwright install chromium
 ```
 
@@ -29,6 +29,40 @@ node dist/cli.js --help
 ```
 
 The release tarball includes compiled JavaScript, declarations, the DOM bundle, documentation, and examples. There is no postinstall browser download and no requirement for a global browser daemon. The package is distributed on GitHub Releases; a registry publication is not implied.
+
+## One request, a complete creation task
+
+```ts
+const result = await browser.run(
+  'Open the new student form, fill all supplied details, and Save. Do not send an invitation.',
+  { values: {
+      student: { name: 'Example Student', email: 'student@example.invalid' },
+      guardian: { name: 'Example Guardian', email: 'guardian@example.invalid' },
+      course: 'Viola da gamba',
+  } },
+);
+```
+
+`run` owns form discovery, parallel field-binding questions, serial native inputs, relevant waits, onward steps and ordinary save confirmations. It checks current input values before a commit, then looks for a new result record and compares its values locally. It does not call the model after every field. Existing native tools and single-action `act` remain available.
+
+Read `result.status`, `verification` and `inputs`: `complete / ui-readback` identifies UI evidence, not a database durability guarantee. `unobserved` explicitly lists fields not shown after saving. A model's done opinion alone is never completion. Add `expect` assertions or an SDK `until` predicate for application-specific acceptance criteria. A failed/uncertain save is not replayed.
+
+Try the self-contained local HTTP example with synthetic records:
+
+```sh
+JEV_API_KEY=... npm run example:goal
+# Prefer your secret store or Node --env-file over a literal key in shell history.
+```
+
+CLI and MCP use the same goal contract; there is no separate agent implementation:
+
+```sh
+npx jev-browser run --session work --args - <<'JSON'
+{"instruction":"Add a new student, fill all supplied fields and Save.","values":{"student":{"name":"Example Student","email":"student@example.invalid"}}}
+JSON
+```
+
+For MCP, send the same JSON to `browser_run`. See [goal execution and boundaries](docs/goal-runtime.md).
 
 ## CLI: persistent browser, independent commands
 
@@ -137,7 +171,7 @@ const result = await browser.agent({
 expect(result.status).toBe('complete');
 ```
 
-`agent().execute()` delegates to `run()`. Only a read-only `until` returning literal `true` produces `complete / verified`. It should promptly return `false` when work remains, rather than wait for an action that has not run yet. Model-only completion is `unverified`; a dialog, missing target or step limit stops the loop. Mutation failures are never automatically retried.
+`agent().execute()` delegates to `run()`. An SDK `until` returning literal `true`, or a supplied `expect` assertion, produces caller-verified completion once requested inputs are covered. It should promptly return `false` while work remains. Without caller checks, a fresh matching result record can produce `complete / ui-readback` with explicit evidence coverage. Model-only completion stays `unverified`. Prompt/ambiguous dialogs, missing inputs and budgets stop explicitly. Mutation failures are never automatically retried; see `error.partial` before deciding what to do next.
 
 ## Scope and migration
 

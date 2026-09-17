@@ -223,6 +223,12 @@ Input literals are available locally, not missing. Choose __none__ only if no ob
       }
       if(kind==='commit'){
         if(inputs.some(input=>!input.applied)){if(await wait(observed))continue;return finish('stopped','missing-input');}
+        if(authority.form && await nativeFormBusy(authority.form)){
+          const current=await capture();
+          if(await wait(current)){lastRequest='';continue;}
+          return finish('stopped','validation');
+        }
+        for(const input of inputs.filter(input=>input.ref)) if(!(await readControl(input.ref!)).valid)return finish('stopped','validation');
         // Ask about only the remaining required fields, rather than doubling every binding question.
         const unbound: { target: typeof planned[number]['target']; ref: typeof planned[number]['ref'] }[] = [];
         if (authority.form) for (const target of observed.data.elements.filter(target => target.required && target.fillable && !target.disabled && !target.readOnly)) {
