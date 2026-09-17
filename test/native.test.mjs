@@ -57,7 +57,10 @@ test('pending native dialogs can be answered after a click',async t=>{
 test('uploads are bounded to configured roots',async t=>{
  const {core,page}=await fixture(t,'<input type=file>');const path=join(root,'upload.txt');await writeFile(path,'upload content');
  await core.native({command:'file_upload',target:'input',paths:[path]});assert.equal(await page.locator('input').evaluate(e=>e.files[0].name),'upload.txt');
- await assert.rejects(core.native({command:'file_upload',target:'input',paths:['/etc/passwd']}),{code:'FILE_ACCESS_DENIED'});
+ const outside=await mkdtemp(join(tmpdir(),'jev-outside-'));t.after(()=>rm(outside,{recursive:true,force:true}));
+ const unshared=join(outside,'unshared.txt');await writeFile(unshared,'not granted');
+ await assert.rejects(core.native({command:'file_upload',target:'input',paths:[unshared]}),{code:'FILE_ACCESS_DENIED'});
+ assert.equal(await page.locator('input').evaluate(e=>e.files[0].name),'upload.txt');
 });
 test('output paths cannot escape the artifact directory',async t=>{
  const {core}=await fixture(t,'<p>Screenshot</p>');await assert.rejects(core.native({command:'take_screenshot',filename:'../escape.png'}),{code:'FILE_ACCESS_DENIED'});
@@ -65,7 +68,9 @@ test('output paths cannot escape the artifact directory',async t=>{
 });
 test('downloads use explicitly selected artifact paths',async t=>{
  const {core,page}=await fixture(t);await core.goto(server.url);await page.evaluate(()=>{const a=document.createElement('a');a.href='/download';a.textContent='Download';document.body.append(a);});
- await core.native({command:'click',target:'text=Download'});await page.waitForTimeout(60);
+ // A click completing is not the download event. Register before the action.
+ const downloaded=page.waitForEvent('download');
+ await core.native({command:'click',target:'text=Download'});await downloaded;
  const list=await core.native({command:'downloads',action:'list'});assert.equal(list.downloads.length,1);
  const saved=await core.native({command:'downloads',action:'save',index:0,filename:'received.txt'});assert.equal(await readFile(saved.path,'utf8'),'downloaded');
 });

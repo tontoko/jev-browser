@@ -22,13 +22,14 @@ test('missing later form selectors do not leave the first field partially filled
  assert.equal(await core.page.locator('#first').inputValue(), '');
 });
 test('idle time between JSONL commands does not consume the next command timeout', async () => {
- const child = spawn(process.execPath, [fileURLToPath(new URL('../dist/cli.js', import.meta.url)), 'session', '--timeout-ms', '500'], { env: { ...process.env, JEV_API_KEY: '', TYPESAFE_API_KEY: '' }, stdio: ['pipe', 'pipe', 'pipe'] });
+ // The idle gap exceeds the operation budget; cold Firefox startup is not a latency assertion.
+ const child = spawn(process.execPath, [fileURLToPath(new URL('../dist/cli.js', import.meta.url)), 'session', '--timeout-ms', '5000'], { env: { ...process.env, JEV_API_KEY: '', TYPESAFE_API_KEY: '' }, stdio: ['pipe', 'pipe', 'pipe'] });
  let stdout = '', stderr = '', secondSent = false;
  const result = await new Promise((resolve, reject) => {
-   const watchdog = setTimeout(() => { child.kill('SIGKILL'); reject(new Error('JSONL process did not finish')); }, 12000);
+   const watchdog = setTimeout(() => { child.kill('SIGKILL'); reject(new Error('JSONL process did not finish')); }, 30000);
    child.stdout.on('data', chunk => {
      stdout += chunk;
-     if (!secondSent && stdout.includes('\n')) { secondSent = true; setTimeout(() => child.stdin.end('{"id":2,"command":"snapshot"}\n'), 700); }
+     if (!secondSent && stdout.includes('\n')) { secondSent = true; setTimeout(() => child.stdin.end('{"id":2,"command":"snapshot"}\n'), 5500); }
    });
    child.stderr.on('data', c => stderr += c); child.once('error', reject);
    child.once('close', code => { clearTimeout(watchdog); resolve({ code, stdout, stderr }); });
