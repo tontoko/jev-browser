@@ -30,7 +30,7 @@ export function flattenInputs(values: Record<string, RunValue> = {}): InputBindi
     for (const [key, child] of Object.entries(value)) visit(child, [...path, key]);
     seen.delete(value);
   }
-  if (!values || typeof values !== 'object' || Array.isArray(values)) throw new BrowserError('UNSUPPORTED_INPUT', 'Run values must be a JSON object.');
+  if (!values || typeof values !== 'object' || Array.isArray(values) || ![Object.prototype, null].includes(Object.getPrototypeOf(values))) throw new BrowserError('UNSUPPORTED_INPUT', 'Run values must be a plain JSON object.');
   for (const [key, value] of Object.entries(values)) visit(value, [key]);
   return inputs;
 }
