@@ -101,7 +101,7 @@ export class JevBrowser {
     const parsed = parseNative(command);
     return this.exclusive(options, async operation => {
       const context = { signal: operation.signal, timeoutMs: this.remaining(operation) };
-      if (this.options.allowCommand && (await this.options.allowCommand(structuredClone(command), context)) !== true)
+      if (this.options.allowCommand && (await this.options.allowCommand(structuredClone(parsed), context)) !== true)
         throw new BrowserError('ACTION_DENIED', 'The caller policy denied this native operation.');
       operation.signal.throwIfAborted();
       const mutates = !nativeReadOnly.has(parsed.command) && !(parsed.command === 'tabs' && parsed.action === 'list') && !(parsed.command === 'downloads' && parsed.action === 'list');
@@ -136,11 +136,8 @@ export class JevBrowser {
   }
   async goto(url: string, options: OperationOptions = {}): Promise<{ url: string }> {
     const validated = this.validURL(url);
-    return this.exclusive(options, async operation => {
-      await this.invalidate(); operation.signal.throwIfAborted();
-      await this.page.goto(validated, { waitUntil: 'domcontentloaded', timeout: this.remaining(operation), signal: operation.signal });
-      return { url: publicURL(this.page.url()) };
-    });
+    const result = await this.native({ command: 'navigate', url: validated }, options);
+    return { url: String(result.url) };
   }
   async snapshot(options: OperationOptions = {}): Promise<Snapshot> {
     return this.exclusive(options, async operation => {
