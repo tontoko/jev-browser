@@ -2,7 +2,7 @@ import type { Page } from 'playwright';
 import type { DecisionRequest, DecisionResult } from './decision.js';
 import type { Captured } from './observation.js';
 import { progressChanged } from './dom.js';
-import type { RunVerification, Snapshot } from './types.js';
+import type { RunVerification, Snapshot, TextEvidence } from './types.js';
 import type { InputBinding } from './bindings.js';
 const normalized = (text: string) => text.replace(/\s+/g,' ').trim();
 const hasAnchor = (inputs: InputBinding[]) => inputs.some(input => typeof input.value === 'number' || typeof input.value === 'string' && normalized(input.value).length > 0);
@@ -12,7 +12,8 @@ export function recordCounts(snapshot: Snapshot): Map<string, number> {
   for (const record of snapshot.records ?? []) if (record.readOnly !== false) counts.set(record.context, (counts.get(record.context) ?? 0)+1);
   return counts;
 }
-function sourceMatches(value: InputBinding['value'], text: string): boolean {
+function sourceMatches(value: InputBinding['value'], source: TextEvidence): boolean {
+  const text = source.text;
   if (typeof value === 'boolean') return source.value !== undefined ? source.value === value : (value ? ['true','on'] : ['false','off']).includes(source.text.trim().toLowerCase());
   if (value === null) return false;
   if (Array.isArray(value)) return normalized(value.join(', ')) === normalized(text);
@@ -32,7 +33,7 @@ export async function verifyReadback(
     return true;
   }).map(record => {
     const ids=new Set(record.textIds),sources=snapshot.texts.filter(source=>ids.has(source.id));
-    const matching=inputs.filter(input=>sources.some(source=>sourceMatches(input.value,source.text)));
+    const matching=inputs.filter(input=>sources.some(source=>sourceMatches(input.value,source)));
     const identity=hasAnchor(matching);
     return {record,sources,identity};
   }).filter(candidate=>candidate.identity);
@@ -53,7 +54,7 @@ export async function verifyReadback(
     const choice=result.answers[`read_${index}`]?.choice;
     if(choice==='__none__'){unobserved.push(input.path);continue;}
     const source=sources.find(source=>source.id===choice);
-    if(!source||!sourceMatches(input.value,source.text))return;
+    if(!source||!sourceMatches(input.value,source))return;
     readback.push(input.path);
   }
   const identities=inputs.filter(input=>readback.includes(input.path));
