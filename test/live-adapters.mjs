@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 // Explicit live API tests for both wire adapters; synthetic local pages only.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -36,7 +37,7 @@ test('LIVE CLI: real Jev selects an action and JSONL retains its page result',as
   console.log(JSON.stringify({interface:'cli',model:lines[1].result.plan.decision.model}));
 });
 test('LIVE MCP: official stdio exchange executes through the real Jev API',async t=>{
-  const transport=new StdioClientTransport({command:process.execPath,args:['dist/mcp-stdio.js'],cwd:new URL('..',import.meta.url).pathname,env:childEnvironment(),stderr:'pipe'});
+  const transport=new StdioClientTransport({command:process.execPath,args:['dist/mcp-stdio.js'],cwd:fileURLToPath(new URL('..',import.meta.url)),env:childEnvironment(),stderr:'pipe'});
   const client=new Client({name:'jev-live-mcp',version:'1'});
   t.after(async()=>{await client.close();});
   await client.connect(transport);

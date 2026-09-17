@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -12,7 +13,7 @@ before(async () => {
   service = await httpServer((req, res) => { res.setHeader('Content-Type', 'text/html; charset=utf-8'); res.end(`<h1>Pending</h1><label>Name<input></label><button onclick="document.querySelector('h1').textContent=document.querySelector('input').value">Save</button>`); });
 });
 after(async () => { await service?.close(); await rm(cwd, { recursive: true, force: true }); });
-const cliFile = new URL('../dist/cli.js', import.meta.url).pathname;
+const cliFile = fileURLToPath(new URL('../dist/cli.js', import.meta.url));
 async function cli(args, input = '') {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [cliFile, ...args], { cwd, env: { ...process.env, JEV_API_KEY: '', TYPESAFE_API_KEY: '', JEV_SESSION_DIR: join(cwd, 'sessions') }, stdio: ['pipe', 'pipe', 'pipe'] });

@@ -29,7 +29,7 @@ export function parseCLI(argv = process.argv.slice(2)) {
   try { parsed = parseArgs({ args: argv, allowPositionals: true, options: definitions }); }
   catch { throw new BrowserError('INVALID_ARGUMENT', 'Unknown or invalid CLI option. See --help.'); }
   const { values, positionals } = parsed;
-  const browserName = values.browser ?? 'chromium';
+  const browserName = values.browser ?? process.env.JEV_BROWSER ?? 'chromium';
   if (!['chromium', 'firefox', 'webkit'].includes(browserName)) throw new BrowserError('INVALID_ARGUMENT', 'Browser must be chromium, firefox or webkit.');
   const options: BrowserLaunchOptions = {
     browser: browserName as BrowserLaunchOptions['browser'], headless: !values.headed,

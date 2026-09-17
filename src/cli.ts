@@ -69,8 +69,10 @@ async function main(): Promise<void> {
   const interrupt = () => { abort.abort(); process.exitCode = 130; };
   process.once('SIGINT', interrupt); process.once('SIGTERM', interrupt);
   const browser = session ? undefined : await JevBrowser.launch(options);
-  const signal = AbortSignal.any([abort.signal, AbortSignal.timeout(options.timeoutMs ?? 300_000)]);
-  const execute = (request: ReturnType<typeof parseCommand>) => session ? sendSession(session, request, signal) : executeCommand(browser!, request, signal);
+  const execute = (request: ReturnType<typeof parseCommand>) => {
+    const signal = AbortSignal.any([abort.signal, AbortSignal.timeout(options.timeoutMs ?? 300_000)]);
+    return session ? sendSession(session, request, signal) : executeCommand(browser!, request, signal);
+  };
   try {
     if (values.url && !['goto', 'navigate'].includes(name!)) await execute(parseCommand({ command: 'goto', url: values.url }));
     if (name === 'session') {

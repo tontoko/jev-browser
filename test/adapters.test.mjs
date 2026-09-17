@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
@@ -57,7 +58,7 @@ test('MCP tools call the same borrowed core and enforce input schemas',async t=>
   const invalid=await client.callTool({name:'browser_act',arguments:{}});assert.equal(invalid.isError,true);
 });
 test('MCP stdio binary initializes, navigates and observes using the real protocol',async t=>{
-  const transport=new StdioClientTransport({command:process.execPath,args:['dist/mcp-stdio.js'],cwd:new URL('..',import.meta.url).pathname,
+  const transport=new StdioClientTransport({command:process.execPath,args:['dist/mcp-stdio.js'],cwd:fileURLToPath(new URL('..',import.meta.url)),
     env:{...process.env,JEV_API_KEY:'test-only',JEV_BASE_URL:service.url},stderr:'pipe'});
   const client=new Client({name:'jev-stdio-test',version:'1'});
   t.after(async()=>{await client.close();});

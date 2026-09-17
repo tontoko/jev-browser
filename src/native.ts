@@ -27,7 +27,11 @@ export class NativeBrowser extends BrowserEvents {
       case 'select_option': { const t = await this.target(c); return this.action(() => t.selectOption(c.by === 'label' ? c.values.map(label => ({ label })) : c.values, time)); }
       case 'fill_form': {
         // Resolve all targets first. A missing/expired reference must not partially fill the form.
-        const fields = await Promise.all(c.fields.map(async field => ({ field, target: await this.target(field) })));
+        const fields = await Promise.all(c.fields.map(async field => {
+          const target = await this.target(field);
+          if ('count' in target && await target.count() !== 1) throw new BrowserError('INVALID_ARGUMENT', 'Every form field must resolve to exactly one observed element before filling.');
+          return { field, target };
+        }));
         return this.action(async () => {
           for (const { field, target } of fields) {
             op.signal.throwIfAborted();

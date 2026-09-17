@@ -57,7 +57,9 @@ export class JevBrowser {
   static async launch(options: BrowserLaunchOptions = {}): Promise<JevBrowser> {
     if ([options.userDataDir, options.cdpEndpoint, options.wsEndpoint].filter(Boolean).length > 1)
       throw new BrowserError('CONFIG', 'Choose only one persistent profile, CDP endpoint, or WebSocket endpoint.');
-    const type = { chromium, firefox, webkit }[options.browser ?? 'chromium'];
+    const name = options.browser ?? process.env.JEV_BROWSER ?? 'chromium';
+    if (!['chromium', 'firefox', 'webkit'].includes(name)) throw new BrowserError('CONFIG', 'Browser must be chromium, firefox or webkit.');
+    const type = { chromium, firefox, webkit }[name as 'chromium' | 'firefox' | 'webkit'];
     const contextOptions = { ...options.contextOptions, ...(options.storageState ? { storageState: options.storageState } : {}) };
     if (options.userDataDir) {
       const context = await type.launchPersistentContext(options.userDataDir, { ...contextOptions, headless: options.headless ?? true, ...options.launchOptions });

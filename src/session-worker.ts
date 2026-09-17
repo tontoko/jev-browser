@@ -3,6 +3,7 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { writeFile, rm } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { JevBrowser } from './browser.js';
+import { publicURL } from './observation.js';
 import { executeCommand, parseCommand } from './commands.js';
 import { BrowserError, publicError } from './errors.js';
 import type { BrowserLaunchOptions } from './types.js';
@@ -63,7 +64,7 @@ process.once('message', async (input: Start) => {
     if (!address || typeof address === 'string') throw new Error('Missing local listener');
     await writeFile(join(input.directory, 'session.json'), JSON.stringify({ name: input.name, cwd: resolve(process.cwd()), pid: process.pid, port: address.port, token, createdAt: new Date().toISOString() }), { mode: 0o600, flag: 'wx' });
     touch();
-    process.send?.({ ready: true, url: core.page.url().split(/[?#]/)[0] });
+    process.send?.({ ready: true, url: publicURL(core.page.url()) });
   } catch (error) {
     process.send?.({ error: publicError(error) });
     await close(); process.exitCode = 1;
