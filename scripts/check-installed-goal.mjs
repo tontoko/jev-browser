@@ -2,7 +2,6 @@
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
 import {join} from 'node:path';
-import {pathToFileURL} from 'node:url';
 import {Client} from '@modelcontextprotocol/client';
 import {StdioClientTransport} from '@modelcontextprotocol/client/stdio';
 import {fixtureBrowser,httpServer,apiResult} from '../test/helpers.mjs';
@@ -24,7 +23,6 @@ export async function checkInstalledGoal(pkg,directory,baseEnv){
     });
     cleanup.push(()=>provider.close());
     const env={...baseEnv,JEV_API_KEY:'synthetic-package-fixture',JEV_BASE_URL:provider.url};
-    const {JevBrowser}=await import(pathToFileURL(join(pkg,'dist/index.js')).href);
     function argumentsFor(label){return {instruction:'Open Add, fill all student information and Save one new record.',values:{student:{name:`Package ${label}`,email:`package-${label}@example.invalid`}}};}
     function verify(result,label,index){
       assert.equal(result.status,'complete');assert.equal(result.verification.basis,'ui-readback');
@@ -32,16 +30,23 @@ export async function checkInstalledGoal(pkg,directory,baseEnv){
       assert.deepEqual(app.records[index],{'/student/name':`Package ${label}`,'/student/email':`package-${label}@example.invalid`});
       assert.ok(result.inputs.every(input=>input.applied&&input.readback));
     }
-    const core=new JevBrowser({page:app.page,apiKey:env.JEV_API_KEY,baseURL:provider.url});
-    try{const {instruction,...options}=argumentsFor('sdk');verify(await core.run(instruction,options),'sdk',0);}
-    finally{await core.close();}
-    const cli=await new Promise((resolve,reject)=>{
-      const child=spawn(process.execPath,[join(pkg,'dist/cli.js'),'run','--url',app.page.url(),'--args',JSON.stringify(argumentsFor('cli'))],{cwd:directory,env,stdio:['ignore','pipe','pipe']});
+    function run(args){return new Promise((resolve,reject)=>{
+      const child=spawn(process.execPath,args,{cwd:directory,env,stdio:['ignore','pipe','pipe']});
       let stdout='',stderr='';child.stdout.on('data',data=>stdout+=data);child.stderr.on('data',data=>stderr+=data);
-      const timer=setTimeout(()=>{child.kill('SIGTERM');reject(new Error('Installed goal CLI timed out'));},30000);
+      const timer=setTimeout(()=>{child.kill('SIGTERM');reject(new Error('Installed goal process timed out'));},30000);
       child.once('error',error=>{clearTimeout(timer);reject(error);});
-      child.once('close',code=>{clearTimeout(timer);code===0?resolve(JSON.parse(stdout).result):reject(new Error(`Installed goal CLI failed: ${stdout}\n${stderr}`));});
-    });
+      child.once('close',code=>{clearTimeout(timer);try{if(code!==0)throw new Error(`Installed goal process failed: ${stdout}\n${stderr}`);resolve(JSON.parse(stdout));}catch(error){reject(error);}});
+    });}
+    // A consumer is a separate process: do not load two Playwright Test installations together.
+    const sdk=await run(['--input-type=module','-e',`
+      import {JevBrowser} from '@tontoko/jev-browser';
+      const request=JSON.parse(process.argv[1]);
+      const core=await JevBrowser.launch();
+      try{await core.goto(request.url);console.log(JSON.stringify(await core.run(request.instruction,{values:request.values})));}
+      finally{await core.close();}
+    `,JSON.stringify({url:app.page.url(),...argumentsFor('sdk')})]);
+    verify(sdk,'sdk',0);
+    const cli=(await run([join(pkg,'dist/cli.js'),'run','--url',app.page.url(),'--args',JSON.stringify(argumentsFor('cli'))])).result;
     verify(cli,'cli',1);
     const client=new Client({name:'installed-goal-proof',version:'1'});
     try{
