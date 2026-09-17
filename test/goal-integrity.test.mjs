@@ -35,7 +35,7 @@ test('goal integrity: a later input resetting an earlier input is repaired befor
  await page.locator('#add').click();await page.locator('form').waitFor();
  await page.locator('[name="/name"]').evaluate(el=>el.addEventListener('input',()=>{document.querySelector('[name="/email"]').value='';},{once:true}));
  const result=await core.run('Fill and Save',{values:{email:'reset@example.invalid',name:'Reset Example'},settleTimeoutMs:80});
- assert.equal(result.status,'complete');assert.equal(attempts.length,1);assert.equal(records[0]['/email'],'reset@example.invalid');
+ assert.equal(result.status,'complete',JSON.stringify({reason:result.reason,inputs:result.inputs,steps:result.steps.map(s=>s.plan.action.kind)}));assert.equal(attempts.length,1);assert.equal(records[0]['/email'],'reset@example.invalid');
 });
 test('goal integrity: updated select options are observed again rather than using an old index',async t=>{
  const {core,page,records,attempts}=await fixture(t,[{path:'/country',label:'Country',type:'select',options:['Choose','Japan']},{path:'/region',label:'Region',type:'select',options:['Choose']},email]);

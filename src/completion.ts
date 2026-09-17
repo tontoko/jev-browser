@@ -70,7 +70,7 @@ export async function waitForRelevantChange(page: Page, captured: Captured, time
   const tasks=page.frames().map(async(frame,index)=>{
     const baseline=captured.changeKeys[index];
     if(baseline===undefined)return;
-    const handle=await frame.waitForFunction(progressChanged,baseline,{polling:100,timeout:timeoutMs,signal:combined});
+    const handle=await frame.waitForFunction(progressChanged,baseline,{polling:Math.min(100,Math.max(1,Math.floor(timeoutMs/4))),timeout:timeoutMs,signal:combined});
     await handle.dispose();
   });
   if(!tasks.length)return false;

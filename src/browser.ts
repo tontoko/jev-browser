@@ -9,7 +9,7 @@ import { capture, publicURL, verifyTarget, type Captured } from './observation.j
 import { actionCandidates, actionDescription, modelElementId, inputBindings } from './actions.js';
 import { extractStructured } from './structured.js';
 import { NativeBrowser } from './native.js';
-import { parseNative, nativeReadOnly, type NativeCommand } from './native-schemas.js';
+import { parseNative, nativeSchemas, nativeReadOnly, type NativeCommand } from './native-schemas.js';
 import type { ActionPlan, ActOptions, ActResult, BrowserOptions, BrowserLaunchOptions, ExtractResult, ExtractOptions, OperationOptions, RunOptions, RunResult, Snapshot } from './types.js';
 
 interface Operation { signal: AbortSignal; deadline: number }
@@ -192,6 +192,11 @@ export class JevBrowser {
     } };
   }
   async run(instruction: string, options: RunOptions = {}): Promise<RunResult> {
+    if(options.expect!==undefined){
+      const conditions=Array.isArray(options.expect)?options.expect:[options.expect];
+      if(!conditions.length||conditions.some(condition=>!nativeSchemas.assert.safeParse(condition).success))
+        throw new BrowserError('INVALID_ARGUMENT','expect must contain valid read-only assertions.');
+    }
     return this.exclusive({ ...options, timeoutMs: options.timeoutMs ?? this.options.timeoutMs ?? 60_000 }, async operation => {
       await this.invalidate();
       return runGoal({
@@ -199,7 +204,7 @@ export class JevBrowser {
         engine: () => this.engine(), operation: () => ({signal:operation.signal,timeoutMs:this.remaining(operation)}),
         perform: (plan,observed,values,started) => this.executeCaptured(plan,observed,values,operation,started),
         assert: async condition => {
-          const command=parseNative({command:'assert',...condition});
+          const command=parseNative({...condition,command:'assert'});
           if(this.options.allowCommand && await this.options.allowCommand(command,{signal:operation.signal,timeoutMs:this.remaining(operation)})!==true)
             throw new BrowserError('ACTION_DENIED','The caller policy denied the assertion.');
           await this.nativeBrowser.execute(command,{signal:operation.signal,timeoutMs:this.remaining(operation)});
@@ -279,6 +284,8 @@ export class JevBrowser {
     const parsed=parseNative(command);
     if(this.options.allowCommand && await this.options.allowCommand(structuredClone(parsed),op())!==true)
       throw new BrowserError('ACTION_DENIED','The caller policy denied this action.');
+    operation.signal.throwIfAborted();
+    if(ref)await verifyTarget(ref);
     operation.signal.throwIfAborted();
     started();
     try{
