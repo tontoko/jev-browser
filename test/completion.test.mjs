@@ -6,10 +6,10 @@ const inputs=()=>flattenInputs({email:'fixture@example.invalid',name:'Fixture Na
 const snapshot={id:'snapshot',url:'https://example.invalid/new',title:'Contacts',elements:[],scroll:{y:0,maxY:0,height:720},truncated:false,truncatedTexts:false,truncatedElements:false,
  texts:[{id:'label',frame:0,text:'Email',context:'Email fixture@example.invalid',role:'term'}, {id:'email',frame:0,text:'fixture@example.invalid',context:'Email fixture@example.invalid',role:'definition'},{id:'name',frame:0,text:'Fixture Name',context:'Name Fixture Name',role:'definition'},{id:'status',frame:0,text:'Created',context:'Created',role:'status'}],
  records:[{id:'record',frame:0,textIds:['label','email','name'],context:'Email fixture@example.invalid Name Fixture Name',readOnly:true}]};
-test('readback: each field chooses only locally matching evidence, not labels or other values',async()=>{
+test('readback: each field sees value evidence and causal context, not label-only sources',async()=>{
  const result=await verifyReadback(new Map(),snapshot,'Create the contact',inputs(),async request=>{
-   assert.deepEqual(Object.keys(request.questions.read_0.criteria).sort(),['__none__','email']);
-   assert.deepEqual(Object.keys(request.questions.read_1.criteria).sort(),['__none__','name']);
+   assert.deepEqual(Object.keys(request.questions.read_0.criteria).sort(),['__none__','email','name']);
+   assert.deepEqual(Object.keys(request.questions.read_1.criteria).sort(),['__none__','email','name']);
    assert.equal(request.state.commit.attempted,true);
    assert.ok(request.state.inputs.every(input=>input.applied===true));
    assert.ok(request.state.page.texts.some(text=>text.id==='status'));
