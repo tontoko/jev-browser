@@ -94,7 +94,7 @@ export async function extractStructured<S extends z.ZodType>(snapshot: Snapshot,
         Promise.all(children.map(async ([key,child]) => [key,await visit(snap,child,prefix(path,key),parentId,meaning)] as const)),
       ]);
       const data: Record<string,unknown> = {...flat,...Object.fromEntries(nested)};
-      return Object.fromEntries(Object.keys(current.shape).map(key=>[key,data[key]]));
+      return Object.fromEntries(Object.keys(current.shape).filter(key=>Object.hasOwn(data,key)).map(key=>[key,data[key]]));
     }
     if (current instanceof z.ZodArray) {
       const records = (snap.records ?? []).filter(record => record.parentId === parentId);

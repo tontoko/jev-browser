@@ -110,3 +110,14 @@ test('goal controls: an incorrect prefilled confirmation is replaced with the su
   assert.equal(result.status,'complete');assert.equal(attempts.length,1);
   assert.equal(records[0]['/emailConfirmation'],'new-confirmation@example.invalid');
 });
+
+test('goal controls: pending primary validation blocks confirmation-field writes too',async t=>{
+  const {core,page,attempts}=await opened(t,[email,{path:'/emailConfirmation',label:'Confirm email',type:'email'}],{engine:decisions({reuse:true})});
+  await page.locator('input[name="/email"]').evaluate(input=>input.addEventListener('input',()=>{
+    input.form.setAttribute('aria-busy','true');
+    setTimeout(()=>{input.setAttribute('aria-invalid','true');input.form?.removeAttribute('aria-busy');},250);
+  },{once:true}));
+  const result=await core.run('Enter the email, confirm it and Save.',{values:{email:'invalid-confirmation@example.invalid'}});
+  assert.equal(result.reason,'validation');assert.equal(attempts.length,0);
+  assert.equal(await page.locator('input[name="/emailConfirmation"]').inputValue(),'');
+});
