@@ -34,7 +34,7 @@ export async function goalFixture(t, browser, fields, options = {}) {
     document.getElementById('add').onclick=()=>{
       document.getElementById('add').remove();
       setTimeout(()=>{document.getElementById('editor').innerHTML=${JSON.stringify(`<form aria-label="${esc(options.formName ?? 'New contact')}">${controls}<button>Save</button><p role="status"></p></form>`)};
-      const form=document.querySelector('form');form.onsubmit=async event=>{
+      const form=document.getElementById('editor').querySelector('form');form.onsubmit=async event=>{
         event.preventDefault();const data=Object.fromEntries(new FormData(form));
         for(const select of form.querySelectorAll('select[multiple]'))data[select.name]=Array.from(select.selectedOptions,o=>o.value);
         const response=await fetch('/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
