@@ -49,3 +49,15 @@ test('readback: one explicitly supplied field can identify a unique new result',
  const result=await verifyReadback(new Map(),current,'Create this contact',supplied,async()=>({answers:{completion:{choice:'complete',confidence:1},read_0:{choice:'name',confidence:1}}}));
  assert.equal(result.basis,'ui-readback');assert.deepEqual(result.readback,['/name']);
 });
+
+for (const [expected,shown] of [[true,'on'],[true,'true'],[false,'off'],[false,'false']]) test(`readback: canonical boolean ${shown} verifies the supplied ${expected}`,async()=>{
+  const supplied=flattenInputs({email:'fixture@example.invalid',subscribed:expected}).map(input=>({...input,applied:true}));
+  const current={...snapshot,texts:[snapshot.texts[1],{id:'subscribed',frame:0,text:shown,context:`Subscribed ${shown}`,role:'definition'}],records:[{id:'new',frame:0,textIds:['email','subscribed'],context:`Email fixture@example.invalid Subscribed ${shown}`,readOnly:true}]};
+  const result=await verifyReadback(new Map(),current,'Save the supplied contact',supplied,async()=>({answers:{completion:{choice:'complete'},read_0:{choice:'email'},read_1:{choice:'subscribed'}}}));
+  assert.deepEqual(result?.readback,['/email','/subscribed']);
+});
+test('readback: a mismatched visible boolean cannot verify the requested state',async()=>{
+  const supplied=flattenInputs({email:'fixture@example.invalid',subscribed:true}).map(input=>({...input,applied:true}));
+  const current={...snapshot,texts:[snapshot.texts[1],{id:'subscribed',frame:0,text:'off',context:'Subscribed off',role:'definition'}],records:[{id:'new',frame:0,textIds:['email','subscribed'],context:'Email fixture@example.invalid Subscribed off',readOnly:true}]};
+  assert.equal(await verifyReadback(new Map(),current,'Save',supplied,async()=>({answers:{completion:{choice:'complete'},read_0:{choice:'email'},read_1:{choice:'subscribed'}}})),undefined);
+});
