@@ -8,8 +8,9 @@ import type { BrowserLaunchOptions } from './types.js';
 export function startMcpStdio(options: BrowserLaunchOptions = {}): void {
   let browser: Promise<JevBrowser> | undefined;
   let closing = false;
-  const getBrowser = () => {
+  const getBrowser = async () => {
     if (closing) return Promise.reject(new Error('Session closing'));
+    if (browser && (await browser).isClosed) browser = undefined;
     return browser ??= JevBrowser.launch(options);
   };
   const closeBrowser = async () => {
