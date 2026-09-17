@@ -47,11 +47,12 @@ export function privateFilter(inputs: InputBinding[]): <T>(data: T) => T {
     .map(value => ({ value, replacement: `[input:${input.path}]` }))).sort((a,b) => b.value.length - a.value.length);
   function walk(value: unknown): unknown {
     if (typeof value === 'string') {
+      let text=value;
       for (const secret of secrets) {
-        if (value === secret.value) return secret.replacement;
-        if (secret.value.length >= 3) value = value.split(secret.value).join(secret.replacement);
+        if (text === secret.value) return secret.replacement;
+        if (secret.value.length >= 3) text = text.split(secret.value).join(secret.replacement);
       }
-      return value;
+      return text;
     }
     if (Array.isArray(value)) return value.map(walk);
     if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, child]) => [key,walk(child)]));

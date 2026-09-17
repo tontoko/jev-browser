@@ -134,9 +134,11 @@ export async function runGoal(host: RunHost, instruction: string, options: RunOp
       if(key===lastRequest){if(await wait(observed))continue;return finish('stopped',inputs.some(i=>!i.applied)?'missing-input':'no-match');}
       lastRequest=key;
       const decision=await decide(request);
-      const assignments=new Map<InputBinding,string>();let ambiguous=false;
-      for(const[id,question]of Object.entries(bindings)){
-        const input=inputs.find(input=>question.instructions.includes(JSON.stringify(input.path)))!;
+      const assignments=new Map<InputBinding,string>(),confidences=new Map<InputBinding,number>();let ambiguous=false;
+      const requested=inputs.filter(input=>!input.applied);
+      for(const[index,id]of Object.keys(bindings).entries()){
+        const input=requested[index]!;
+        confidences.set(input,decision.answers[id]!.confidence);
         const choice=decision.answers[id]!.choice;
         if(choice==='__ambiguous__'){ambiguous=true;continue;}
         if(choice!=='__none__')assignments.set(input,choice);
@@ -147,8 +149,9 @@ export async function runGoal(host: RunHost, instruction: string, options: RunOp
         const retry=bindingQuestions(observed.data,conflicting);
         for(const question of Object.values(retry))question.instructions+=' Previous independent answers collided on one control. Distinct input paths must map to distinct primary controls. Use __ambiguous__ rather than dropping a supplied field.';
         const repaired=await decide({...request,questions:retry});
-        for(const[id,question]of Object.entries(retry)){
-          const input=conflicting.find(input=>question.instructions.includes(JSON.stringify(input.path)))!;
+        for(const[index,id]of Object.keys(retry).entries()){
+          const input=conflicting[index]!;
+          confidences.set(input,repaired.answers[id]!.confidence);
           const choice=repaired.answers[id]!.choice;
           if(choice.startsWith('__')){assignments.delete(input);ambiguous=true;}else assignments.set(input,choice);
         }
@@ -167,7 +170,7 @@ export async function runGoal(host: RunHost, instruction: string, options: RunOp
         if(steps.length>=maxSteps)return finish('stopped','step-limit');
         const current=await readControl(ref);
         if(!matchesControl(current,operation.expected)){
-          try {const result=await perform(operation.action,observed,'input',operation.value,decision.answers[Object.keys(bindings).find(id=>bindings[id]!.instructions.includes(JSON.stringify(input.path)))!]!.confidence);if(result.status==='dialog')return finish('stopped','dialog');}
+          try {const result=await perform(operation.action,observed,'input',operation.value,confidences.get(input)!);if(result.status==='dialog')return finish('stopped','dialog');}
           catch(error){if(error instanceof BrowserError&&error.code==='STALE_TARGET'){stale=true;break;}throw error;}
           const after=await readControl(ref);
           if(!matchesControl(after,operation.expected))return finish('unverified','value-mismatch');
