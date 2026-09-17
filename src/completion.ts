@@ -5,6 +5,7 @@ import { progressChanged } from './dom.js';
 import type { RunVerification, Snapshot } from './types.js';
 import type { InputBinding } from './bindings.js';
 const normalized = (text: string) => text.replace(/\s+/g,' ').trim();
+const hasAnchor = (inputs: InputBinding[]) => inputs.some(input => typeof input.value === 'number' || typeof input.value === 'string' && normalized(input.value).length > 0);
 
 export function recordCounts(snapshot: Snapshot): Map<string, number> {
   const counts = new Map<string,number>();
@@ -31,8 +32,7 @@ export async function verifyReadback(
   }).map(record => {
     const ids=new Set(record.textIds),sources=snapshot.texts.filter(source=>ids.has(source.id));
     const matching=inputs.filter(input=>sources.some(source=>sourceMatches(input.value,source.text)));
-    const identity=matching.some(input=>typeof input.value==='string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.value))
-      || new Set(matching.filter(input=>typeof input.value==='string' && input.value.length>0).map(input=>input.value)).size>=2;
+    const identity=hasAnchor(matching);
     return {record,sources,identity};
   }).filter(candidate=>candidate.identity);
   if (candidates.length !== 1) return;
@@ -56,8 +56,7 @@ export async function verifyReadback(
     readback.push(input.path);
   }
   const identities=inputs.filter(input=>readback.includes(input.path));
-  const identity=identities.some(input=>typeof input.value==='string'&&/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.value))
-    ||new Set(identities.filter(input=>typeof input.value==='string'&&input.value.length>0).map(input=>input.value)).size>=2;
+  const identity=hasAnchor(identities);
   if(!identity)return;
   for(const input of inputs)input.readback=readback.includes(input.path);
   return {source:'inferred',basis:'ui-readback',recordId:record.id,readback,unobserved};

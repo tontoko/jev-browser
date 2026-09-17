@@ -42,3 +42,10 @@ test('readback: genuinely undisplayed fields retain explicit unobserved coverage
  const result=await verifyReadback(new Map(),changed,'Create the contact',inputs(),async()=>({answers:{completion:{choice:'complete'},read_0:{choice:'email'},read_1:{choice:'__none__'}}}));
  assert.deepEqual(result.unobserved,['/name']);assert.deepEqual(result.readback,['/email']);
 });
+
+test('readback: one explicitly supplied field can identify a unique new result',async()=>{
+ const supplied=flattenInputs({name:'One-field contact'}).map(input=>({...input,applied:true}));
+ const current={...snapshot,texts:[{id:'name',frame:0,text:'One-field contact',context:'Name One-field contact',role:'definition'}],records:[{id:'new',frame:0,textIds:['name'],context:'Name One-field contact',readOnly:true}]};
+ const result=await verifyReadback(new Map(),current,'Create this contact',supplied,async()=>({answers:{completion:{choice:'complete',confidence:1},read_0:{choice:'name',confidence:1}}}));
+ assert.equal(result.basis,'ui-readback');assert.deepEqual(result.readback,['/name']);
+});

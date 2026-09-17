@@ -26,15 +26,17 @@ export async function extractStructured<S extends z.ZodType>(snapshot: Snapshot,
   const evidence: ExtractResult<unknown>['evidence'] = {};
   const decisions: NonNullable<ExtractResult<unknown>['decisions']> = [];
   const prefix = (path: string, key: string) => path ? `${path}.${key}` : key;
-  async function scalarFields(snap: Snapshot, fields: Record<string, z.ZodType>, path: string) {
-    const result = await extractGrounded(snap, instruction, z.object(fields), engine, signal, limit);
+  async function scalarFields(snap: Snapshot, fields: Record<string, z.ZodType>, path: string, ancestry: string[]) {
+    const contextual = Object.fromEntries(Object.entries(fields).map(([name, field]) => [name, field.describe([field.description, `Full field path: ${prefix(path,name)}`, ...ancestry].filter(Boolean).join('; '))]));
+    const result = await extractGrounded(snap, instruction, z.object(contextual), engine, signal, limit);
     for (const [name, source] of Object.entries(result.evidence)) evidence[prefix(path, name)] = source;
     if (result.decision) decisions.push(result.decision);
     return result.data;
   }
-  async function visit(snap: Snapshot, requested: z.ZodType, path: string, parentId?: string): Promise<unknown> {
+  async function visit(snap: Snapshot, requested: z.ZodType, path: string, parentId?: string, ancestry: string[] = []): Promise<unknown> {
     signal.throwIfAborted();
     const current = unwrapped(requested);
+    const meaning = [...ancestry, requested.description ?? current.description].filter((value): value is string => !!value);
     if (current instanceof z.ZodObject) {
       const fields: Record<string, z.ZodType> = {};
       const children: [string, z.ZodType][] = [];
@@ -43,8 +45,8 @@ export async function extractStructured<S extends z.ZodType>(snapshot: Snapshot,
         if (inner instanceof z.ZodObject || inner instanceof z.ZodArray) children.push([key, field as z.ZodType]);
         else fields[key] = field as z.ZodType;
       }
-      const data: Record<string, unknown> = Object.keys(fields).length ? await scalarFields(snap, fields, path) : {};
-      for (const [key, child] of children) data[key] = await visit(snap, child, prefix(path, key), parentId);
+      const data: Record<string, unknown> = Object.keys(fields).length ? await scalarFields(snap, fields, path, meaning) : {};
+      for (const [key, child] of children) data[key] = await visit(snap, child, prefix(path, key), parentId, meaning);
       return data;
     }
     if (current instanceof z.ZodArray) {
@@ -67,11 +69,11 @@ export async function extractStructured<S extends z.ZodType>(snapshot: Snapshot,
         if (selected !== 'include') throw new BrowserError('INVALID_DECISION', 'Invalid record inclusion decision.');
         const ids = new Set(record.textIds);
         const row = { ...snap, texts: snap.texts.filter(t => ids.has(t.id)) };
-        data.push(await visit(row, current.element as z.ZodType, prefix(path, String(data.length)), record.id));
+        data.push(await visit(row, current.element as z.ZodType, prefix(path, String(data.length)), record.id, meaning));
       }
       return data;
     }
-    const result = await scalarFields(snap, { value: requested }, path);
+    const result = await scalarFields(snap, { value: requested }, path, meaning);
     return result.value;
   }
   const data = await visit(snapshot, schema, '');

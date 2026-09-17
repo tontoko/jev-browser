@@ -24,3 +24,11 @@ test('LIVE goal: one nested request differentiates student and guardian and sele
   report('nested',result,start);assert.equal(result.status,'complete',JSON.stringify(result));assert.equal(attempts.length,1);assert.equal(records.length,1);
   assert.equal(records[0]['/student/email'],values.student.email);assert.equal(records[0]['/guardian/email'],values.guardian.email);assert.equal(records[0]['/course'],values.course);
 });
+
+import {wizardFixture} from './wizard-fixture.mjs';
+test('LIVE goal: one request completes a two-screen wizard and reads back both stages',async t=>{
+ const {core,records,attempts}=await wizardFixture(t,browser,{live:true});const start=performance.now();
+ const result=await core.run('Create a new contact. Enter the supplied name, continue to the email step, enter the email and Save. Verify the created contact.',{values:{name:'Wizard Contact',email:'live-wizard@example.invalid'}});
+ report('wizard',result,start);assert.equal(result.status,'complete',JSON.stringify(result));assert.equal(attempts.length,1);assert.deepEqual(records,[{'/name':'Wizard Contact','/email':'live-wizard@example.invalid'}]);
+ assert.ok(result.inputs.every(input=>input.applied&&input.readback));
+});
