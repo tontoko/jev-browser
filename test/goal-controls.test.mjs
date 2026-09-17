@@ -77,3 +77,36 @@ test('goal controls: an observed menu exposes a native hover operation to AI',as
   t.after(async()=>{await core.close();await page.close();});
   await core.act('Hover the Contacts menu.');assert.equal(await page.locator('body').getAttribute('data-open'),'1');
 });
+
+test('goal controls: pending validation triggered by input settles before saving',async t=>{
+  const {core,page,attempts}=await opened(t);
+  await page.locator('input').evaluate(input=>input.addEventListener('input',()=>{
+    input.form.setAttribute('aria-busy','true');
+    setTimeout(()=>{input.setAttribute('aria-invalid','true');input.form?.removeAttribute('aria-busy');},250);
+  },{once:true}));
+  const result=await core.run('Fill the email and Save.',{values:{email:'async-rejected@example.invalid'}});
+  assert.equal(result.status,'stopped');assert.equal(result.reason,'validation');assert.equal(attempts.length,0);
+});
+test('goal controls: a dialog replaced during authorization is never accepted',async t=>{
+  let currentDialog,page,replacement;
+  const f=await opened(t,[email],{engine:decisions(),browserOptions:{allowCommand:async command=>{
+    if(command.command==='handle_dialog'){
+      await currentDialog.dismiss();
+      const ready=page.waitForEvent('dialog');
+      replacement=page.evaluate(()=>confirm('Authorize an additional charge?')).catch(()=>undefined);
+      await ready;
+    }
+    return true;
+  }}});page=f.page;
+  page.on('dialog',dialog=>{currentDialog=dialog;});
+  await page.getByRole('button',{name:'Save'}).evaluate(el=>{el.onclick=()=>confirm('Save this contact?');});
+  t.after(async()=>{await replacement;});
+  await assert.rejects(f.core.run('Save this contact only.',{values:{email:'stale-dialog@example.invalid'}}),{code:'STALE_DIALOG'});
+  assert.equal(f.attempts.length,0);
+});
+test('goal controls: an incorrect prefilled confirmation is replaced with the supplied value',async t=>{
+  const {core,records,attempts}=await opened(t,[email,{path:'/emailConfirmation',label:'Confirm email',type:'email',value:'old@example.invalid'}],{engine:decisions({reuse:true})});
+  const result=await core.run('Enter the email, confirm it and Save.',{values:{email:'new-confirmation@example.invalid'}});
+  assert.equal(result.status,'complete');assert.equal(attempts.length,1);
+  assert.equal(records[0]['/emailConfirmation'],'new-confirmation@example.invalid');
+});
