@@ -1,0 +1,23 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { Client, InMemoryTransport } from '@modelcontextprotocol/client';
+import { JevBrowser } from '../dist/index.js';
+import { createMcpServer } from '../dist/mcp.js';
+test('MCP exposes native snapshot-reference actions and deterministic assertions', async t => {
+  const core = await JevBrowser.launch();
+  await core.page.setContent(`<button onclick="document.querySelector('p').textContent='Saved'">Save</button><p>Pending</p>`);
+  const server = createMcpServer(core), client = new Client({ name: 'native-contract', version: '1' });
+  const [ct, st] = InMemoryTransport.createLinkedPair();
+  t.after(async () => { await client.close(); await server.close(); await core.close(); });
+  await server.connect(st); await client.connect(ct);
+  const tools = await client.listTools(); assert.ok(tools.tools.some(t => t.name === 'browser_click'));
+  assert.ok(tools.tools.some(t => t.name === 'browser_assert'));
+  const snapshot = await client.callTool({ name: 'browser_snapshot', arguments: {} });
+  const data = snapshot.structuredContent ?? JSON.parse(snapshot.content.find(c => c.type === 'text').text);
+  const clicked = await client.callTool({ name: 'browser_click', arguments: { ref: data.elements[0].id, element: 'Save button' } });
+  assert.notEqual(clicked.isError, true);
+  const checked = await client.callTool({ name: 'browser_assert', arguments: { target: 'p', property: 'text', expected: 'Saved' } });
+  assert.notEqual(checked.isError, true);
+  const denied = await client.callTool({ name: 'browser_evaluate', arguments: { function: '() => 1' } });
+  assert.equal(denied.isError, true);
+});
