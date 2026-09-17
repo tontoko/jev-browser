@@ -13,7 +13,8 @@ export function recordCounts(snapshot: Snapshot): Map<string, number> {
   return counts;
 }
 function sourceMatches(value: InputBinding['value'], text: string): boolean {
-  if (typeof value === 'boolean' || value === null) return false;
+  if (typeof value === 'boolean') return source.value !== undefined ? source.value === value : (value ? ['true','on'] : ['false','off']).includes(source.text.trim().toLowerCase());
+  if (value === null) return false;
   if (Array.isArray(value)) return normalized(value.join(', ')) === normalized(text);
   return normalized(String(value)) === normalized(text);
 }
