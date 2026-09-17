@@ -12,7 +12,7 @@ export function formEngine({ collide = false, forbidden = false } = {}) {
       const target = collide ? controls.find(e => e.fillable) : controls.find(e => e.name === input?.label || e.fieldName === input?.path);
       return target && Object.hasOwn(question.criteria,target.id) ? target.id : '__none__';
     }
-    if (name.startsWith('effect_')) return forbidden ? 'forbidden' : question.instructions.includes('"name":"Save"') ? 'commit' : 'advance';
+    if (name.startsWith('effect_')) return forbidden ? 'forbidden' : request.state.actions?.[name.slice('effect_'.length)]?.target?.name === 'Save' ? 'commit' : 'advance';
     if (name === 'completion') return 'complete';
     if(name.startsWith('read_')) {
       const input=request.state.inputs.find(input=>question.instructions.includes(JSON.stringify(input.path)));

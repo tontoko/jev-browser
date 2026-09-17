@@ -51,7 +51,7 @@ test('goal resilience: ordinary data equal to protocol words can still be saved 
   const fields = [{ path: '/name', label: 'name' }, { path: '/state', label: 'state' }, { path: '/operation', label: 'operation' }];
   const { core, records, attempts } = await goalFixture(t, browser, fields);
   const result = await core.run('Add and Save all supplied fields.', { values: { name: 'name', state: 'complete', operation: 'click' } });
-  assert.equal(result.status, 'complete');
+  assert.equal(result.status, 'complete', JSON.stringify({ reason: result.reason, inputs: result.inputs, effects: result.effects }));
   assert.deepEqual(result.inputs.map(input => input.path), ['/name', '/state', '/operation']);
   assert.equal(attempts.length, 1);
   assert.deepEqual(records[0], { '/name': 'name', '/state': 'complete', '/operation': 'click' });
