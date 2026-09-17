@@ -42,7 +42,7 @@ test('LIVE MCP: official stdio exchange executes through the real Jev API',async
   await client.connect(transport);
   const navigation=await client.callTool({name:'browser_goto',arguments:{url:site.url}});assert.notEqual(navigation.isError,true);
   const action=await client.callTool({name:'browser_act',arguments:{instruction:'保存ボタンをクリックしてください。'}});assert.notEqual(action.isError,true);
-  const snapshot=await client.callTool({name:'jev_snapshot',arguments:{scope:'h1'}});assert.notEqual(snapshot.isError,true);
+  const snapshot=await client.callTool({name:'browser_snapshot',arguments:{scope:'h1'}});assert.notEqual(snapshot.isError,true);
   const data=JSON.parse(snapshot.content.find(c=>c.type==='text').text);
   assert.ok(data.texts.some(t=>t.text==='保存済み'));
   console.log(JSON.stringify({interface:'mcp',model:JSON.parse(action.content.find(c=>c.type==='text').text).plan.decision.model}));

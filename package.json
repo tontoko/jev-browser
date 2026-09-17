@@ -1,0 +1,54 @@
+{
+  "name": "@tontoko/jev-browser",
+  "version": "0.1.0",
+  "description": "One Jev decision core for a Playwright SDK, CLI and MCP server",
+  "type": "module",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./mcp": {
+      "types": "./dist/mcp.d.ts",
+      "import": "./dist/mcp.js"
+    }
+  },
+  "bin": {
+    "jev-browser": "dist/cli.js",
+    "jev-browser-mcp": "dist/mcp-stdio.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "examples",
+    "docs/verification.md",
+    "THIRD_PARTY_NOTICES.txt"
+  ],
+  "scripts": {
+    "build": "tsc && esbuild src/dom.ts --bundle --platform=browser --format=iife --global-name=JevDOM --outfile=dist/dom.bundle.cjs",
+    "test": "node --test --test-concurrency=1 test/*.test.mjs",
+    "check": "npm run build && npm test",
+    "test:live": "node --test --test-concurrency=1 test/live.mjs test/live-adapters.mjs",
+    "prepack": "npm run build",
+    "check:examples": "tsc --ignoreConfig --noEmit --module NodeNext --moduleResolution NodeNext --target ES2022 --lib ES2022,DOM,ESNext.Disposable --types node --skipLibCheck --strict --noUncheckedIndexedAccess examples/playwright.spec.ts examples/playwright.config.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "2.0.0",
+    "@typesafe-ai/sdk": "0.6.0",
+    "dom-accessibility-api": "^0.7.0",
+    "playwright": "1.63.0",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "2.0.0",
+    "@playwright/test": "1.63.0",
+    "@types/node": "22.20.3",
+    "esbuild": "^0.25.0",
+    "typescript": "7.0.2"
+  }
+}

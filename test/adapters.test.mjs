@@ -30,7 +30,7 @@ test('CLI help works without launching a browser',async()=>{
   const result=await cli(['--help']);assert.equal(result.code,0);assert.match(result.stdout,/session/);assert.match(result.stdout,/mcp/);
 });
 test('CLI one-shot snapshot returns clean machine-readable JSON',async()=>{
-  const result=await cli(['inspect','--url',service.url]);assert.equal(result.code,0,result.stderr);
+  const result=await cli(['snapshot','--url',service.url]);assert.equal(result.code,0,result.stderr);
   const output=JSON.parse(result.stdout);assert.equal(output.ok,true);assert.ok(output.result.elements.some(e=>e.name==='保存'));
 });
 test('CLI JSONL session preserves page state across goto, act and extract',async()=>{
@@ -67,7 +67,7 @@ test('MCP stdio binary initializes, navigates and observes using the real protoc
   const observe=await client.callTool({name:'browser_observe',arguments:{instruction:'保存をクリック'}});assert.notEqual(observe.isError,true);
   const plan=JSON.parse(observe.content.find(c=>c.type==='text').text).plan;assert.ok(plan.id);
   const act=await client.callTool({name:'browser_act',arguments:{planId:plan.id}});assert.notEqual(act.isError,true);
-  const snapshot=await client.callTool({name:'jev_snapshot',arguments:{scope:'h1'}});
+  const snapshot=await client.callTool({name:'browser_snapshot',arguments:{scope:'h1'}});
   assert.ok(JSON.parse(snapshot.content.find(c=>c.type==='text').text).texts.some(t=>t.text==='保存済み'));
 });
 

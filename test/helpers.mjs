@@ -1,4 +1,4 @@
-import { chromium, firefox, webkit } from 'playwright';
+import { chromium } from 'playwright';
 import { createServer } from 'node:http';
 
 export function engine(pick) {
@@ -32,5 +32,5 @@ export async function httpServer(handler) {
   }};
 }
 export async function fixtureBrowser() {
-  return ({chromium,firefox,webkit}[process.env.JEV_TEST_BROWSER??'chromium']).launch({headless:true});
+  return chromium.launch({headless:true});
 }
