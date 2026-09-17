@@ -43,7 +43,7 @@ Use the existing Playwright Page/fixtures and keep ordinary `expect` assertions.
 
 `observe` returns a single plan or null, rather than an array of reusable actions. Plans are single-use. `extract` returns `data` together with evidence, snapshot and decision metadata. Its contract is copying observed facts, not generating summaries. Nested objects, scalar roots and arrays of actual DOM rows/cards are available; record scopes preserve cross-field coherence within each row.
 
-The agent is a bounded observation/decision/action loop. It does not include Browserbase infrastructure, Stagehand's cache/replay service, cloud session billing, or arbitrary model-generated code. Use a native selector after an initial observation when no further model decision is needed. A model's completion opinion stays unverified; pass a deterministic `until` or run explicit assertions.
+The goal runtime batches independent field questions and record extraction, executes browser writes serially, handles native-form transitions and ordinary confirmations, and checks fresh result records. A model's completion opinion still stays unverified. `expect` works in SDK/CLI/MCP; `until` is an additional SDK callback. See [goal execution](goal-runtime.md) for default budgets and boundaries. Browserbase infrastructure, Stagehand's cache/replay service, cloud billing and arbitrary model-generated code are not included.
 
 ## Visual-only pages and large pages
 

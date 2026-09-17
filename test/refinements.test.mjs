@@ -63,6 +63,6 @@ test('Unicode minus sign is preserved',async t=>{
  const {core}=await fixture(t,'<p>−1,000円</p>',engine(()=>c=>c?.value===-1000));const r=await core.extract('Amount',z.object({amount:z.number()}));assert.equal(r.data.amount,-1000);assert.equal(r.evidence.amount.text,'−1,000円');
 });
 for(const terminal of ['__done__','__none__'])test(`completion during ${terminal} decision is verified`,async t=>{
- let page;const f=await fixture(t,'<p>Pending</p><button>Save</button>',engine(async()=>{await page.locator('p').evaluate(e=>{e.textContent='Done';});return terminal;}));page=f.page;
+ let page;const f=await fixture(t,'<p>Pending</p><button>Save</button>',engine(async(q,r,n)=>{if(n.startsWith('effect_'))return 'commit';await page.locator('p').evaluate(e=>{e.textContent='Done';});return terminal;}));page=f.page;
  const r=await f.core.run('Save',{until:async p=>(await p.locator('p').textContent())==='Done'});assert.equal(r.status,'complete');assert.equal(r.reason,'verified');assert.deepEqual(r.steps,[]);
 });

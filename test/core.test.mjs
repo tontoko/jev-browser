@@ -107,7 +107,7 @@ test('an invented extraction source cannot return fabricated data',async t=>{
   await assert.rejects(core.extract('値',z.object({name:z.string()})),{code:'INVALID_DECISION'});
 });
 test('bounded run completes only when the deterministic check succeeds',async t=>{
-  const {core,page}=await fixture(t,'<button onclick="document.body.dataset.done=\'yes\'">保存</button>',select(c=>c.kind==='click'));
+  const {core,page}=await fixture(t,'<button onclick="document.body.dataset.done=\'yes\'">保存</button>',engine((q,r,n)=>n.startsWith('effect_')?'commit':c=>c?.kind==='click'));
   const result=await core.run('保存する',{maxSteps:3,until:async page=>(await page.locator('body').getAttribute('data-done'))==='yes'});
   assert.equal(result.status,'complete');assert.equal(result.reason,'verified');assert.equal(result.steps.length,1);assert.equal(await page.locator('body').getAttribute('data-done'),'yes');
 });
@@ -116,7 +116,7 @@ test('model-complete without a deterministic oracle remains unverified',async t=
   const result=await core.run('完了まで進める',{maxSteps:2});assert.equal(result.status,'unverified');assert.equal(result.reason,'model-complete');
 });
 test('step budget bounds repeated actions without a custom retry scheduler',async t=>{
-  const {core,page}=await fixture(t,'<button onclick="this.dataset.n=Number(this.dataset.n||0)+1">次へ</button>',select(c=>c.kind==='click'));
+  const {core,page}=await fixture(t,'<button onclick="this.dataset.n=Number(this.dataset.n||0)+1">次へ</button>',engine((q,r,n)=>n.startsWith('effect_')?'advance':c=>c?.kind==='click'));
   const result=await core.run('進める',{maxSteps:2});assert.equal(result.status,'stopped');assert.equal(result.reason,'step-limit');assert.equal(await page.locator('button').getAttribute('data-n'),'2');
 });
 test('concurrent operations on one core are rejected, not interleaved',async t=>{

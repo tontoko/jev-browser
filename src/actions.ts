@@ -24,6 +24,7 @@ export function actionCandidates(snapshot: Snapshot, values: Record<string, stri
     } else {
       add({ kind: 'click', target });
     }
+    if (target.popup && target.popup !== 'false' && ['button','link'].includes(target.role)) add({ kind: 'hover', target });
   }
   if (snapshot.scroll.y < snapshot.scroll.maxY) add({ kind: 'scroll', direction: 'down' });
   if (snapshot.scroll.y > 0) add({ kind: 'scroll', direction: 'up' });
@@ -39,6 +40,7 @@ export function actionDescription(action: GroundedAction) {
     ...(action.option ? { option: { label: action.option.label } } : {}),
     ...(action.key ? { key: action.key } : {}),
     ...(action.direction ? { direction: action.direction } : {}),
+    ...(action.dialog ? { dialog: action.dialog, accept: action.accept } : {}),
   };
 }
 

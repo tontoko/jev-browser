@@ -2,7 +2,7 @@ import type { BrowserContext, ConsoleMessage, Dialog, Download, ElementHandle, F
 import { BrowserError } from './errors.js';
 import { FileAccess } from './paths.js';
 import { publicURL } from './observation.js';
-import type { BrowserOptions } from './types.js';
+import type { BrowserOptions, BrowserDialog } from './types.js';
 
 type Target = Locator | ElementHandle<Element>;
 export interface NativeHost {
@@ -11,7 +11,7 @@ export interface NativeHost {
   resolve(target: string, frame?: number): Promise<Target>;
   validateURL(url: string): Promise<string>;
 }
-type ActionOutcome = { status: 'executed' } | { status: 'dialog'; dialog: { type: string; message: string; defaultValue: string } };
+type ActionOutcome = { status: 'executed' } | { status: 'dialog'; dialog: BrowserDialog };
 /** Mechanical browser operations. The shared core supplies locking, authorization and reference identity. */
 export class BrowserEvents {
   protected readonly files: FileAccess;
@@ -22,6 +22,8 @@ export class BrowserEvents {
   protected readonly downloads: Download[] = [];
   protected readonly routes = new Map<string, (route: Route) => Promise<void>>();
   protected dialog?: Dialog;
+  private dialogId = 0;
+  private dialogPage?: Page;
   protected chooser?: FileChooser;
   protected dialogNotice?: () => void;
   protected pendingAction?: Promise<void>;
@@ -40,7 +42,7 @@ export class BrowserEvents {
     const onError = (e: Error) => { this.messages.push({ type: 'error', text: e.message, url: publicURL(page.url()) }); if (this.messages.length > 500) this.messages.shift(); };
     const onRequest = (r: Request) => { this.requests.push({ method: r.method(), url: publicURL(r.url()), resourceType: r.resourceType() }); if (this.requests.length > 1000) this.requests.shift(); };
     const onDownload = (d: Download) => { this.downloads.push(d); if (this.downloads.length > 100) this.downloads.shift(); };
-    const onDialog = (d: Dialog) => { this.dialog = d; this.dialogNotice?.(); };
+    const onDialog = (d: Dialog) => { this.dialog = d; this.dialogId++; this.dialogPage = page; this.dialogNotice?.(); };
     const onChooser = (c: FileChooser) => { this.chooser = c; };
     const onClose = () => { this.detach.get(page)?.(); this.detach.delete(page); };
     page.on('console', onConsole); page.on('pageerror', onError); page.on('request', onRequest); page.on('download', onDownload); page.on('dialog', onDialog); page.on('filechooser', onChooser); page.on('close', onClose);
@@ -49,9 +51,12 @@ export class BrowserEvents {
   guard(command?: string): void {
     if ((this.dialog || this.pendingAction) && command !== 'handle_dialog') throw new BrowserError('DIALOG_PENDING', 'Answer the pending browser dialog with handle_dialog before another operation.');
   }
+  isCurrentDialog(dialog: BrowserDialog): boolean {
+    return !!this.dialog && dialog.id === this.dialogId && this.dialogPage === this.host.page();
+  }
   private dialogResult(): ActionOutcome {
     const d = this.dialog!;
-    return { status: 'dialog', dialog: { type: d.type(), message: d.message(), defaultValue: d.defaultValue() } };
+    return { status: 'dialog', dialog: { id: this.dialogId, type: d.type(), message: d.message(), defaultValue: d.defaultValue() } };
   }
   async action(fn: () => Promise<unknown>): Promise<ActionOutcome> {
     this.guard();

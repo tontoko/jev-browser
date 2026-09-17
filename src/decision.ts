@@ -14,7 +14,7 @@ export interface DecisionResult {
 }
 /** A small test seam, not a model router. Production uses JevDecisionEngine. */
 export interface DecisionEngine {
-  decide(request: DecisionRequest, options?: { signal?: AbortSignal }): Promise<DecisionResult>;
+  decide(request: DecisionRequest, options?: { signal?: AbortSignal; maxRetries?: number }): Promise<DecisionResult>;
 }
 export interface JevOptions {
   apiKey?: string;
@@ -45,12 +45,12 @@ export class JevDecisionEngine implements DecisionEngine {
       fetch: options.fetch,
     });
   }
-  async decide(request: DecisionRequest, options: { signal?: AbortSignal } = {}): Promise<DecisionResult> {
+  async decide(request: DecisionRequest, options: { signal?: AbortSignal; maxRetries?: number } = {}): Promise<DecisionResult> {
     options.signal?.throwIfAborted();
     const start = performance.now();
     let raw: unknown;
     try {
-      raw = await this.client.systemOne(request, { signal: options.signal });
+      raw = await this.client.systemOne(request, { signal: options.signal, retry: { maxRetries: options.maxRetries ?? 0 } });
     } catch (error) {
       if (options.signal?.aborted) throw new BrowserError('CANCELLED', 'Jev decision cancelled.');
       const status = typeof error === 'object' && error !== null && 'status' in error && typeof error.status === 'number'

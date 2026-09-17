@@ -7,6 +7,8 @@ description: Automate and test browsers with native Playwright commands, Jev dec
 
 Use the installed `jev-browser` executable, or `node /path/to/jev-browser/dist/cli.js`. Read `--help` once for available commands. Native operations need no model key; AI operations need JEV_API_KEY.
 
+For a whole creation task, prefer one `run --session task --args JSON` with `instruction` and nested `values`; use `browser_run` in MCP. The runtime batches judgments, fills serially, saves and checks a new result. Inspect `verification.readback`/`unobserved` and `effects`; never repeat an `unknown` commit. Optional `expect` uses the native read-only assertion schema. Use the low-level sequence below for direct control or unsupported widgets.
+
 1. Open an isolated named session: `jev-browser open URL --session task`.
 2. Read `snapshot --session task`. Use the returned refs for native actions, or trusted caller-authored selectors. Re-observe after navigation or replacement; never invent refs.
 3. Use `click REF`, `fill REF TEXT`, `press Enter`, or another native command. All commands also accept `--args JSON`. For natural-language target selection use `act INSTRUCTION --values JSON`.

@@ -8,6 +8,7 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:http';
 import { Client } from '@modelcontextprotocol/client';
+import { checkInstalledGoal } from './check-installed-goal.mjs';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
@@ -82,7 +83,8 @@ try {
       const result = await client.callTool({ name, arguments: args }); assert.notEqual(result.isError, true, JSON.stringify(result));
     }
   } finally { await client.close(); }
-  console.log(JSON.stringify({ package: packed.name, version: packed.version, filename: packed.filename, sha256: createHash('sha256').update(await readFile(tarball)).digest('hex'), installedSDK: true, nativePlaywrightAssertions: true, installedPersistentCLI: true, installedMCP: true, entryCount: packed.entryCount }, null, 2));
+  const goals = await checkInstalledGoal(pkg,directory,env);
+  console.log(JSON.stringify({ ...goals, package: packed.name, version: packed.version, filename: packed.filename, sha256: createHash('sha256').update(await readFile(tarball)).digest('hex'), installedSDK: true, nativePlaywrightAssertions: true, installedPersistentCLI: true, installedMCP: true, entryCount: packed.entryCount }, null, 2));
 } finally {
   if (site) { site.closeAllConnections(); await new Promise(resolve => site.close(resolve)); }
   await rm(directory, { recursive: true, force: true });
