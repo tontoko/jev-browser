@@ -5,7 +5,7 @@ import type { DecisionEngine, DecisionRequest } from './decision.js';
 import type { ExtractResult, Snapshot } from './types.js';
 
 function unwrapped(schema: z.ZodType): z.ZodType {
-  while (schema instanceof z.ZodOptional || schema instanceof z.ZodNullable) schema = schema.unwrap();
+  while (schema instanceof z.ZodOptional || schema instanceof z.ZodNullable) schema = schema.unwrap() as z.ZodType;
   return schema;
 }
 function validateSchema(schema: z.ZodType, depth = 0): void {
