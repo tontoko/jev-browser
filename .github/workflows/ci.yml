@@ -1,0 +1,48 @@
+name: CI
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    name: ${{ matrix.os }} / Node ${{ matrix.node }} / ${{ matrix.browser }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-24.04, node: '22', browser: chromium }
+          - { os: ubuntu-24.04, node: '24', browser: chromium }
+          - { os: ubuntu-24.04, node: '24', browser: firefox }
+          - { os: ubuntu-24.04, node: '24', browser: webkit }
+          - { os: macos-latest, node: '24', browser: chromium }
+          - { os: windows-latest, node: '24', browser: chromium }
+    env:
+      JEV_BROWSER: ${{ matrix.browser }}
+      JEV_API_KEY: ''
+      TYPESAFE_API_KEY: ''
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          package-manager-cache: false
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npx playwright install --with-deps chromium ${{ matrix.browser }}
+      - run: npm run check
+      - run: npm run check:examples
+      - run: npm run check:package
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: success()
+        with:
+          name: package-${{ matrix.os }}-node${{ matrix.node }}-${{ matrix.browser }}
+          path: '*.tgz'
+          if-no-files-found: error
+          retention-days: 7
