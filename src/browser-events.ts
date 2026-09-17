@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import type { BrowserContext, ConsoleMessage, Dialog, Download, ElementHandle, FileChooser, Locator, Page, Request, Route } from 'playwright';
 import { BrowserError } from './errors.js';
 import { FileAccess } from './paths.js';
@@ -60,10 +59,11 @@ export class BrowserEvents {
     const task = Promise.resolve().then(fn).then(() => undefined);
     // Register a rejection observer even when the dialog wins the race.
     void task.catch(() => undefined);
-    const result = await Promise.race([task.then(() => 'finished' as const), notice]);
-    this.dialogNotice = undefined;
-    if (result === 'dialog') { this.pendingAction = task; return this.dialogResult(); }
-    return { status: 'executed' };
+    try {
+      const result = await Promise.race([task.then(() => 'finished' as const), notice]);
+      if (result === 'dialog') { this.pendingAction = task; return this.dialogResult(); }
+      return { status: 'executed' };
+    } finally { this.dialogNotice = undefined; }
   }
   protected async handleDialog(accept: boolean, promptText?: string): Promise<ActionOutcome> {
     if (!this.dialog) throw new BrowserError('NO_DIALOG', 'There is no pending browser dialog.');
@@ -76,7 +76,7 @@ export class BrowserEvents {
       if (result === 'dialog') return this.dialogResult();
       this.pendingAction = undefined;
       return { status: 'executed' };
-    } finally { this.dialogNotice = undefined; }
+    } finally { this.dialogNotice = undefined; if (!this.dialog) this.pendingAction = undefined; }
   }
   protected async target(args: { target?: string; ref?: string; frame?: number }): Promise<Target> {
     const target = args.target ?? args.ref;

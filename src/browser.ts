@@ -42,17 +42,17 @@ export class JevBrowser {
     this.options = { ...options };
     this.engineInstance = options.engine;
     this.timeoutMs = positiveInteger(options.timeoutMs ?? 30_000, 'timeoutMs');
+    this.limits = {
+      maxElements: positiveInteger(options.maxElements ?? 120, 'maxElements'),
+      maxTexts: positiveInteger(options.maxTexts ?? 160, 'maxTexts'),
+      maxCandidates: positiveInteger(options.maxCandidates ?? 250, 'maxCandidates'),
+    };
     this.nativeBrowser = new NativeBrowser({
       page: () => this.page,
       select: async page => { await this.invalidate(); this.currentPage = page; },
       resolve: (target, frame) => this.resolveNative(target, frame),
       validateURL: async url => this.validURL(url),
     }, options);
-    this.limits = {
-      maxElements: positiveInteger(options.maxElements ?? 120, 'maxElements'),
-      maxTexts: positiveInteger(options.maxTexts ?? 160, 'maxTexts'),
-      maxCandidates: positiveInteger(options.maxCandidates ?? 250, 'maxCandidates'),
-    };
   }
   static async launch(options: BrowserLaunchOptions = {}): Promise<JevBrowser> {
     if ([options.userDataDir, options.cdpEndpoint, options.wsEndpoint].filter(Boolean).length > 1)
@@ -104,7 +104,7 @@ export class JevBrowser {
       operation.signal.throwIfAborted();
       const mutates = !nativeReadOnly.has(parsed.command) && !(parsed.command === 'tabs' && parsed.action === 'list') && !(parsed.command === 'downloads' && parsed.action === 'list');
       try { return await this.nativeBrowser.execute(parsed, { signal: operation.signal, timeoutMs: this.remaining(operation) }); }
-      finally { if (mutates) await this.invalidate(); }
+      finally { if (mutates) await this.invalidatePlan(); }
     }, parsed.command);
   }
   private engine(): DecisionEngine {
@@ -123,9 +123,12 @@ export class JevBrowser {
     try { const result = await task; signal.throwIfAborted(); return result; }
     finally { if (this.active === task) this.active = undefined; }
   }
-  private async invalidate(): Promise<void> {
+  private async invalidatePlan(): Promise<void> {
     const previous = this.pending; this.pending = undefined;
     await previous?.captured.dispose();
+  }
+  private async invalidate(): Promise<void> {
+    await this.invalidatePlan();
     const snapshot = this.snapshotCapture; this.snapshotCapture = undefined;
     await snapshot?.dispose();
   }
