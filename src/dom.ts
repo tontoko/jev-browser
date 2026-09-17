@@ -57,7 +57,7 @@ export function describe(el: Element) {
     ...(options ? { options, multiple: (el as HTMLSelectElement).multiple } : {}),
   };
   // Exclude mutable input values and unrelated layout; include row identity and actual destinations.
-  const signature = JSON.stringify([info.role, info.name, info.context, info.tag, info.inputType,
+  const signature = JSON.stringify([info.role, info.name, info.context, info.tag, info.inputType, info.fieldName, info.formName,
     el instanceof HTMLAnchorElement ? el.href : el.getAttribute('href'), el.getAttribute('formaction'), (el as HTMLButtonElement).form?.action,
     info.multiple, info.options?.map(o => [o.label, o.value, o.disabled, ...(info.multiple ? [o.selected] : [])]), info.disabled, info.readOnly, info.fillable]);
   return { info, signature, connected: el.isConnected, visible: visible(el) };

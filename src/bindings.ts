@@ -1,6 +1,7 @@
 import { BrowserError } from './errors.js';
 import { modelElementId } from './actions.js';
 import type { DecisionRequest } from './decision.js';
+import type { Frame } from 'playwright';
 import type { ElementRef } from './observation.js';
 import type { ElementInfo, GroundedAction, RunValue, RunInput, Snapshot } from './types.js';
 
@@ -109,5 +110,32 @@ export function inputAction(input: InputBinding, target: ElementInfo): { action:
     const value = input.value === null ? '' : String(input.value);
     return { action: { kind:'fill', target, valueKey: input.path }, value, expected: value };
   }
+}
+/** Compare actual DOM identities, not transient snapshot IDs or form positions. */
+export async function bindingAuthority(bindings: { input: InputBinding; ref: ElementRef }[], commit?: ElementRef): Promise<{ valid: boolean; form?: ElementRef }> {
+  const groups=new Map<Frame, { ref: ElementRef; binding: boolean }[]>();
+  for(const entry of [...bindings.map(({ref})=>({ref,binding:true})),...(commit?[{ref:commit,binding:false}]:[])]){
+    const group=groups.get(entry.ref.frame)??[];group.push(entry);groups.set(entry.ref.frame,group);
+  }
+  let form: ElementRef | undefined;
+  for(const entries of groups.values()){
+    const state=await entries[0]!.ref.handle.evaluate((_root,entries)=>{
+      if(entries.some(entry=>!entry.node.isConnected))return {valid:false,index:-1};
+      const targets=entries.filter(entry=>entry.binding).map(entry=>entry.node);
+      if(new Set(targets).size!==targets.length)return {valid:false,index:-1};
+      const owners=entries.map(entry=>(entry.node as HTMLInputElement).form??entry.node.closest('form'));
+      const index=owners.findIndex(Boolean),owner=owners[index];
+      return {valid:owners.every(form=>!form||form===owner),index};
+    },entries.map(({ref,binding})=>({node:ref.handle,binding})));
+    if(!state.valid||state.index>=0&&form)return {valid:false};
+    if(state.index>=0)form=entries[state.index]!.ref;
+  }
+  return {valid:true,...(form?{form}:{})};
+}
+export async function nativeFormValid(ref: ElementRef): Promise<boolean> {
+  return ref.handle.evaluate(el=>{
+    const form=(el as HTMLInputElement).form??el.closest('form');
+    return !!form&&Array.from(form.elements).every(control=>!('validity' in control)||(control as HTMLInputElement).validity.valid);
+  });
 }
 export const matchesControl = (state: ControlState, expected: ControlState['value']) => state.connected && JSON.stringify(state.value) === JSON.stringify(expected);

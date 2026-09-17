@@ -3,7 +3,7 @@ import type { Page } from 'playwright';
 import type { DecisionEngine, DecisionRequest, DecisionResult } from './decision.js';
 import { BrowserError } from './errors.js';
 import { actionCandidates, actionDescription, modelElementId, inputBindings } from './actions.js';
-import { bindingQuestions, flattenInputs, inputAction, inputMetadata, matchesControl, privateFilter, publicInputs, readControl, type InputBinding } from './bindings.js';
+import { bindingQuestions, flattenInputs, inputAction, inputMetadata, matchesControl, privateFilter, publicInputs, readControl, bindingAuthority, nativeFormValid, type InputBinding } from './bindings.js';
 import { recordCounts, verifyReadback, waitForRelevantChange } from './completion.js';
 import type { Captured } from './observation.js';
 import type { ActionPlan, ActResult, GroundedAction, OperationContext, RunEffect, RunOptions, RunResult, RunVerification, RunAssertion } from './types.js';
@@ -176,8 +176,8 @@ Input literals are available locally, not missing. Choose __none__ only if no ob
       const action=actions.get(choice);
       const kind=inputs.length&&action&&action.kind!=='scroll'?decision.answers[`effect_${choice}`]!.choice:'advance';
       if(kind==='forbidden')return finish('stopped','permission-required');
-      const owners=new Set([...planned.map(p=>p.target.formId),...inputs.filter(input=>input.applied).map(input=>input.ref?.info.formId)].filter(Boolean));
-      if(owners.size>1||kind==='commit'&&action?.target?.formId&&owners.size>0&&!owners.has(action.target.formId))return finish('stopped','ambiguous');
+      const authority=await bindingAuthority([...planned.map(({input,ref})=>({input,ref})),...inputs.filter(input=>input.applied&&input.ref).map(input=>({input,ref:input.ref!}))],kind==='commit'&&action?.target?observed.refs.get(action.target.id):undefined);
+      if(!authority.valid)return finish('stopped','ambiguous');
       let stale=false;
       for(const {input,target,operation,ref}of planned){
         if(!operation)continue;
@@ -207,10 +207,7 @@ Input literals are available locally, not missing. Choose __none__ only if no ob
           else if(!current.valid)return finish('stopped','validation');
         }
         if(drift)continue;
-        for(const target of observed.data.elements.filter(e=>e.required&&!e.disabled&&e.formId===(action.target?.formId??[...owners][0]))){
-          const current=await readControl(observed.refs.get(target.id)!);
-          if(!current.valid)return finish('stopped','missing-input');
-        }
+        if(authority.form&&!await nativeFormValid(authority.form))return finish('stopped','missing-input');
       }
       if(steps.length>=maxSteps)return finish('stopped','step-limit');
       try {

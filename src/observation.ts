@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
-import type { ElementHandle, JSHandle, Page } from 'playwright';
+import type { ElementHandle, JSHandle, Page, Frame } from 'playwright';
 import type { Snapshot, ElementInfo } from './types.js';
 import { BrowserError } from './errors.js';
 import type * as DOM from './dom.js';
@@ -11,7 +11,7 @@ export function publicURL(value: string): string {
   try { const url = new URL(value); url.username = ''; url.password = ''; url.search = ''; url.hash = ''; return url.href; }
   catch { return '[unavailable URL]'; }
 }
-export interface ElementRef { handle: ElementHandle<Element>; signature: string; info: ElementInfo }
+export interface ElementRef { frame: Frame; handle: ElementHandle<Element>; signature: string; info: ElementInfo }
 export interface Captured {
   data: Snapshot;
   refs: Map<string, ElementRef>;
@@ -54,7 +54,7 @@ export async function capture(page: Page, options: { scope?: string; recordsScop
         const id = `r${data.id.replaceAll('-', '').slice(0, 12)}_e${frameIndex}_${index}`;
         const info = { ...description.info, ...(description.info.formId ? { formId: `${frameIndex}:${description.info.formId}` } : {}), id, frame: frameIndex };
         data.elements.push(info);
-        refs.set(id, { handle: element as ElementHandle<Element>, signature: description.signature, info });
+        refs.set(id, { frame, handle: element as ElementHandle<Element>, signature: description.signature, info });
       }
       data.texts.push(...observed.texts.map((text, i) => ({ ...text, id: `t${frameIndex}_${i}`, frame: frameIndex })));
       data.records!.push(...observed.records.map(r => ({ id: `record${frameIndex}_${r.index}`, frame: frameIndex, context: r.context, readOnly: r.readOnly, textIds: r.texts.map(i => `t${frameIndex}_${i}`), ...(r.parent !== undefined ? { parentId: `record${frameIndex}_${r.parent}` } : {}) })));
