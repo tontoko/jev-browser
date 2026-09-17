@@ -224,14 +224,14 @@ Input literals are available locally, not missing. Choose __none__ only if no ob
       if(kind==='commit'){
         if(inputs.some(input=>!input.applied)){if(await wait(observed))continue;return finish('stopped','missing-input');}
         // Ask about only the remaining required fields, rather than doubling every binding question.
-        const unbound: typeof planned = [];
+        const unbound: { target: typeof planned[number]['target']; ref: typeof planned[number]['ref'] }[] = [];
         if (authority.form) for (const target of observed.data.elements.filter(target => target.required && target.fillable && !target.disabled && !target.readOnly)) {
           const ref = observed.refs.get(target.id)!;
           if (!await sameNativeForm(ref, authority.form)) continue;
           let claimed = false;
           for (const input of inputs.filter(input => input.ref))
             if (input.ref!.frame === ref.frame && await ref.handle.evaluate((node, other) => node === other, input.ref!.handle)) { claimed = true; break; }
-          if (!claimed) unbound.push({ input: inputs[0]!, target, ref, operation: undefined });
+          if (!claimed) unbound.push({ target, ref });
         }
         const repeats: typeof planned = [];
         if (unbound.length && inputs.length) {
@@ -250,6 +250,11 @@ Input literals are available locally, not missing. Choose __none__ only if no ob
             const result = await perform(operation!.action, observed, 'input', operation!.value);
             const stopped = await answerDialogs(result, observed); if (stopped) return stopped;
           }
+        }
+        if(authority.form && await nativeFormBusy(authority.form)){
+          const current=await capture();
+          if(await wait(current)){lastRequest='';continue;}
+          return finish('stopped','validation');
         }
         let drift=false;
         for(const {input,ref,operation} of repeats) if(!matchesControl(await readControl(ref),operation!.expected)) { input.applied=false;drift=true; }
