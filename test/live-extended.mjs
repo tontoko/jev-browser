@@ -35,7 +35,7 @@ test('LIVE extended: replace prefilled data, select, check and submit a registra
     values:{displayName:'検証用の受講者',email:'new-registration@example.invalid'},maxSteps:8,
     until:async page=>page.evaluate(()=>window.savedRecord?.displayName==='検証用の受講者'&&window.savedRecord?.email==='new-registration@example.invalid'&&window.savedRecord?.course==='gamba'&&window.savedRecord?.consent==='on'),
   });
-  assert.equal(result.status,'complete');
+  assert.equal(result.status,'complete', JSON.stringify({ reason: result.reason, steps: result.steps.map(s => ({ kind: s.plan.action.kind, target: s.plan.action.target?.name, id: s.plan.action.target?.id, binding: s.plan.action.valueKey, option: s.plan.action.option?.label })) }));
   assert.deepEqual(await page.evaluate(()=>window.savedRecord),{displayName:'検証用の受講者',email:'new-registration@example.invalid',course:'gamba',consent:'on'});
   report('registration-ja',result,start);
 });
