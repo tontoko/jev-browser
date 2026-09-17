@@ -228,7 +228,11 @@ Input literals are available locally, not missing. Choose __none__ only if no ob
           if(await wait(current)){lastRequest='';continue;}
           return finish('stopped','validation');
         }
-        for(const input of inputs.filter(input=>input.ref)) if(!(await readControl(input.ref!)).valid)return finish('stopped','validation');
+        // A changed value is repairable drift, not a rejection of the supplied value.
+        for(const input of inputs.filter(input=>input.ref)){
+          const expected=inputAction(input,input.ref!.info),current=await readControl(input.ref!);
+          if(expected&&matchesControl(current,expected.expected)&&!current.valid)return finish('stopped','validation');
+        }
         // Ask about only the remaining required fields, rather than doubling every binding question.
         const unbound: { target: typeof planned[number]['target']; ref: typeof planned[number]['ref'] }[] = [];
         if (authority.form) for (const target of observed.data.elements.filter(target => target.required && target.fillable && !target.disabled && !target.readOnly)) {
