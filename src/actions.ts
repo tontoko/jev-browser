@@ -44,3 +44,11 @@ export function actionDescription(action: GroundedAction) {
 
 /** Ephemeral public ref nonces are execution authority, not semantic model context. */
 export const modelElementId = (id: string): string => id.replace(/^r[0-9a-f]+_/, '');
+
+/** Quotes are copied from the caller's instruction; Jev never generates an input value. */
+export function inputBindings(instruction: string, supplied?: Record<string, string>) {
+  const quoted = [...instruction.matchAll(/"((?:\\.|[^"\\])*)"|「([^」]*)」|“([^”]*)”/g)].map(m => m[1] ?? m[2] ?? m[3] ?? '');
+  const values = supplied !== undefined ? { ...supplied } : Object.fromEntries(quoted.map((value, index) => [`quoted_${index}`, value]));
+  const inputs = Object.keys(values).map(key => ({ key, available: true, ...(supplied === undefined ? { userQuotedText: values[key] } : {}) }));
+  return { values, inputs };
+}
