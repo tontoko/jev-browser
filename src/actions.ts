@@ -34,10 +34,13 @@ export function actionDescription(action: GroundedAction) {
   const target = action.target;
   return {
     kind: action.kind,
-    ...(target ? { target: { id: target.id, role: target.role, name: target.name, context: target.context, frame: target.frame, filled: target.filled, checked: target.checked, ...(target.multiple ? { multiple: true } : {}) } } : {}),
+    ...(target ? { target: { id: modelElementId(target.id), role: target.role, name: target.name, context: target.context, frame: target.frame, filled: target.filled, checked: target.checked, ...(target.multiple ? { multiple: true } : {}) } } : {}),
     ...(action.valueKey !== undefined ? { valueKey: action.valueKey } : {}),
     ...(action.option ? { option: { label: action.option.label } } : {}),
     ...(action.key ? { key: action.key } : {}),
     ...(action.direction ? { direction: action.direction } : {}),
   };
 }
+
+/** Ephemeral public ref nonces are execution authority, not semantic model context. */
+export const modelElementId = (id: string): string => id.replace(/^r[0-9a-f]+_/, '');
