@@ -1,6 +1,12 @@
-node_modules/
+node_modules
 dist/
 .env*
 !.env.example
 *.tgz
 artifacts/
+test-results/
+playwright-report/
+.jev-browser/
+.playwright-mcp/
+coverage/
+.DS_Store

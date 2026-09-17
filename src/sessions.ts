@@ -46,6 +46,14 @@ export async function openSession(name: string, options: BrowserLaunchOptions, u
   try { await mkdir(directory, { mode: 0o700 }); }
   catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+    const previous = await descriptor(name);
+    try { process.kill(previous.pid, 0); } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ESRCH') throw new BrowserError('SESSION_ACCESS', 'Cannot verify the existing session process.');
+      // Never kill an unknown process or replay an action after a network failure.
+      // Only an owned descriptor whose process no longer exists can be reclaimed.
+      await rm(directory, { recursive: true, force: true });
+      return openSession(name, options, url, idleTimeoutMs);
+    }
     const existing = await sendSession(name, { command: 'health' });
     if (url) await sendSession(name, { command: 'goto', url });
     return { ...existing, session: name, status: 'open', reused: true };
