@@ -1,2 +1,158 @@
-# jev-browser
-Grounded Jev decisions and native Playwright automation through one SDK, CLI and MCP runtime
+# Jev Browser
+
+**One browser core. A persistent CLI, an MCP server, and a typed SDK.**
+
+Jev Browser combines native Playwright operations with [Jev](https://typesafe.ai) decisions over actual page elements. Use it instead of a Playwright MCP/CLI setup for browser automation, and instead of Stagehand for DOM-grounded `act`, `observe`, structured `extract`, and bounded agent workflows.
+
+Native operations and assertions run **without an AI key**. Natural-language operations use the official TypeSafe SDK. Jev chooses supplied candidates; it does not generate executable JavaScript or selectors. The project is Apache-2.0 licensed; the hosted Jev service and model weights are not included.
+
+[日本語](README.ja.md) · [Migration guide](docs/migration.md) · [API](docs/api.md) · [Security](SECURITY.md) · [Verification](docs/verification.md)
+
+## Install
+
+Node.js **22.15 or newer**. Download the package from [GitHub Releases](https://github.com/tontoko/jev-browser/releases), then install it into your project:
+
+```sh
+npm install --save-dev ./tontoko-jev-browser-0.2.0.tgz
+npx playwright install chromium
+```
+
+Or build from source:
+
+```sh
+git clone https://github.com/tontoko/jev-browser.git
+cd jev-browser
+npm ci
+npx playwright install chromium
+npm run build
+node dist/cli.js --help
+```
+
+The release tarball includes compiled JavaScript, declarations, the DOM bundle, documentation, and examples. There is no postinstall browser download and no requirement for a global browser daemon. The package is distributed on GitHub Releases; a registry publication is not implied.
+
+## CLI: persistent browser, independent commands
+
+```sh
+npx jev-browser open https://example.com --session work
+npx jev-browser snapshot --session work
+# Use the ref returned by snapshot, or a caller-authored Playwright selector:
+npx jev-browser click 'a' --session work
+npx jev-browser take_screenshot --args '{"filename":"page.png","fullPage":true}' --session work
+npx jev-browser close --session work
+```
+
+A named session survives separate CLI invocations. Its authenticated loopback endpoint is stored in a private directory, names are scoped to the working directory, and an idle session expires after 30 minutes. `open` defaults to session `default`; commands without `--session` reuse that session when it exists. `--url` without `--session` runs in a fresh browser.
+
+Every command accepts `--args JSON`, and `--args -` reads arguments from stdin. `session` is also available as a JSONL pipe for tools that keep stdin open. All results are JSON. Exit status is `0` for command success, `1` for errors/assertion failures, and `2` for a stopped/unverified agent or a pending dialog.
+
+```sh
+npx jev-browser fill 'input[name=email]' 'teacher@example.invalid' --session work
+npx jev-browser assert --args '{"target":"input[name=email]","property":"value","expected":"teacher@example.invalid"}' --session work
+```
+
+For natural-language operations, set `JEV_API_KEY` or `TYPESAFE_API_KEY`:
+
+```sh
+npx jev-browser act 'Fill the Name field with "Alice Example"' --session work
+npx jev-browser act 'Fill the email field with email' \
+  --values '{"email":"teacher@example.invalid"}' --session work
+npx jev-browser extract 'Read the invoice total' \
+  --fields '{"total":{"type":"number","description":"Total, not subtotal"}}' --session work
+```
+
+Explicit `values` are kept out of decision payloads. Quoted values are copied verbatim from the caller's instruction, which itself is sent to Jev. Page text and page-echoed input can contain private data: see [the data boundary](SECURITY.md).
+
+## MCP: native and natural-language tools
+
+After installing the tarball, configure your MCP client:
+
+```json
+{
+  "mcpServers": {
+    "jev-browser": {
+      "command": "node",
+      "args": ["/absolute/project/node_modules/@tontoko/jev-browser/dist/mcp-stdio.js"],
+      "env": { "JEV_API_KEY": "YOUR_KEY" }
+    }
+  }
+}
+```
+
+The environment entry is unnecessary for native operations. Prefer your client's secret store over putting real keys into committed JSON. Browser launch is lazy: tool discovery does not start a browser.
+
+`browser_snapshot` provides refs for `browser_click`, `browser_type`, and other native tools. `browser_act`, `browser_observe`, `browser_extract`, and `browser_run` use the **same core** as the SDK. Native `browser_assert` verifies facts without asking a model. Tools also cover tabs, frames, dialogs, uploads/downloads, screenshots, PDF, mouse/keyboard, storage, cookies, routing, traces, console messages, and request metadata.
+
+## SDK: existing Playwright Page and assertions
+
+```ts
+import { test, expect } from '@playwright/test';
+import { JevBrowser } from '@tontoko/jev-browser';
+import { z } from 'zod';
+
+test('save a name', async ({ page }) => {
+  await page.setContent(`
+    <label>Name<input></label>
+    <button onclick="document.querySelector('h1').textContent='Saved'">Save</button>
+    <h1>Pending</h1>
+  `);
+  const browser = new JevBrowser({ page });
+  try {
+    await browser.act('Fill the Name field with name', { values: { name: 'Alice' } });
+    await browser.act('Click Save');
+    await expect(page.getByRole('heading')).toHaveText('Saved');
+    const result = await browser.extract('Read the heading', z.object({ title: z.string() }));
+    expect(result.data.title).toBe('Saved');
+    expect(result.evidence.title.text).toBe('Saved');
+  } finally {
+    await browser.close(); // does not close the borrowed Page/context/browser
+  }
+});
+```
+
+`JevBrowser.launch()` owns its resources. Chromium, Firefox, WebKit, persistent profiles, CDP, and Playwright WebSocket connections are supported. The SDK exposes `browser.page`, so native Playwright assertions, locators, fixtures and application-specific verification remain available.
+
+### Structured extraction, grounded by record
+
+```ts
+const result = await browser.extract(
+  'Read active students, preserving table order',
+  z.object({ students: z.array(z.object({ name: z.string(), fee: z.number() })) }),
+  { recordsScope: 'tbody tr' },
+);
+// result.data.students, result.evidence['students.0.fee']
+```
+
+Nested objects and arrays are supported. Every array item comes from an observed row/card, and its fields are selected only from that record's text. `recordsScope` selects the records; otherwise semantic rows, list items and articles are used. Values and hrefs retain source evidence. Missing required values fail instead of being invented. Unsafe integers should be extracted as strings. Schema defaults, catch fallbacks, generated summaries, and value-changing transforms are not extraction operations.
+
+### Bounded agent, deterministic completion
+
+```ts
+const result = await browser.agent({
+  maxSteps: 8,
+  until: async page => page.getByText('Saved', { exact: true }).isVisible(),
+}).execute({
+  instruction: 'Enter name in the Name field and save',
+  values: { name: 'Alice' },
+});
+expect(result.status).toBe('complete');
+```
+
+`agent().execute()` delegates to `run()`. Only a read-only `until` returning literal `true` produces `complete / verified`. It should promptly return `false` when work remains, rather than wait for an action that has not run yet. Model-only completion is `unverified`; a dialog, missing target or step limit stops the loop. Mutation failures are never automatically retried.
+
+## Scope and migration
+
+This is a **functional alternative**, not a binary-compatible re-export of Microsoft or Browserbase packages. Tool configuration, CLI flags, SDK types, and result envelopes have documented differences. [The migration guide](docs/migration.md) maps the supported workflows and remaining boundaries.
+
+The AI layer is DOM-based. Native screenshots and coordinate mouse operations are available to an outer vision-capable client, but Jev does not infer Canvas coordinates or invent text from images. Cloud session infrastructure, browser extensions, generated summaries, and arbitrary Node-side MCP code execution are not part of this package. Explicit page evaluation is off by default; trusted SDK callers already have the full Playwright Page.
+
+## Verify and contribute
+
+```sh
+npm run check
+npm run check:examples
+npm run check:package
+# Explicit real-provider tests, synthetic pages only:
+npm run test:live
+```
+
+Default tests use real browsers, deterministic injected choices, and local HTTP fixtures. Live tests are opt-in and never run against production accounts. See [CONTRIBUTING.md](CONTRIBUTING.md) and [the verification record](docs/verification.md).
