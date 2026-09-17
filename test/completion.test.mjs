@@ -31,3 +31,14 @@ test('readback: two new matching records are ambiguous rather than arbitrarily s
  const duplicate={...snapshot,records:[...snapshot.records,{...snapshot.records[0],id:'duplicate'}]};let calls=0;
  assert.equal(await verifyReadback(new Map(),duplicate,'Create',inputs(),async()=>{calls++;}),undefined);assert.equal(calls,0);
 });
+
+test('readback: a visibly wrong saved field cannot be hidden by filtering its candidate out',async()=>{
+ const changed={...snapshot,texts:snapshot.texts.map(source=>source.id==='name'?{...source,text:'Wrong Name',context:'Name Wrong Name'}:source),records:[{...snapshot.records[0],context:'Email fixture@example.invalid Name Wrong Name'}]};
+ const result=await verifyReadback(new Map(),changed,'Create the contact',inputs(),async request=>({answers:{completion:{choice:'complete'},read_0:{choice:'email'},read_1:{choice:request.questions.read_1.criteria.name?'name':'__none__'}}}));
+ assert.equal(result,undefined);
+});
+test('readback: genuinely undisplayed fields retain explicit unobserved coverage',async()=>{
+ const changed={...snapshot,texts:snapshot.texts.filter(source=>source.id!=='name'),records:[{...snapshot.records[0],textIds:['email'],context:'Email fixture@example.invalid'}]};
+ const result=await verifyReadback(new Map(),changed,'Create the contact',inputs(),async()=>({answers:{completion:{choice:'complete'},read_0:{choice:'email'},read_1:{choice:'__none__'}}}));
+ assert.deepEqual(result.unobserved,['/name']);assert.deepEqual(result.readback,['/email']);
+});
