@@ -3,7 +3,7 @@ import type { Page } from 'playwright';
 import type { DecisionEngine, DecisionRequest, DecisionResult } from './decision.js';
 import { BrowserError } from './errors.js';
 import { actionCandidates, actionDescription, modelElementId, inputBindings } from './actions.js';
-import { bindingQuestions, flattenInputs, inputAction, inputMetadata, matchesControl, privateFilter, publicInputs, readControl, bindingAuthority, nativeFormValid, type InputBinding } from './bindings.js';
+import { bindingQuestions, flattenInputs, inputAction, inputMetadata, matchesControl, privateFilter, publicInputs, readControl, bindingAuthority, nativeFormValid, needsBinding, sameNativeForm, type InputBinding } from './bindings.js';
 import { recordCounts, verifyReadback, waitForRelevantChange } from './completion.js';
 import type { Captured } from './observation.js';
 import type { ActionPlan, ActResult, GroundedAction, OperationContext, RunEffect, RunOptions, RunResult, RunVerification, RunAssertion } from './types.js';
@@ -35,6 +35,7 @@ export async function runGoal(host: RunHost, instruction: string, options: RunOp
   const steps: ActResult[] = [], effects: RunEffect[] = [], captures = new Set<Captured>();
   const usage = { requests: 0, questions: 0, inputTokens: 0, outputTokens: 0 };
   let verification: RunVerification | undefined;
+  let transitioning=new Set<InputBinding>();
   let lastDecision: Omit<DecisionResult,'answers'> = {}, commit: RunEffect | undefined;
   const finish = (status: RunResult['status'], reason: RunResult['reason']): RunResult => filter({
     status, reason, steps, inputs: publicInputs(inputs), effects, usage, ...(verification ? { verification } : {}),
@@ -83,6 +84,7 @@ export async function runGoal(host: RunHost, instruction: string, options: RunOp
     const effect: RunEffect={id:plan.id,kind,status:'attempted',...(action.valueKey?{input:action.valueKey}:{})};
     let started=false;
     try {
+      transitioning.clear();
       const result=await host.perform(plan,observed,value===undefined?{}:{[action.valueKey!]:value},()=>{
         started=true;effects.push(effect);if(kind==='commit')commit=effect;
       });
@@ -117,6 +119,7 @@ export async function runGoal(host: RunHost, instruction: string, options: RunOp
       for(const input of inputs.filter(input=>input.applied&&input.ref)){
         const action=inputAction(input,input.ref!.info);
         const state=await readControl(input.ref!).catch(()=>undefined);
+        if(transitioning.has(input)&&(!state?.connected||!await input.ref!.handle.isVisible().catch(()=>false))){input.ref=undefined;delete input.target;continue;}
         if(!action||!state||!matchesControl(state,action.expected)){input.applied=false;input.ref=undefined;delete input.target;}
       }
       const quoted=inputs.length?{}:inputBindings(instruction).values;
@@ -145,7 +148,7 @@ Input literals are available locally, not missing. Choose __none__ only if no ob
       lastRequest=key;
       const decision=await decide(request);
       const assignments=new Map<InputBinding,string>(),confidences=new Map<InputBinding,number>();let ambiguous=false;
-      const requested=inputs.filter(input=>!input.applied);
+      const requested=inputs.filter(needsBinding);
       for(const[index,id]of Object.keys(bindings).entries()){
         const input=requested[index]!;
         confidences.set(input,decision.answers[id]!.confidence);
@@ -202,6 +205,7 @@ Input literals are available locally, not missing. Choose __none__ only if no ob
         if(inputs.some(input=>!input.applied)){if(await wait(observed))continue;return finish('stopped','missing-input');}
         let drift=false;
         for(const input of inputs){
+          if(input.applied&&!input.ref)continue; // A verified earlier wizard step; final readback states what was observed.
           const expected=input.ref&&inputAction(input,input.ref.info),current=input.ref&&await readControl(input.ref).catch(()=>undefined);
           if(!expected||!current||!matchesControl(current,expected.expected)){input.applied=false;drift=true;}
           else if(!current.valid)return finish('stopped','validation');
@@ -210,11 +214,21 @@ Input literals are available locally, not missing. Choose __none__ only if no ob
         if(authority.form&&!await nativeFormValid(authority.form))return finish('stopped','missing-input');
       }
       if(steps.length>=maxSteps)return finish('stopped','step-limit');
+      const carried: InputBinding[]=[];
+      const advanceRef=kind==='advance'&&action.target?observed.refs.get(action.target.id):undefined;
+      if(advanceRef){
+        for(const input of inputs.filter(input=>input.applied&&input.ref))if(await sameNativeForm(input.ref!,advanceRef)){
+          const expected=inputAction(input,input.ref!.info),state=await readControl(input.ref!);
+          if(!expected||!matchesControl(state,expected.expected)||!state.valid)return finish('stopped','validation');
+          carried.push(input);
+        }
+      }
       try {
         const result=await perform(action,observed,kind==='commit'?'commit':'advance',action.valueKey?quoted[action.valueKey]:undefined,decision.answers.action!.confidence);
         if(result.status==='dialog')return finish('stopped','dialog');
       }catch(error){if(error instanceof BrowserError&&error.code==='STALE_TARGET')continue;throw error;}
       if(kind==='commit')return await readCommitted(recordCounts(observed.data));
+      transitioning=new Set(carried);
     }
   }catch(error){
     const publicError=error instanceof BrowserError?error:new BrowserError(runSignal.aborted?'CANCELLED':'RUN_FAILED','The run was interrupted; inspect its partial result before retrying.');
