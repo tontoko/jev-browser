@@ -53,7 +53,7 @@ export async function goalFixture(t, browser, fields, options = {}) {
       records.push(data);
       res.setHeader('Content-Type','application/json');res.end(JSON.stringify(data));return;
     }
-    res.setHeader('Content-Type','text/html; charset=utf-8');res.end(body);
+    res.setHeader('Content-Type','text/html; charset=utf-8');res.end(body.replace("heading.textContent='Contact created'",'heading.textContent='+JSON.stringify(options.resultTitle ?? 'Contact created')));
   });
   const page = await browser.newPage(); await page.goto(service.url);
   const decider = options.engine ?? (options.live ? new JevDecisionEngine() : formEngine());
