@@ -80,3 +80,5 @@ A dialog result must be handled with `handle_dialog` before other operations. `d
 Stable codes distinguish configuration, unsupported schemas, missing candidates/evidence, stale refs/plans, cancelled or uncertain actions, failed assertions, denied capabilities, and session failures. CLI/MCP sanitize unexpected errors instead of returning provider response bodies. SDK caller code may still see Playwright errors and should treat them as local diagnostics.
 
 A native/AI command returning `executed` means the operation ran, not that the business workflow succeeded. Only assertions or a deterministic predicate establish completion. Never treat confidence or the absence of an exception as a passed E2E assertion.
+
+Downloads are reported after the browser emits a download event. A click returning does not imply a download has started. In SDK workflows, register `page.waitForEvent('download')` before clicking; native clients can inspect the current download list in a later command. Whether a resource is rendered or downloaded depends on browser behavior and the response MIME/Content-Disposition headers.

@@ -9,7 +9,7 @@ let browser,server,root;
 before(async()=>{
  browser=await fixtureBrowser();root=await mkdtemp(join(tmpdir(),'jev-native-'));
  server=await httpServer((req,res)=>{
-  if(req.url==='/download'){res.setHeader('Content-Disposition','attachment; filename="sample.txt"');res.end('downloaded');return;}
+  if(req.url==='/download'){res.setHeader('Content-Type','application/octet-stream');res.setHeader('Content-Disposition','attachment; filename="sample.txt"');res.end('downloaded');return;}
   res.setHeader('Content-Type','text/html');res.end('<h1>'+req.url+'</h1><a href="/two">Next</a><label>Email<input></label><button onclick="document.body.dataset.saved=1">Save</button>');
  });
 });
