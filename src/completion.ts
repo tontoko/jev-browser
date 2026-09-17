@@ -1,6 +1,7 @@
 import type { Page } from 'playwright';
 import type { DecisionRequest, DecisionResult } from './decision.js';
-import { progressChanged, type Captured } from './observation.js';
+import type { Captured } from './observation.js';
+import { progressChanged } from './dom.js';
 import type { RunVerification, Snapshot } from './types.js';
 import type { InputBinding } from './bindings.js';
 const normalized = (text: string) => text.replace(/\s+/g,' ').trim();

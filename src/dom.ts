@@ -62,6 +62,21 @@ export function describe(el: Element) {
     info.multiple, info.options?.map(o => [o.label, o.value, o.disabled, ...(info.multiple ? [o.selected] : [])]), info.disabled, info.readOnly, info.fillable]);
   return { info, signature, connected: el.isConnected, visible: visible(el) };
 }
+/** Fixed read-only browser predicate used for local progress waits, never model-authored. */
+export function progressChanged(previous?: string): string | boolean {
+  const roots: (Document | ShadowRoot)[] = [document], parts: unknown[] = [location.href];
+  let scanned = 0;
+  for (const root of roots) for (const el of root.querySelectorAll('*')) {
+    if (++scanned > 6000) break;
+    if (el.shadowRoot) roots.push(el.shadowRoot);
+    if (!el.getClientRects().length) continue;
+    if (el.matches('input,textarea,select,button,a,[role="button"],[role="combobox"],[role="option"],[role="checkbox"],[role="switch"],[contenteditable="true"]'))
+      parts.push([el.tagName,el.getAttribute('name'),el.getAttribute('aria-label'),el.matches(':disabled'),el.getAttribute('aria-checked'),el instanceof HTMLSelectElement ? Array.from(el.options,o=>[o.value,o.label,o.disabled]) : (el as HTMLElement).innerText]);
+    else if (el.matches('h1,h2,h3,[role="status"],[role="alert"],[aria-busy],article,tbody tr,[role="row"]'))
+      parts.push([el.tagName,el.getAttribute('role'),el.getAttribute('aria-busy'),(el as HTMLElement).innerText?.slice(0,1000)]);
+  }
+  const key=JSON.stringify(parts);return previous===undefined?key:key!==previous;
+}
 const actionableRoles = new Set(['button','link','textbox','searchbox','checkbox','radio','switch','combobox','listbox','menuitem','menuitemcheckbox','menuitemradio','tab','option']);
 export function observe(options: { maxElements: number; maxTexts: number }, scopedRoots?: Element[], explicitRecords?: Element[]) {
   const nodes: Element[] = [];
@@ -113,5 +128,5 @@ export function observe(options: { maxElements: number; maxTexts: number }, scop
     const parent = recordNodes.findIndex(other => other !== el && other.contains(el) && !recordNodes.some(between => between !== other && between !== el && other.contains(between) && between.contains(el)));
     return { index, parent: parent < 0 ? undefined : parent, readOnly: !el.matches('form,input,textarea,select,[contenteditable="true"]') && !el.querySelector('input,textarea,select,[contenteditable="true"]'), context: normalize((el as HTMLElement).innerText).slice(0, 1000), texts: textNodes.flatMap((node, i) => el === node || el.contains(node) ? [i] : []) };
   });
-  return { nodes, elements, texts, records, truncatedElements, truncatedTexts, busy: !!document.querySelector('[aria-busy="true"]') };
+  return { nodes, elements, texts, records, truncatedElements, truncatedTexts, changeKey: String(progressChanged()), busy: !!document.querySelector('[aria-busy="true"]') };
 }
