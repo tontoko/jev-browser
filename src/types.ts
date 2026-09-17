@@ -75,6 +75,8 @@ export interface RunOptions extends OperationOptions {
   expect?: RunAssertion | RunAssertion[];
   maxSteps?: number;
   maxDecisions?: number;
+  /** Read-only provider retries per logical decision, 0..2. Browser effects are never replayed. */
+  decisionRetries?: number;
   settleTimeoutMs?: number;
   /** Must be a read-only, deterministic check. True is the only verified completion. */
   until?: (page: Page, operation: OperationContext) => Promise<boolean> | boolean;
