@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   buildBriefComponentScenario,
   buildBriefSourceScenario,
+  buildBriefMultiLabelScenario,
   buildCompanionInitialScenario,
   buildCompanionResultScenario,
   buildImportColumnScenario,
@@ -156,4 +157,24 @@ test('Companion second stage cannot hide a wrong first-stage interpretation', ()
   assert.equal(wrong.state.results.some(item => item.id === 'report-r2'), false);
   assert.equal(Object.hasOwn(wrong.questions.result.criteria, 'report-r2'), false);
   assert.equal(Object.hasOwn(wrong.questions.next_action.criteria, 'draft-goal'), false);
+});
+
+
+test('source-first multi-label Brief can map one source fact to venue and notice independently', () => {
+  const scenario = buildBriefMultiLabelScenario();
+  assert.equal(scenario.questions['source:m4:venue'].type, 'noul');
+  assert.equal(scenario.questions['source:m4:notice'].type, 'noul');
+  assert.equal(scenario.oracle['source:m4:venue'], true);
+  assert.equal(scenario.oracle['source:m4:notice'], true);
+
+  const answers = Object.fromEntries(
+    Object.entries(scenario.oracle).map(([id, expected]) => [
+      id,
+      typeof expected === 'boolean'
+        ? { type: 'noul', noul: expected ? 0.9 : 0.1 }
+        : { type: 'choice', choice: expected, confidence: 0.9, probabilities: { [expected]: 0.9 } },
+    ]),
+  );
+  const score = scoreAnswers(scenario, answers);
+  assert.equal(score.correct, score.total);
 });
