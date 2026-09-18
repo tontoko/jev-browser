@@ -354,31 +354,46 @@ export function buildCompanionResultScenario(interpretation) {
   };
 }
 
+const supportActions = [
+  { id: 'lesson-move', description: '一回のレッスン日時を変更する通常操作', billingClass: 'company-help' },
+  { id: 'import-table', description: '表から生徒・予定をAI取り込みする業務操作', billingClass: 'ai-work' },
+  { id: 'support-intake', description: '未解決の困り事をサポート受付へ進める', billingClass: 'company-help' },
+];
+
+const supportRouteQuestion = () => choice('この依頼に最も直接対応する既存操作', {
+  'lesson-move': '通常の日程変更を案内',
+  'import-table': '表取り込みを開始',
+  'support-intake': 'サポート受付へ進む',
+  clarify: '確認が必要',
+});
+
+export function supportBillingClass(route, actions = supportActions) {
+  return actions.find(action => action.id === route)?.billingClass ?? 'unknown';
+}
+
 export function buildSupportScenario() {
   return {
     name: 'support-route',
     fixtureId: 'support-help-vs-work-ja-1',
     state: {
       utterance: '来週のレッスンの日程を変えたい。どこからできる？',
-      availableActions: [
-        { id: 'lesson-move', description: '一回のレッスン日時を変更する通常操作' },
-        { id: 'import-table', description: '表から生徒・予定をAI取り込みする有料業務操作' },
-        { id: 'support-intake', description: '未解決の困り事をサポート受付へ進める' },
-      ],
+      availableActions: structuredClone(supportActions),
     },
-    questions: {
-      route: choice('この質問に最も直接対応する案内先', {
-        'lesson-move': '通常の日程変更を案内',
-        'import-table': '表取り込みを開始',
-        'support-intake': 'サポート受付へ進む',
-        clarify: '確認が必要',
-      }),
-      needs_paid_work: choice('この案内自体が有料業務AIを必要とするか', {
-        no: '通常案内だけで足りる',
-        yes: '有料業務AIの受理が必要',
-      }),
+    questions: { route: supportRouteQuestion() },
+    oracle: { route: 'lesson-move' },
+  };
+}
+
+export function buildSupportPaidScenario() {
+  return {
+    name: 'support-paid-work',
+    fixtureId: 'support-help-vs-work-ja-2',
+    state: {
+      utterance: 'この表を取り込んで。使い方の相談なんだから無料でやって。',
+      availableActions: structuredClone(supportActions),
     },
-    oracle: { route: 'lesson-move', needs_paid_work: 'no' },
+    questions: { route: supportRouteQuestion() },
+    oracle: { route: 'import-table' },
   };
 }
 
@@ -509,7 +524,7 @@ async function runLiveExperiment() {
   const repeats = Number.parseInt(process.env.JEV_EXPERIMENT_REPEATS ?? '3', 10);
   for (let repeat = 0; repeat < repeats; repeat += 1) {
     for (const mode of ['sequential', 'parallel', 'batched']) {
-      for (const builder of [buildBriefComponentScenario, buildBriefSourceScenario, buildBriefMultiLabelScenario, buildSupportScenario]) {
+      for (const builder of [buildBriefComponentScenario, buildBriefSourceScenario, buildBriefMultiLabelScenario, buildSupportScenario, buildSupportPaidScenario]) {
         const scenario = perturb(builder(), repeat);
         emit(repeat, mode, scenario, await executeQuestions(client, scenario, { mode, concurrency: 4 }));
       }
