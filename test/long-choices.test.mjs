@@ -40,3 +40,18 @@ test('long choices: an unknown option does not execute any selection',async t=>{
  await assert.rejects(core.act('Choose an unavailable instrument.'),{code:'NO_MATCH'});
  assert.equal(await page.locator('select').inputValue(),'v0');
 });
+
+for(const preserve of [true,false])test(`native selection: changed semantics at the same index ${preserve?'are repaired':'cannot be saved'}`,async t=>{
+ const f=await goalFixture(t,browser,[{path:'/instrument',label:'Instrument',type:'select',options:['Choose','Piano','Viola da gamba']},{path:'/name',label:'Name'}]);
+ await f.page.locator('#add').click();await f.page.locator('form').waitFor();
+ await f.page.locator('input').evaluate((input,preserve)=>{
+   input.addEventListener('input',()=>{
+     const select=input.form.querySelector('select');
+     select.innerHTML='<option>Choose</option><option>Wrong instrument</option>'+(preserve?'<option>Piano</option>':'');
+     select.selectedIndex=1;
+   },{once:true});
+ },preserve);
+ const result=await f.core.run('Fill the instrument and name, then Save.',{values:{instrument:'Piano',name:'Index Drift'},settleTimeoutMs:150});
+ if(preserve){assert.equal(result.status,'complete');assert.equal(f.attempts.length,1);assert.equal(f.records[0]['/instrument'],'Piano');}
+ else{assert.notEqual(result.status,'complete');assert.equal(f.attempts.length,0);}
+});
