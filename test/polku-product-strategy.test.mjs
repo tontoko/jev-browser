@@ -9,6 +9,9 @@ import {
   buildCompanionResultScenario,
   buildImportColumnScenario,
   buildImportRowScenario,
+  buildSupportScenario,
+  buildSupportPaidScenario,
+  supportBillingClass,
   executeQuestions,
   scoreAnswers,
 } from '../experiments/polku-product.mjs';
@@ -177,4 +180,18 @@ test('source-first multi-label Brief can map one source fact to venue and notice
   );
   const score = scoreAnswers(scenario, answers);
   assert.equal(score.correct, score.total);
+});
+
+
+test('support routing keeps billing server-owned instead of asking Jev to decide price', () => {
+  const help = buildSupportScenario();
+  assert.deepEqual(Object.keys(help.questions), ['route']);
+  assert.equal(help.oracle.route, 'lesson-move');
+  assert.equal(supportBillingClass(help.oracle.route, help.state.availableActions), 'company-help');
+
+  const paid = buildSupportPaidScenario();
+  assert.deepEqual(Object.keys(paid.questions), ['route']);
+  assert.equal(paid.oracle.route, 'import-table');
+  assert.equal(supportBillingClass(paid.oracle.route, paid.state.availableActions), 'ai-work');
+  assert.match(paid.state.utterance, /無料/);
 });
