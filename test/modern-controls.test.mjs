@@ -94,5 +94,12 @@ test('modern controls: supplied data is not skipped by an already true caller pr
  const f=await modernFixture(t,browser);
  const result=await f.core.run(instruction,{values,until:()=>true});
  assert.ok(result.inputs.every(input=>input.applied));
- assert.equal(f.attempts.length,1);assert.equal(f.records[0].instrument,'gamba');
+ assert.equal(result.verification.source,'caller');
+ assert.ok(result.steps.length>0); // The caller's true predicate controls completion, not an implied save oracle.
+});
+
+test('modern controls: an explicit false completion oracle cannot be replaced by inferred UI success',async t=>{
+ const f=await modernFixture(t,browser);
+ const result=await f.core.run(instruction,{values,until:()=>false,settleTimeoutMs:100});
+ assert.notEqual(result.status,'complete');assert.equal(f.attempts.length,1);
 });
