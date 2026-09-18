@@ -1,16 +1,18 @@
 import { randomUUID } from 'node:crypto';
+import { applyCombobox } from './widgets.js';
 import type { Page } from 'playwright';
 import type { DecisionEngine, DecisionRequest, DecisionResult } from './decision.js';
 import { BrowserError } from './errors.js';
 import { actionCandidates, actionDescription, modelElementId, inputBindings, modelElement, resolveSelectChoice } from './actions.js';
 import { bindingQuestions, flattenInputs, inputAction, inputMetadata, matchesControl, privateFilter, publicInputs, readControl, bindingAuthority, nativeFormValid, nativeFormBusy, reuseQuestions, needsBinding, sameNativeForm, type InputBinding } from './bindings.js';
 import { recordCounts, verifyReadback, waitForRelevantChange } from './completion.js';
-import type { Captured } from './observation.js';
+import type { Captured, ElementRef } from './observation.js';
 import type { ActionPlan, ActResult, GroundedAction, OperationContext, RunEffect, RunOptions, RunResult, RunVerification, RunAssertion } from './types.js';
 
 export interface RunHost {
   page(): Page;
   capture(): Promise<Captured>;
+  captureChoice(ref:ElementRef,value:string):Promise<Captured>;
   engine(): DecisionEngine;
   operation(): OperationContext;
   perform(plan: ActionPlan, captured: Captured, values: Record<string,string>, started: () => void): Promise<ActResult>;
@@ -80,6 +82,7 @@ export async function runGoal(host: RunHost, instruction: string, options: RunOp
     return true;
   }
   async function perform(action: GroundedAction, observed: Captured, kind: RunEffect['kind'], value?: string, confidence = 0): Promise<ActResult> {
+    if(steps.length>=maxSteps)throw new BrowserError('STEP_LIMIT','The goal exhausted its browser action budget.');
     const plan: ActionPlan={id:randomUUID(),snapshotId:observed.data.id,action,confidence,decision:lastDecision};
     const effect: RunEffect={id:plan.id,kind,status:'attempted',...(action.valueKey?{input:action.valueKey}:{})};
     let started=false;
@@ -207,6 +210,15 @@ Input literals are available locally, not missing. Choose __none__ only if no ob
         if(steps.length>=maxSteps)return finish('stopped','step-limit');
         const current=await readControl(ref);
         if(!matchesControl(current,operation.expected)){
+          if(target.role==='combobox'&&target.tag!=='select'){
+            input.ref=await applyCombobox(input,ref,observed,{
+              perform:(action,snapshot,value)=>perform(action,snapshot,'input',value,confidences.get(input)!),
+              captureChoice:async(ref,value)=>{const snapshot=await host.captureChoice(ref,value);captures.add(snapshot);return snapshot;},
+              operation:()=>{const op=host.operation();return {...op,timeoutMs:Math.min(op.timeoutMs,settle)};},
+            });
+            input.target=input.ref.info.id;input.applied=true;
+            stale=true;break; // The interaction changed the observation; preserve applied bindings and re-observe.
+          }
           try {const result=await perform(operation.action,observed,'input',operation.value,confidences.get(input)!);const stopped=await answerDialogs(result,observed);if(stopped)return stopped;}
           catch(error){if(error instanceof BrowserError&&error.code==='STALE_TARGET'){stale=true;break;}throw error;}
           const after=await readControl(ref);
@@ -300,6 +312,7 @@ Input literals are available locally, not missing. Choose __none__ only if no ob
       transitioning=new Set(carried);
     }
   }catch(error){
+    if(error instanceof BrowserError&&error.code==='STEP_LIMIT')return finish('stopped','step-limit');
     const publicError=error instanceof BrowserError?error:new BrowserError(runSignal.aborted?'CANCELLED':'RUN_FAILED','The run was interrupted; inspect its partial result before retrying.');
     publicError.partial=finish(commit?'unverified':'stopped',commit?'effect-unknown':'error');throw publicError;
   }finally{await Promise.allSettled([...captures].map(observed=>observed.dispose()));}

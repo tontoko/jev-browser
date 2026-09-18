@@ -5,7 +5,7 @@ import { z } from 'zod';
 import type { EntryType } from '@typesafe-ai/sdk';
 import { JevDecisionEngine, type DecisionEngine, type DecisionRequest } from './decision.js';
 import { BrowserError } from './errors.js';
-import { capture, publicURL, verifyTarget, type Captured } from './observation.js';
+import { capture, publicURL, verifyTarget, captureComboboxChoice, type Captured } from './observation.js';
 import { actionCandidates, actionDescription, modelElementId, inputBindings, modelElement, resolveSelectChoice } from './actions.js';
 import { extractStructured } from './structured.js';
 import { NativeBrowser } from './native.js';
@@ -201,6 +201,7 @@ export class JevBrowser {
       await this.invalidate();
       return runGoal({
         page: () => this.page, capture: () => capture(this.page,{...this.limits,scope:options.scope}),
+        captureChoice: (ref,value) => captureComboboxChoice(this.page,ref,value,this.limits,{signal:operation.signal,timeoutMs:Math.min(this.remaining(operation),options.settleTimeoutMs??2000)}),
         engine: () => this.engine(), operation: () => ({signal:operation.signal,timeoutMs:this.remaining(operation)}),
         perform: (plan,observed,values,started) => this.executeCaptured(plan,observed,values,operation,started),
         assert: async condition => {

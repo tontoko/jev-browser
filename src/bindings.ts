@@ -68,7 +68,7 @@ export function privateFilter(inputs: InputBinding[]): <T>(data: T) => T {
 export const needsBinding = (input: InputBinding) => !input.applied || !input.ref;
 
 export function bindingQuestions(snapshot: Snapshot, inputs: InputBinding[]): DecisionRequest['questions'] {
-  const controls = snapshot.elements.filter(e => !e.disabled && !e.readOnly && (e.fillable || e.tag === 'select' || ['checkbox','switch','radio'].includes(e.role)));
+  const controls = snapshot.elements.filter(e => !e.disabled && (!e.readOnly || e.role === 'combobox') && (e.fillable || e.tag === 'select' || ['combobox','checkbox','switch','radio'].includes(e.role)));
   if (!controls.length) return {};
   const criteria = Object.fromEntries(controls.map(control => [modelElementId(control.id), { control: modelElementId(control.id) }]));
   return Object.fromEntries(inputs.filter(needsBinding).map((input,index) => [`bind_${index}`, {
@@ -79,7 +79,7 @@ export function bindingQuestions(snapshot: Snapshot, inputs: InputBinding[]): De
 }
 
 export interface ControlState {
-  connected: boolean; value: string | boolean | string[] | undefined; valid: boolean;
+  connected: boolean; value: string | boolean | string[] | undefined; valid: boolean; expanded?: boolean;
 }
 /** This returns local values only. It is not part of the model observation. */
 export async function readControl(ref: ElementRef): Promise<ControlState> {
@@ -87,17 +87,22 @@ export async function readControl(ref: ElementRef): Promise<ControlState> {
     const input = el as HTMLInputElement;
     let value: string | boolean | string[] | undefined;
     if (el instanceof HTMLSelectElement) value = el.multiple ? Array.from(el.selectedOptions, option => String(option.index)) : String(el.selectedIndex);
+    else if (el.getAttribute('role') === 'combobox') value = el.getAttribute('aria-valuetext') ?? (el instanceof HTMLInputElement ? el.value : (el as HTMLElement).innerText);
     else if (el instanceof HTMLInputElement && ['checkbox','radio'].includes(el.type)) value = el.indeterminate ? undefined : el.checked;
     else if (['checkbox','switch','radio'].includes(el.getAttribute('role') ?? '')) {
       const checked = el.getAttribute('aria-checked'); value = checked === 'true' ? true : checked === 'false' ? false : undefined;
     } else if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) value = input.value;
     else if (el instanceof HTMLElement && el.isContentEditable) value = el.innerText;
-    return { connected: el.isConnected, value, valid: (!('validity' in el) || input.validity.valid) && el.getAttribute('aria-invalid') !== 'true' };
+    return { connected: el.isConnected, value, expanded: el.getAttribute('role') === 'combobox' && el.getAttribute('aria-expanded') === 'true', valid: (!('validity' in el) || input.validity.valid) && el.getAttribute('aria-invalid') !== 'true' };
   });
 }
 
 export function inputAction(input: InputBinding, target: ElementInfo): { action: GroundedAction; value?: string; expected: ControlState['value'] } | undefined {
-  if (target.disabled || target.readOnly) return;
+  if (target.disabled || target.readOnly && target.role !== 'combobox') return;
+  if (target.role === 'combobox' && target.tag !== 'select') {
+    if (typeof input.value !== 'string' || !input.value.trim()) return;
+    return {action:{kind:target.fillable&&!target.readOnly?'fill':'click',target,valueKey:input.path},value:input.value,expected:input.value};
+  }
   if (target.tag === 'select') {
     if (target.multiple && target.options?.some(option => option.disabled && option.selected)) return;
     const desired = Array.isArray(input.value) ? input.value : [input.value];
@@ -163,4 +168,4 @@ export function reuseQuestions(controls: ElementInfo[], inputs: InputBinding[]):
     criteria: { ...Object.fromEntries(inputs.map(input => [input.path, { input: input.path, meaning: input.label }])), __none__: 'This control is not a confirmation of any supplied value; leave it unchanged.' },
   }]));
 }
-export const matchesControl = (state: ControlState, expected: ControlState['value']) => state.connected && JSON.stringify(state.value) === JSON.stringify(expected);
+export const matchesControl = (state: ControlState, expected: ControlState['value']) => state.connected && !state.expanded && JSON.stringify(state.value) === JSON.stringify(expected);

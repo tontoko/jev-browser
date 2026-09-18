@@ -10,7 +10,7 @@ export function modernEngine(){return engine((q,r,id)=>{
     const input=r.state.inputs.find(input=>q.instructions.includes(JSON.stringify(input.path)));
     const meaning=input?.path==='/student/fullName'?labels.name:input?.path==='/student/contactEmail'?labels.email:labels.instrument;
     const controls=r.state.page.elements.filter(element=>element.name===meaning);
-    return controls.length===1?controls[0].id:'__ambiguous__';
+    return controls.length===1&&Object.hasOwn(q.criteria,controls[0].id)?controls[0].id:'__none__';
   }
   if(id.startsWith('effect_'))return r.state.actions[id.slice(7)]?.target?.name==='Create learner'?'commit':'advance';
   if(id==='action')return c=>c?.kind==='click'&&['New learner','Create learner'].includes(c.target?.name);

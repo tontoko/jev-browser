@@ -14,6 +14,9 @@ export interface ElementInfo {
   formId?: string;
   formName?: string;
   popup?: string;
+  controls?: string[];
+  expanded?: boolean;
+  listboxId?: string;
   required?: boolean;
   disabled: boolean;
   readOnly: boolean;
