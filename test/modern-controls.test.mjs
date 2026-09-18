@@ -49,3 +49,25 @@ test('modern fixture: names and result labels do not expose caller paths and per
  const names=await f.page.locator('[name]').evaluateAll(nodes=>nodes.map(node=>node.getAttribute('name')));
  assert.ok(names.every(name=>/^u[0-9a-f]+[abc]$/.test(name)));
 });
+
+test('modern controls: cancellation while suggestions load cannot produce a late click',async t=>{
+ const abort=new AbortController();let timer;
+ const f=await modernFixture(t,browser,{widget:'editable',delayMs:350,browserOptions:{allowAction:plan=>{if(plan.action.target?.role==='combobox')timer=setTimeout(()=>abort.abort(),50);return true;}}});
+ t.after(()=>clearTimeout(timer));
+ await assert.rejects(f.core.run(instruction,{values,signal:abort.signal}));
+ await f.page.getByRole('option',{name:'Viola da gamba',exact:true}).waitFor();
+ assert.equal(await f.page.evaluate(()=>window.optionClicks??0),0);assert.equal(f.attempts.length,0);
+});
+test('modern controls: widget substeps honor the same overall step budget',async t=>{
+ const f=await modernFixture(t,browser);const result=await f.core.run(instruction,{values,maxSteps:4});
+ assert.equal(result.reason,'step-limit');assert.equal(result.steps.length,4);assert.equal(f.attempts.length,0);
+});
+test('modern controls: changing the control popup during option authorization prevents selection',async t=>{
+ let page;
+ const f=await modernFixture(t,browser,{browserOptions:{allowCommand:async command=>{
+   if(command.command==='click'&&command.element==='Viola da gamba')await page.getByRole('combobox').evaluate(el=>el.setAttribute('aria-controls','different-popup'));
+   return true;
+ }}});page=f.page;
+ const result=await f.core.run(instruction,{values,settleTimeoutMs:100}).catch(error=>error.partial);
+ assert.notEqual(result?.status,'complete');assert.equal(await page.evaluate(()=>window.optionClicks??0),0);assert.equal(f.attempts.length,0);
+});
