@@ -101,7 +101,7 @@ export interface RunResult {
   inputs?: RunInput[];
   effects?: RunEffect[];
   verification?: RunVerification;
-  usage?: { requests: number; questions: number; inputTokens: number; outputTokens: number };
+  usage?: { requests: number; questions: number; serialDecisionDepth: number; inputTokens: number; outputTokens: number; providerMs: number };
   status: 'complete' | 'unverified' | 'stopped';
   reason: 'verified' | 'ui-readback' | 'model-complete' | 'no-match' | 'step-limit' | 'dialog' | 'ambiguous' | 'missing-input' | 'permission-required' | 'validation' | 'value-mismatch' | 'effect-unknown' | 'error' | 'observation-limit' | 'condition-unmet';
   steps: ActResult[];
