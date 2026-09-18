@@ -51,7 +51,7 @@ for(const preserve of [true,false])test(`native selection: changed semantics at 
      select.selectedIndex=1;
    },{once:true});
  },preserve);
- const result=await f.core.run('Fill the instrument and name, then Save.',{values:{instrument:'Piano',name:'Index Drift'},settleTimeoutMs:150});
+ const result=await f.core.run('Fill the instrument and name, then Save.',{values:{instrument:'Piano',name:'Index Drift'}});
  if(preserve){assert.equal(result.status,'complete');assert.equal(f.attempts.length,1);assert.equal(f.records[0]['/instrument'],'Piano');}
  else{assert.notEqual(result.status,'complete');assert.equal(f.attempts.length,0);}
 });
