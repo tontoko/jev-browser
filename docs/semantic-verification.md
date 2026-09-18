@@ -54,7 +54,7 @@ The default `minConfidence` is `0.8` and accepts any finite value from `0` throu
   status: 'passed',
   choice: 'equivalent',
   confidence: 0.93,
-  sourceConfidence: 0.47,
+  sourceConfidence: 0.94,
   threshold: 0.8,
   source: 'semantic',
   evidence: {
@@ -85,7 +85,7 @@ They are intentionally not collapsed into one number. A semantic assertion passe
 
 Source binding still fails closed on an explicit no-match or ambiguity. The selected source is always returned so callers can inspect what was actually compared.
 
-When a semantic source is selected and the actual value then matches the expected text exactly, there is no second Jev comparison. In that case the source decision is the only semantic decision and its confidence is the relevant threshold.
+When a semantic source is selected and the actual value then matches the expected text exactly, there is no second Jev comparison. The comparison provenance is deterministic, `confidence` is `1`, and the separately retained `sourceConfidence` still has to clear the threshold for the overall result to pass.
 
 ### Throwing assertion
 
@@ -195,6 +195,8 @@ Semantic results expose diagnostic timing rather than a single “AI latency” 
 - `observationMs`: browser observation time for this semantic operation;
 - `verificationMs`: local semantic-result processing excluding provider wait;
 - input/output token usage when the provider reports it.
+
+For `compareSemanticBatch()`, the same aggregate `usage` object is attached to every returned item for result-shape consistency. It describes the whole batch and must be counted once rather than summed across results.
 
 These values are measurements, not billing estimates. Public benchmark claims should compare complete tasks under disclosed model, cache, browser, and oracle conditions.
 

@@ -67,6 +67,7 @@ Results contain `status` (`passed | failed | inconclusive`), model `choice` (`eq
 `confidence` is a Jev decision score, **not** a calibrated probability of correctness. `assertSemantic` throws `SEMANTIC_ASSERTION_FAILED` for a sufficiently confident `different` result and `SEMANTIC_ASSERTION_INCONCLUSIVE` for low confidence or insufficient evidence. An inconclusive result never passes.
 
 `compareSemanticBatch` observes once when source discovery is needed. Independent source questions share one frontier and independent unresolved comparisons share the next. Usage reports `requests`, `questions`, `serialDecisionDepth`, token counts, `providerMs`, `observationMs`, and local `verificationMs`. Transport chunks forced by the 64-question / 128 KiB limits remain one dependency depth when they can run concurrently.
+The same aggregate batch `usage` is attached to each item returned by `compareSemanticBatch()` for result-shape consistency; it must be counted once, not summed across items.
 
 See [semantic-verification.md](semantic-verification.md) for the verification model, privacy boundary, calibration discipline and examples.
 
