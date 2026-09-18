@@ -86,7 +86,10 @@ export async function readControl(ref: ElementRef): Promise<ControlState> {
   return ref.handle.evaluate(el => {
     const input = el as HTMLInputElement;
     let value: string | boolean | string[] | undefined;
-    if (el instanceof HTMLSelectElement) value = el.multiple ? Array.from(el.selectedOptions, option => String(option.index)) : String(el.selectedIndex);
+    if (el instanceof HTMLSelectElement) {
+      const identity = (option: HTMLOptionElement) => JSON.stringify([option.index, option.label, option.value]);
+      value = el.multiple ? Array.from(el.selectedOptions, identity) : el.selectedIndex < 0 ? undefined : identity(el.options[el.selectedIndex]!);
+    }
     else if (el.getAttribute('role') === 'combobox') value = el.getAttribute('aria-valuetext') ?? (el instanceof HTMLInputElement ? el.value : (el as HTMLElement).innerText);
     else if (el instanceof HTMLInputElement && ['checkbox','radio'].includes(el.type)) value = el.indeterminate ? undefined : el.checked;
     else if (['checkbox','switch','radio'].includes(el.getAttribute('role') ?? '')) {
@@ -109,8 +112,10 @@ export function inputAction(input: InputBinding, target: ElementInfo): { action:
     if (!target.multiple && desired.length !== 1) return;
     const selected = desired.map(value => (target.options ?? []).filter(option => !option.disabled && (option.label === String(value ?? '') || option.value === String(value ?? ''))));
     if (selected.some(matches => matches.length !== 1)) return;
-    const indices = [...new Set(selected.map(matches => matches[0]!.index))].sort((a,b) => a-b);
-    return { action: { kind: 'select', target, valueKey: input.path, optionIndices: indices }, expected: target.multiple ? indices.map(String) : String(indices[0]) };
+    const chosen = [...new Map(selected.map(matches => [matches[0]!.index, matches[0]!])).values()].sort((a,b) => a.index-b.index);
+    const indices = chosen.map(option => option.index);
+    const identities = chosen.map(option => JSON.stringify([option.index, option.label, option.value]));
+    return { action: { kind: 'select', target, valueKey: input.path, optionIndices: indices }, expected: target.multiple ? identities : identities[0] };
   }
   if (['checkbox','radio','switch'].includes(target.role)) {
     if (typeof input.value !== 'boolean' || target.role === 'radio' && input.value === false) return;
