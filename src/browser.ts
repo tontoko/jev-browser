@@ -9,9 +9,9 @@ import { capture, publicURL, verifyTarget, captureComboboxChoice, captureRegions
 import { actionCandidates, actionDescription, modelElementId, inputBindings, modelElement, resolveSelectChoice } from './actions.js';
 import { extractStructured } from './structured.js';
 import { NativeBrowser } from './native.js';
-import { locateSemanticTarget, semanticThreshold } from './semantic.js';
+import { compareSemanticWork, elementEvidence, locateSemanticTarget, semanticThreshold } from './semantic.js';
 import { parseNative, nativeSchemas, nativeReadOnly, type NativeCommand } from './native-schemas.js';
-import type { ActionPlan, ActOptions, ActResult, BrowserOptions, BrowserLaunchOptions, ExtractResult, ExtractOptions, OperationOptions, RunOptions, RunResult, Snapshot, SemanticLocateOptions, SemanticTarget } from './types.js';
+import type { ActionPlan, ActOptions, ActResult, BrowserOptions, BrowserLaunchOptions, ExtractResult, ExtractOptions, OperationOptions, RunOptions, RunResult, Snapshot, SemanticLocateOptions, SemanticTarget, SemanticActual, SemanticCompareOptions, SemanticComparisonRequest, SemanticComparisonResult } from './types.js';
 
 interface Operation { signal: AbortSignal; deadline: number }
 const pageLeases = new WeakMap<Page, JevBrowser>();
@@ -170,6 +170,52 @@ export class JevBrowser {
         return target;
       } finally { if (!retained) await observed.dispose(); }
     });
+  }
+  private async semanticActual(actual: SemanticActual): Promise<{ description?: string; evidence?: ReturnType<typeof elementEvidence>; sourceSemantic?: boolean; sourceConfidence?: number }> {
+    if ('description' in actual) {
+      if (!actual.description.trim()) throw new BrowserError('INVALID_ARGUMENT','A semantic actual description is required.');
+      return { description: actual.description };
+    }
+    const id = actual.ref.startsWith('ref:') ? actual.ref.slice(4) : actual.ref;
+    const captured = this.snapshotCapture;
+    if (!captured || this.page.url() !== captured.rawURL || ('snapshotId' in actual && actual.snapshotId !== captured.data.id))
+      throw new BrowserError('STALE_TARGET','The semantic target ref is expired or belongs to another observation.');
+    const ref = captured.refs.get(id);
+    if (!ref) throw new BrowserError('STALE_TARGET','The semantic target ref is not present in the current observation.');
+    await verifyTarget(ref);
+    const semantic = 'snapshotId' in actual;
+    const confidence = semantic ? actual.confidence : 1;
+    if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1) throw new BrowserError('INVALID_ARGUMENT','Semantic target confidence must be between 0 and 1.');
+    return { evidence: elementEvidence(ref.info), sourceSemantic: semantic, sourceConfidence: confidence };
+  }
+  async compareSemanticBatch(requests: SemanticComparisonRequest[], options: SemanticCompareOptions = {}): Promise<SemanticComparisonResult[]> {
+    if (!Array.isArray(requests)) throw new BrowserError('INVALID_ARGUMENT','Semantic comparison requests must be an array.');
+    const thresholds = requests.map(request => semanticThreshold(request.minConfidence ?? options.minConfidence));
+    for (const request of requests) if (typeof request.expected !== 'string' || !request.expected.trim())
+      throw new BrowserError('INVALID_ARGUMENT','Semantic expected meaning must be a nonempty string.');
+    if (!requests.length) return [];
+    return this.exclusive(options, async operation => {
+      const work = [];
+      for (const [index, request] of requests.entries()) {
+        const actual = await this.semanticActual(request.actual);
+        work.push({ ...actual, expected: request.expected, threshold: thresholds[index]! });
+      }
+      const needsObservation = work.some(item => !item.evidence);
+      const observed = needsObservation ? await capture(this.page,{...this.limits,scope:options.scope}) : undefined;
+      try {
+        operation.signal.throwIfAborted();
+        return await compareSemanticWork(observed?.data,work,this.engine(),operation.signal,this.limits.maxCandidates);
+      } finally { await observed?.dispose(); }
+    });
+  }
+  async compareSemantic(request: SemanticComparisonRequest, options: SemanticCompareOptions = {}): Promise<SemanticComparisonResult> {
+    return (await this.compareSemanticBatch([request],options))[0]!;
+  }
+  async assertSemantic(request: SemanticComparisonRequest, options: SemanticCompareOptions = {}): Promise<SemanticComparisonResult> {
+    const result = await this.compareSemantic(request,options);
+    if (result.status === 'failed') throw new BrowserError('SEMANTIC_ASSERTION_FAILED',`Semantic assertion differed at confidence ${result.confidence.toFixed(3)} (threshold ${result.threshold.toFixed(3)}).`);
+    if (result.status === 'inconclusive') throw new BrowserError('SEMANTIC_ASSERTION_INCONCLUSIVE',`Semantic assertion was inconclusive at confidence ${result.confidence.toFixed(3)} (threshold ${result.threshold.toFixed(3)}).`);
+    return result;
   }
   async screenshot(options: OperationOptions = {}): Promise<Buffer> {
     return this.exclusive(options, async operation => {
