@@ -2,6 +2,7 @@ import { pathToFileURL } from 'node:url';
 import { performance } from 'node:perf_hooks';
 
 const choice = (instructions, criteria) => ({ type: 'choice', instructions, criteria });
+const noul = (instructions, yes, no) => ({ type: 'noul', instructions, criteria: { true: yes, false: no } });
 
 const briefFacts = [
   { id: 's1', text: '親子が参加する小さな発表会にしたい。' },
@@ -99,6 +100,66 @@ export function buildBriefSourceScenario() {
       'source:s2:state': 'approximate',
       'source:s4:state': 'undecided',
     },
+  };
+}
+
+
+const multiBriefFacts = [
+  { id: 'm1', text: '親子が参加する小さな発表会にしたい。' },
+  { id: 'm2', text: '出演は12人くらい。' },
+  { id: 'm3', text: '保護者も見学する。' },
+  { id: 'm4', text: '会場は中央ホール。駐車場は北側です。' },
+];
+
+export function buildBriefMultiLabelScenario() {
+  const components = {
+    description: '会の目的・説明',
+    people: '出演者・参加者',
+    audience: '見学者・来場者',
+    venue: '会場',
+    notice: '案内・注意事項',
+  };
+  const questions = {};
+  const oracle = {};
+  const expected = {
+    m1: new Set(['description']),
+    m2: new Set(['people']),
+    m3: new Set(['audience']),
+    m4: new Set(['venue', 'notice']),
+  };
+  for (const fact of multiBriefFacts) {
+    for (const [component, label] of Object.entries(components)) {
+      const id = `source:${fact.id}:${component}`;
+      questions[id] = noul(
+        `原情報「${fact.text}」は「${label}」の内容として使うべきか。複数の部品に関係してよい。`,
+        `この原情報は「${label}」に実質的に関係する`,
+        `この原情報は「${label}」には関係しない`,
+      );
+      oracle[id] = expected[fact.id].has(component);
+    }
+  }
+  questions['source:m2:state'] = choice('「出演は12人くらい」の状態', {
+    exact: '確定値',
+    approximate: '概数',
+    undecided: '未定',
+  });
+  questions['source:m4:venue_state'] = choice('中央ホールという会場の状態', {
+    confirmed: '確定',
+    undecided: '未定',
+  });
+  oracle['source:m2:state'] = 'approximate';
+  oracle['source:m4:venue_state'] = 'confirmed';
+  return {
+    name: 'brief-source-multilabel',
+    fixtureId: 'brief-family-shared-source-ja-1',
+    sourceFacts: structuredClone(multiBriefFacts),
+    state: {
+      request: '一つの原情報が複数のLiving Brief部品に関係しうる。原文にない情報を補わない。',
+      sourceFacts: structuredClone(multiBriefFacts),
+      components: Object.entries(components).map(([id, label]) => ({ id, label })),
+    },
+    questions,
+    oracle,
   };
 }
 
@@ -369,15 +430,22 @@ export async function executeQuestions(client, scenario, { mode = 'batched', con
   return { answers, calls, models: [...models], usage, wallMs: performance.now() - started };
 }
 
+const answerValue = answer => {
+  if (typeof answer === 'string' || typeof answer === 'boolean' || typeof answer === 'number') return answer;
+  if (answer?.type === 'choice' || typeof answer?.choice === 'string') return answer.choice;
+  if (answer?.type === 'noul' || typeof answer?.noul === 'number') return answer.noul >= 0.5;
+  if (answer?.type === 'score' || typeof answer?.score === 'number') return answer.score;
+  return null;
+};
+
 export function scoreAnswers(scenario, answers) {
   let correct = 0;
   const details = {};
   for (const [id, expected] of Object.entries(scenario.oracle)) {
-    const answer = answers[id];
-    const actual = typeof answer === 'string' ? answer : answer?.choice;
+    const actual = answerValue(answers[id]);
     const ok = actual === expected;
     if (ok) correct += 1;
-    details[id] = { expected, actual: actual ?? null, ok };
+    details[id] = { expected, actual, ok };
   }
   return { correct, total: Object.keys(scenario.oracle).length, details };
 }
@@ -407,7 +475,10 @@ const perturb = (scenario, repeat) => repeat % 2 === 0 ? scenario : ({
 
 const answerSummary = answers => Object.fromEntries(
   Object.entries(answers).map(([id, a]) => [id, {
+    type: a?.type ?? null,
     choice: a?.choice ?? null,
+    noul: a?.noul ?? null,
+    score: a?.score ?? null,
     confidence: a?.confidence ?? null,
     probabilities: a?.probabilities ?? null,
   }]),
@@ -438,7 +509,7 @@ async function runLiveExperiment() {
   const repeats = Number.parseInt(process.env.JEV_EXPERIMENT_REPEATS ?? '3', 10);
   for (let repeat = 0; repeat < repeats; repeat += 1) {
     for (const mode of ['sequential', 'parallel', 'batched']) {
-      for (const builder of [buildBriefComponentScenario, buildBriefSourceScenario, buildSupportScenario]) {
+      for (const builder of [buildBriefComponentScenario, buildBriefSourceScenario, buildBriefMultiLabelScenario, buildSupportScenario]) {
         const scenario = perturb(builder(), repeat);
         emit(repeat, mode, scenario, await executeQuestions(client, scenario, { mode, concurrency: 4 }));
       }
