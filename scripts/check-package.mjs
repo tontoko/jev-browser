@@ -87,5 +87,5 @@ try {
   console.log(JSON.stringify({ ...goals, package: packed.name, version: packed.version, filename: packed.filename, sha256: createHash('sha256').update(await readFile(tarball)).digest('hex'), installedSDK: true, nativePlaywrightAssertions: true, installedPersistentCLI: true, installedMCP: true, entryCount: packed.entryCount }, null, 2));
 } finally {
   if (site) { site.closeAllConnections(); await new Promise(resolve => site.close(resolve)); }
-  await rm(directory, { recursive: true, force: true });
+  await rm(directory, { recursive: true, force: true, maxRetries: 8, retryDelay: 125 });
 }
