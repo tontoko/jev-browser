@@ -71,3 +71,28 @@ test('modern controls: changing the control popup during option authorization pr
  const result=await f.core.run(instruction,{values,settleTimeoutMs:100}).catch(error=>error.partial);
  assert.notEqual(result?.status,'complete');assert.equal(await page.evaluate(()=>window.optionClicks??0),0);assert.equal(f.attempts.length,0);
 });
+
+test('modern controls: prefilled query text is not evidence of a committed selection',async t=>{
+ const f=await modernFixture(t,browser,{widget:'editable'});
+ await f.page.getByRole('button',{name:'New learner',exact:true}).click();
+ await f.page.getByRole('combobox').evaluate(el=>{el.value='Viola da gamba';});
+ const result=await f.core.run(instruction,{values});
+ assert.equal(result.status,'complete');assert.equal(f.attempts.length,1);assert.equal(f.records[0].instrument,'gamba');
+ assert.equal(await f.page.evaluate(()=>window.optionClicks),1);
+});
+test('modern controls: aria-controls may be declared only when the popup opens',async t=>{
+ const f=await modernFixture(t,browser);
+ await f.page.getByRole('button',{name:'New learner',exact:true}).click();
+ await f.page.getByRole('combobox').evaluate(el=>{
+   const controls=el.getAttribute('aria-controls');el.removeAttribute('aria-controls');
+   el.addEventListener('click',()=>el.setAttribute('aria-controls',controls),{once:true});
+ });
+ const result=await f.core.run(instruction,{values});
+ assert.equal(result.status,'complete');assert.equal(f.attempts.length,1);assert.equal(f.records[0].instrument,'gamba');
+});
+test('modern controls: supplied data is not skipped by an already true caller predicate',async t=>{
+ const f=await modernFixture(t,browser);
+ const result=await f.core.run(instruction,{values,until:()=>true});
+ assert.ok(result.inputs.every(input=>input.applied));
+ assert.equal(f.attempts.length,1);assert.equal(f.records[0].instrument,'gamba');
+});
