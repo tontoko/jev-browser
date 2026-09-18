@@ -24,6 +24,10 @@ Per-operation `signal`, `timeoutMs` and `scope` are available where relevant. Th
 | `observe(instruction, {values?, ...options}?)` | One `ActionPlan` or `null`; no mutation |
 | `act(instructionOrPlan, options?)` | `executed` or pending `dialog`, plan and URL |
 | `extract(instruction, zodSchema, options?)` | `{data, evidence, snapshotId, decision?, decisions?}` |
+| `locateSemantic(description, options?)` | `SemanticTarget`; grounded current ref + evidence + confidence, no generated selector |
+| `compareSemantic(request, options?)` | `SemanticComparisonResult`; deterministic short-circuit or confidence-aware semantic comparison |
+| `compareSemanticBatch(requests, options?)` | `SemanticComparisonResult[]`; independent source/comparison questions share decision frontiers |
+| `assertSemantic(request, options?)` | same result on pass; throws distinct failed/inconclusive semantic assertion errors |
 | `run(instruction, {values?, expect?, until?, ...options}?)` | `{status, reason, steps, inputs, effects, usage, verification?}`; one-instruction creation workflow |
 | `agent(defaults?).execute(instructionOrOptions)` | Same run result, same core loop |
 | `native(command, options?)` | Typed command union; mechanical operation without a model |
@@ -40,9 +44,31 @@ Schemas can be scalar roots, objects with scalar fields, nested objects, or arra
 
 Use `recordsScope` for tables/cards with non-semantic markup. Nested record arrays follow actual nested DOM records. A value is copied from the selected source and validated; it is never freely generated. Each array item is restricted to one record's sources. For separate unrelated objects on the same page, narrow `scope` or make separate calls.
 
-Evidence uses dotted object paths and zero-based record indices, such as `students.0.fee`. Scalar roots use `value`. Scalar array items use `0.value`. Evidence contains original text, surrounding context, frame, source ID and copied value; hrefs also identify the `href` attribute. A missing required source is `EXTRACTION_MISSING`. Data violating the final schema is `EXTRACTION_SCHEMA`. An empty record set is `[]` unless the schema requires a minimum count.
+Evidence uses dotted object paths and zero-based record indices, such as `invoices.0.total`. Scalar roots use `value`. Scalar array items use `0.value`. Evidence contains original text, surrounding context, frame, source ID and copied value; hrefs also identify the `href` attribute. A missing required source is `EXTRACTION_MISSING`. Data violating the final schema is `EXTRACTION_SCHEMA`. An empty record set is `[]` unless the schema requires a minimum count.
 
 The CLI/MCP accepts exactly one of `fields` (simple scalar definitions) or `schema` (JSON Schema). SDK callers use Zod directly. The JSON Schema conversion follows the installed Zod implementation; unsupported constructs are rejected.
+
+## Semantic verification
+
+Semantic verification is separate from native/Playwright assertions. Use exact assertions when the browser exposes exact truth; use semantic comparison when equivalence itself requires language understanding.
+
+```ts
+const result = await browser.compareSemantic({
+  actual: { description: 'Current plan' },
+  expected: 'Professional annual plan',
+  minConfidence: 0.8,
+});
+```
+
+`actual` is either `{description}`, a current `{ref}`, or a `SemanticTarget` returned by `locateSemantic`. Description-based actuals are first bound to one grounded observed source. A definition-list `term` is treated as a field label, not the field value. No semantic comparison can use a model-generated selector or an unobserved source.
+
+Results contain `status` (`passed | failed | inconclusive`), model `choice` (`equivalent | different | insufficient_evidence`), final comparison `confidence`, separate `sourceConfidence`, configured `threshold`, grounded `evidence`, provenance `source` (`deterministic | semantic`), and semantic usage metrics. `minConfidence` defaults to `0.8` and must be within `[0,1]`. A semantic assertion passes only when every model-dependent link needed for the assertion clears the threshold: grounded-source selection and, when required, the semantic comparison. Exact comparison itself is reported as deterministic and makes no second model call, while `sourceConfidence` still exposes any semantic source-selection uncertainty.
+
+`confidence` is a Jev decision score, **not** a calibrated probability of correctness. `assertSemantic` throws `SEMANTIC_ASSERTION_FAILED` for a sufficiently confident `different` result and `SEMANTIC_ASSERTION_INCONCLUSIVE` for low confidence or insufficient evidence. An inconclusive result never passes.
+
+`compareSemanticBatch` observes once when source discovery is needed. Independent source questions share one frontier and independent unresolved comparisons share the next. Usage reports `requests`, `questions`, `serialDecisionDepth`, token counts, `providerMs`, `observationMs`, and local `verificationMs`. Transport chunks forced by the 64-question / 128 KiB limits remain one dependency depth when they can run concurrently.
+
+See [semantic-verification.md](semantic-verification.md) for the verification model, privacy boundary, calibration discipline and examples.
 
 ## Native command groups
 
@@ -61,7 +87,7 @@ All accept `{command: name, ...args}` in `native()`, `--args JSON` in CLI, and `
 Examples:
 
 ```ts
-await browser.native({ command: 'type', target: 'input[name=email]', text: 'teacher@example.invalid' });
+await browser.native({ command: 'type', target: 'input[name=email]', text: 'user@example.invalid' });
 await browser.native({ command: 'select_option', target: 'select', values: ['pro'] });
 await browser.native({ command: 'check', target: 'input[type=checkbox]', checked: true });
 await browser.native({ command: 'wait_for', text: 'Saved' });

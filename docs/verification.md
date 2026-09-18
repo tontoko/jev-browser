@@ -6,10 +6,13 @@ Release checks are executable, not inferred from a build passing. See the CI wor
 
 - `npm run check`: TypeScript build, DOM bundle, real browser regressions, injected decision tests, local HTTP provider fixtures, CLI subprocesses, MCP wire exchanges, and named-session authorization tests.
 - `npm run check:examples`: strict checking of public-package Playwright Test examples.
-- `npm run check:package`: builds the real tarball, installs it into an isolated consumer, exercises the installed SDK with native Playwright assertions, uses independent installed CLI commands through a persistent session, and talks to the installed MCP stdio executable through the official client. No provider key is required.
-- `npm run test:live`: explicit real Jev tests on synthetic local pages. It includes Japanese duplicate labels, inputs, invoices, absent actions, multistep registration, frames, shadow DOM, a single prompt-injection fixture, quoted inputs, filtered record extraction and a named CLI session.
+- `npm run check:package`: builds the real tarball, installs it into an isolated consumer, exercises installed SDK/native/goal/semantic paths, uses independent persistent CLI commands, and talks to the installed MCP stdio executable through the official client. The semantic package check uses a deterministic synthetic provider; no real provider key is required.
+- `npm run test:live`: explicit real Jev tests on synthetic local pages for grounded actions, extraction, adapters and goal execution.
+- `npm run test:live:semantic`: explicit real Jev semantic-verification fixtures. It records grounded source, source confidence, semantic choice, final confidence/threshold outcome, decision depth and usage for neutral synthetic pages.
 
 Offline success does not establish model accuracy. Live fixture success does not establish accuracy on arbitrary websites or comprehensive injection resistance. No comparative cost/latency advantage over Stagehand or Microsoft tools is claimed.
+
+Semantic live fixtures distinguish expected direction from threshold outcome: a correct semantic direction below the configured confidence threshold is expected to remain `inconclusive`. Source-selection confidence is logged separately from comparison confidence. Neither score is presented as a probability of correctness. Candidate-order variants are regression evidence for grounding stability, not a statistical calibration study by themselves.
 
 ## Regression discovered during integration
 

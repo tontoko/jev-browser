@@ -5,10 +5,10 @@ A goal is one instruction plus supplied data. SDK `run`, `agent().execute`, CLI 
 ## Invocation
 
 ```ts
-const result = await browser.run('Add the student, fill every supplied field and Save. Do not send invitations.', {
-  values: { student: { name: 'Example Student', email: 'student@example.invalid' }, course: 'Viola da gamba' },
+const result = await browser.run('Add the customer, fill every supplied field and Save. Do not send marketing email.', {
+  values: { customer: { name: 'Example Customer', email: 'customer@example.invalid' }, account: { plan: 'Professional annual' } },
   // Optional caller-authored assertion, also accepted by CLI/MCP:
-  // expect: { target: '#saved-students article', property: 'count', expected: 1 },
+  // expect: { target: '#saved-customers article', property: 'count', expected: 1 },
 });
 ```
 
@@ -39,7 +39,7 @@ A UI readback is not a server transaction, durable database acknowledgement or e
 
 Default goal limits: 60 seconds total (an explicit browser/operation timeout overrides it), 100 browser steps, 32 logical decisions, 2 read-only provider retries per decision, and a 2-second finite settle window when no explicit busy state remains. `maxSteps`, `maxDecisions`, `decisionRetries` (0–2), `settleTimeoutMs` and `timeoutMs` are supported in all three interfaces. Each decision request is bounded to 64 questions / 128 KiB; observations retain configured control/text/candidate limits. Increasing a limit is explicit, not a hidden retry.
 
-`usage.requests` counts logical decision requests, not SDK retry attempts. Questions, provider input/output tokens and step history are reported when available. This is measurement, not a pricing estimate.
+`usage.requests` counts actual logical provider requests, not SDK retry attempts. `usage.questions` counts Jev questions and `usage.serialDecisionDepth` counts dependency frontiers: transport chunks for one independent frontier can run concurrently without increasing semantic depth. Provider input/output tokens and `providerMs` are reported when available. These are diagnostic measurements, not pricing estimates.
 
 Known literal string echoes in goal state/results are masked while input paths and protocol metadata remain usable. This is not a general privacy filter: labels, numbers, transformed echoes, traces, screenshots and instructions may contain sensitive data. Refer to SECURITY.md.
 

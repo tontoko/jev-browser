@@ -1,19 +1,19 @@
 # Jev Browser
 
-**One browser core. A persistent CLI, an MCP server, and a typed SDK.**
+**Parallel semantic decisions. Deterministic Playwright effects. Explicit verification provenance.**
 
 Jev Browser combines native Playwright operations with [Jev](https://typesafe.ai) decisions over actual page elements. Use it instead of a Playwright MCP/CLI setup for browser automation, and instead of Stagehand for DOM-grounded `act`, `observe`, structured `extract`, and bounded agent workflows.
 
 Native operations and assertions run **without an AI key**. Natural-language operations use the official TypeSafe SDK. Jev chooses supplied candidates; it does not generate executable JavaScript or selectors. The project is Apache-2.0 licensed; the hosted Jev service and model weights are not included.
 
-[日本語](README.ja.md) · [Migration guide](docs/migration.md) · [API](docs/api.md) · [Security](SECURITY.md) · [Verification](docs/verification.md)
+[日本語](README.ja.md) · [Migration guide](docs/migration.md) · [API](docs/api.md) · [Semantic verification](docs/semantic-verification.md) · [Security](SECURITY.md) · [Verification](docs/verification.md)
 
 ## Install
 
 Node.js **22.15 or newer**. Download the package from [GitHub Releases](https://github.com/tontoko/jev-browser/releases), then install it into your project:
 
 ```sh
-npm install --save-dev ./tontoko-jev-browser-0.4.0.tgz
+npm install --save-dev ./tontoko-jev-browser-0.5.0.tgz
 npx playwright install chromium
 ```
 
@@ -34,11 +34,10 @@ The release tarball includes compiled JavaScript, declarations, the DOM bundle, 
 
 ```ts
 const result = await browser.run(
-  'Open the new student form, fill all supplied details, and Save. Do not send an invitation.',
+  'Open the new customer form, fill all supplied details, and Save. Do not send a marketing email.',
   { values: {
-      student: { name: 'Example Student', email: 'student@example.invalid' },
-      guardian: { name: 'Example Guardian', email: 'guardian@example.invalid' },
-      course: 'Viola da gamba',
+      customer: { name: 'Example Customer', email: 'customer@example.invalid' },
+      account: { plan: 'Professional annual', region: 'Japan' },
   } },
 );
 ```
@@ -58,7 +57,7 @@ CLI and MCP use the same goal contract; there is no separate agent implementatio
 
 ```sh
 npx jev-browser run --session work --args - <<'JSON'
-{"instruction":"Add a new student, fill all supplied fields and Save.","values":{"student":{"name":"Example Student","email":"student@example.invalid"}}}
+{"instruction":"Add a new contact, fill all supplied fields and Save.","values":{"contact":{"name":"Example Contact","email":"contact@example.invalid"}}}
 JSON
 ```
 
@@ -80,8 +79,8 @@ A named session survives separate CLI invocations. Its authenticated loopback en
 Every command accepts `--args JSON`, and `--args -` reads arguments from stdin. `session` is also available as a JSONL pipe for tools that keep stdin open. All results are JSON. Exit status is `0` for command success, `1` for errors/assertion failures, and `2` for a stopped/unverified agent or a pending dialog.
 
 ```sh
-npx jev-browser fill 'input[name=email]' 'teacher@example.invalid' --session work
-npx jev-browser assert --args '{"target":"input[name=email]","property":"value","expected":"teacher@example.invalid"}' --session work
+npx jev-browser fill 'input[name=email]' 'user@example.invalid' --session work
+npx jev-browser assert --args '{"target":"input[name=email]","property":"value","expected":"user@example.invalid"}' --session work
 ```
 
 For natural-language operations, set `JEV_API_KEY` or `TYPESAFE_API_KEY`:
@@ -89,7 +88,7 @@ For natural-language operations, set `JEV_API_KEY` or `TYPESAFE_API_KEY`:
 ```sh
 npx jev-browser act 'Fill the Name field with "Alice Example"' --session work
 npx jev-browser act 'Fill the email field with email' \
-  --values '{"email":"teacher@example.invalid"}' --session work
+  --values '{"email":"user@example.invalid"}' --session work
 npx jev-browser extract 'Read the invoice total' \
   --fields '{"total":{"type":"number","description":"Total, not subtotal"}}' --session work
 ```
@@ -145,15 +144,42 @@ test('save a name', async ({ page }) => {
 
 `JevBrowser.launch()` owns its resources. Chromium, Firefox, WebKit, persistent profiles, CDP, and Playwright WebSocket connections are supported. The SDK exposes `browser.page`, so native Playwright assertions, locators, fixtures and application-specific verification remain available.
 
+### Semantic locate and confidence-aware assertions
+
+Use deterministic Playwright/native assertions whenever exact browser truth is available. When the UI expresses the same meaning with different wording, semantic verification is explicit rather than silently mixed into deterministic assertions:
+
+```ts
+const target = await browser.locateSemantic('The control that manages the current subscription');
+await browser.native({ command: 'click', ref: target.ref });
+
+const result = await browser.compareSemantic({
+  actual: { description: 'Current subscription plan' },
+  expected: 'Professional annual subscription',
+  minConfidence: 0.8,
+});
+
+await browser.assertSemantic({
+  actual: { description: 'Billing state' },
+  expected: 'Paid',
+  minConfidence: 0.9,
+});
+```
+
+Semantic comparison returns grounded evidence, `passed | failed | inconclusive`, the comparison `confidence`, the separate `sourceConfidence`, and the configured threshold. `minConfidence` defaults to `0.8`. **Confidence is a Jev decision score, not a probability that the assertion is correct.** Low-confidence and insufficient-evidence outcomes never pass. If source discovery was semantic, its confidence must also clear the threshold. Exact grounded equality then short-circuits locally without a second semantic comparison call.
+
+Independent assertions can use `compareSemanticBatch()`: source discovery is one decision frontier and unresolved comparisons another, so more independent fields increase questions before they increase serial decision depth. Results expose `serialDecisionDepth`, provider/token usage, `providerMs`, `observationMs`, and local `verificationMs`. See [Semantic verification](docs/semantic-verification.md).
+
+CLI commands `semantic_locate`, `semantic_compare`, and `semantic_assert` and MCP tools `browser_semantic_locate`, `browser_semantic_compare`, and `browser_semantic_assert` use the same SDK core.
+
 ### Structured extraction, grounded by record
 
 ```ts
 const result = await browser.extract(
-  'Read active students, preserving table order',
-  z.object({ students: z.array(z.object({ name: z.string(), fee: z.number() })) }),
+  'Read open invoices, preserving table order',
+  z.object({ invoices: z.array(z.object({ number: z.string(), total: z.number() })) }),
   { recordsScope: 'tbody tr' },
 );
-// result.data.students, result.evidence['students.0.fee']
+// result.data.invoices, result.evidence['invoices.0.total']
 ```
 
 Nested objects and arrays are supported. Every array item comes from an observed row/card, and its fields are selected only from that record's text. `recordsScope` selects the records; otherwise semantic rows, list items and articles are used. Values and hrefs retain source evidence. Missing required values fail instead of being invented. Unsafe integers should be extracted as strings. Schema defaults, catch fallbacks, generated summaries, and value-changing transforms are not extraction operations.
@@ -187,6 +213,7 @@ npm run check:examples
 npm run check:package
 # Explicit real-provider tests, synthetic pages only:
 npm run test:live
+npm run test:live:semantic
 ```
 
 Default tests use real browsers, deterministic injected choices, and local HTTP fixtures. Live tests are opt-in and never run against production accounts. See [CONTRIBUTING.md](CONTRIBUTING.md) and [the verification record](docs/verification.md).
