@@ -64,7 +64,7 @@ test('semantic batch: cancellation after source selection prevents comparison fr
   assert.equal(engine.requests.length,1);
 });
 
-test('semantic batch: source confidence is evidence, while minConfidence gates the semantic comparison',async t=>{
+test('semantic batch: low source confidence makes a high-confidence comparison inconclusive',async t=>{
   const page=await browser.newPage();await page.setContent('<p>Actual status text</p>');
   const requestsSeen=[];
   const engine={async decide(request){
@@ -77,7 +77,7 @@ test('semantic batch: source confidence is evidence, while minConfidence gates t
   }};
   const core=new JevBrowser({page,engine});t.after(async()=>{await core.close();await page.close();});
   const [result]=await core.compareSemanticBatch([{actual:{description:'Actual status'},expected:'Equivalent status'}],{minConfidence:0.8});
-  assert.equal(result.status,'passed');
+  assert.equal(result.status,'inconclusive');
   assert.equal(result.choice,'equivalent');
   assert.equal(result.confidence,0.95);
   assert.equal(result.sourceConfidence,0.5);

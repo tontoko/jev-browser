@@ -141,9 +141,10 @@ function sources(snapshot: Snapshot, limit: number): { id: string; evidence: Sem
 function classified(
   choice: SemanticChoice,
   confidence: number,
+  sourceConfidence: number,
   threshold: number,
 ): SemanticComparisonResult['status'] {
-  if (choice === 'insufficient_evidence' || confidence < threshold) return 'inconclusive';
+  if (choice === 'insufficient_evidence' || confidence < threshold || sourceConfidence < threshold) return 'inconclusive';
   return choice === 'equivalent' ? 'passed' : 'failed';
 }
 
@@ -211,10 +212,10 @@ A field label, definition term, heading, or control name that merely names the p
       partial[item.index]={
         status:semanticSource && sourceConfidence < item.threshold ? 'inconclusive' : 'passed',
         choice:'equivalent',
-        confidence:semanticSource ? sourceConfidence : 1,
+        confidence:1,
         sourceConfidence,
         threshold:item.threshold,
-        source:semanticSource?'semantic':'deterministic',
+        source:'deterministic',
         evidence,
         ...(item.sourceModel?{model:item.sourceModel}:{}),
       };
@@ -247,7 +248,7 @@ Choose equivalent only when these mean the same thing in this context. Choose di
       const answer=result.answers[`compare_${item.index}`]!;
       const choice=answer.choice as SemanticChoice;
       partial[item.index]={
-        status:classified(choice,answer.confidence,item.threshold),
+        status:classified(choice,answer.confidence,item.sourceConfidence ?? 1,item.threshold),
         choice,
         confidence:answer.confidence,
         sourceConfidence:item.sourceConfidence ?? 1,

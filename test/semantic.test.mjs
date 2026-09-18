@@ -116,6 +116,21 @@ for(const [choice,confidence,expectedStatus] of [
   assert.equal(result.evidence.text,'Pro annual');
 });
 
+test('semantic compare: exact equality after semantic locate reports deterministic comparison without a second provider call',async t=>{
+  let calls=0;
+  const decider=engine((question,_request,id)=>{calls++;return Object.entries(question.criteria).find(([,candidate])=>candidate?.name==='Manage plan')?.[0]??'__none__';});
+  const {core}=await coreFor(t,'<button>Manage plan</button>',decider);
+  const actual=await core.locateSemantic('The plan management control',{minConfidence:0.8});
+  const afterLocate=calls;
+  const result=await core.compareSemantic({actual,expected:'Manage plan',minConfidence:0.8});
+  assert.equal(result.status,'passed');
+  assert.equal(result.source,'deterministic');
+  assert.equal(result.confidence,1);
+  assert.equal(result.sourceConfidence,actual.confidence);
+  assert.equal(result.usage.requests,0);
+  assert.equal(calls,afterLocate);
+});
+
 test('semantic compare: exact grounded equality is deterministic and makes no provider request',async t=>{
   let calls=0;const decider={async decide(){calls++;throw new Error('provider should not run');}};
   const {core}=await coreFor(t,'<button>  Paid\n now </button>',decider);
