@@ -76,6 +76,9 @@ export interface ActionPlan {
 export interface BrowserDialog { id: number; type: string; message: string; defaultValue: string }
 export interface ActResult { status: 'executed' | 'dialog'; plan: ActionPlan; url: string; dialog?: BrowserDialog }
 export interface OperationOptions { signal?: AbortSignal; scope?: string; timeoutMs?: number }
+export interface SemanticLocateOptions extends OperationOptions { minConfidence?: number }
+export interface SemanticEvidence { sourceId: string; frame: number; role: string; text: string; context: string; attribute?: string; value?: string | number | boolean }
+export interface SemanticTarget { ref: string; snapshotId: string; confidence: number; evidence: SemanticEvidence }
 export interface ExtractOptions extends OperationOptions { recordsScope?: string }
 /** Remaining operation budget at callback entry. Awaited callbacks must honor signal. */
 export interface OperationContext { readonly signal: AbortSignal; readonly timeoutMs: number }

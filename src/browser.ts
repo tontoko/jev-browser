@@ -9,8 +9,9 @@ import { capture, publicURL, verifyTarget, captureComboboxChoice, captureRegions
 import { actionCandidates, actionDescription, modelElementId, inputBindings, modelElement, resolveSelectChoice } from './actions.js';
 import { extractStructured } from './structured.js';
 import { NativeBrowser } from './native.js';
+import { locateSemanticTarget, semanticThreshold } from './semantic.js';
 import { parseNative, nativeSchemas, nativeReadOnly, type NativeCommand } from './native-schemas.js';
-import type { ActionPlan, ActOptions, ActResult, BrowserOptions, BrowserLaunchOptions, ExtractResult, ExtractOptions, OperationOptions, RunOptions, RunResult, Snapshot } from './types.js';
+import type { ActionPlan, ActOptions, ActResult, BrowserOptions, BrowserLaunchOptions, ExtractResult, ExtractOptions, OperationOptions, RunOptions, RunResult, Snapshot, SemanticLocateOptions, SemanticTarget } from './types.js';
 
 interface Operation { signal: AbortSignal; deadline: number }
 const pageLeases = new WeakMap<Page, JevBrowser>();
@@ -153,6 +154,21 @@ export class JevBrowser {
       const observed = await capture(this.page, { ...this.limits, scope: options.scope });
       try { operation.signal.throwIfAborted(); this.snapshotCapture = observed; return observed.data; }
       catch (error) { await observed.dispose(); throw error; }
+    });
+  }
+  async locateSemantic(description: string, options: SemanticLocateOptions = {}): Promise<SemanticTarget> {
+    const threshold = semanticThreshold(options.minConfidence);
+    if (!description.trim()) throw new BrowserError('INVALID_ARGUMENT','A semantic target description is required.');
+    return this.exclusive(options, async operation => {
+      await this.invalidate(); operation.signal.throwIfAborted();
+      const observed = await capture(this.page, { ...this.limits, scope: options.scope });
+      let retained = false;
+      try {
+        const { target } = await locateSemanticTarget(observed.data, description, this.engine(), operation.signal, threshold);
+        operation.signal.throwIfAborted();
+        this.snapshotCapture = observed; retained = true;
+        return target;
+      } finally { if (!retained) await observed.dispose(); }
     });
   }
   async screenshot(options: OperationOptions = {}): Promise<Buffer> {
