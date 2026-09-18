@@ -257,26 +257,37 @@ const companionResults = [
 ];
 
 export function buildCompanionResultScenario(interpretation) {
+  const eligible =
+    interpretation?.intent === 'search' &&
+    interpretation?.learner === 'learner-hana' &&
+    interpretation?.period === 'last-3-months' &&
+    interpretation?.purpose === 'goal-candidate';
+  const results = eligible
+    ? companionResults
+    : [{ id: 'report-u1', date: '2026-09-10', excerpt: '別の生徒の記録。今回の対象ではない。' }];
+  const resultCriteria = Object.fromEntries(results.map(item => [item.id, item.excerpt]));
+  resultCriteria.none = '該当する記録はない';
+  const actionCriteria = eligible
+    ? {
+        'draft-goal': '選んだ原文を使って目標案を作り、まだ保存しない',
+        view: '表示だけ',
+        clarify: '確認する',
+      }
+    : {
+        view: '表示だけ',
+        clarify: '確認する',
+      };
   return {
     name: 'companion-results',
     fixtureId: 'companion-search-goal-ja-1',
     state: {
       instruction: '表示した検索結果から関連する記録と次の操作を選ぶ。本文を創作しない。',
       interpretation: structuredClone(interpretation),
-      results: structuredClone(companionResults),
+      results: structuredClone(results),
     },
     questions: {
-      result: choice('目標候補の根拠として最も直接関係する記録', {
-        'report-r1': companionResults[0].excerpt,
-        'report-r2': companionResults[1].excerpt,
-        'report-r3': companionResults[2].excerpt,
-        none: '該当なし',
-      }),
-      next_action: choice('次の操作', {
-        'draft-goal': '選んだ原文を使って目標案を作り、まだ保存しない',
-        view: '表示だけ',
-        clarify: '確認する',
-      }),
+      result: choice('目標候補の根拠として最も直接関係する記録', resultCriteria),
+      next_action: choice('次の操作', actionCriteria),
     },
     oracle: { result: 'report-r2', next_action: 'draft-goal' },
   };
