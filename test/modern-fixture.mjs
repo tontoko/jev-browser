@@ -29,7 +29,7 @@ export async function modernFixture(t,browser,{widget='portal',variant=0,live=fa
   const suffix=randomBytes(5).toString('hex'),keys=[`u${suffix}a`,`u${suffix}b`,`u${suffix}c`];
   const control=`c${suffix}`,popup=`p${suffix}`,caption=`l${suffix}`;
   const records=[],attempts=[];
-  const options=[{code:'piano',label:'Piano'},{code:'gamba',label:'Viola da gamba'},{code:'violin',label:'Violin'},...(duplicate?[{code:'gamba-duplicate',label:'Viola da gamba'}]:[])];
+  const options=[...(widget==='search'?Array.from({length:997},(_,i)=>({code:`catalog-${i}`,label:`Catalog instrument ${i}`})):[]),{code:'piano',label:'Piano'},{code:'gamba',label:'Viola da gamba'},{code:'violin',label:'Violin'},...(duplicate?[{code:'gamba-duplicate',label:'Viola da gamba'}]:[])];
   const editable=widget==='editable'||widget==='search';
   const ordinary=[`<label>${labels.name}<input name="${keys[0]}" required autocomplete="off"></label>`,`<label>${labels.email}<input name="${keys[1]}" type="email" required></label>`];
   const combo=`<div><label id="${caption}">${labels.instrument}</label>${editable
@@ -49,7 +49,7 @@ export async function modernFixture(t,browser,{widget='portal',variant=0,live=fa
     let generation=0;
     function open(){const token=++generation;combo.setAttribute('aria-expanded','true');popup.hidden=false;popup.replaceChildren();
       setTimeout(()=>{if(token!==generation)return;const query=${editable?'combo.value.toLowerCase()':"''"};
-        for(const choice of choices.filter(choice=>!query||choice.label.toLowerCase().includes(query))){const option=document.createElement('div');option.setAttribute('role','option');option.textContent=choice.label;
+        for(const choice of choices.filter(choice=>!query||choice.label.toLowerCase().includes(query)).slice(0,20)){const option=document.createElement('div');option.setAttribute('role','option');option.textContent=choice.label;
           if(${disabled}&&choice.code==='gamba')option.setAttribute('aria-disabled','true');
           option.onclick=()=>{if(option.getAttribute('aria-disabled')==='true')return;window.optionClicks=(window.optionClicks||0)+1;
             if(!${ignoreSelection}){form.elements.namedItem(keys[2]).value=choice.code;${editable?'combo.value=choice.label;':'combo.textContent=choice.label;'}}

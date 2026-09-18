@@ -94,7 +94,7 @@ export async function runGoal(host: RunHost, instruction: string, options: RunOp
     return scoped;
   }
   async function callerCondition(): Promise<boolean> {
-    if(!options.until)return false;
+    if(!options.until||inputs.some(input=>!input.applied))return false;
     const op=host.operation(), yes=await options.until(host.page(),op);op.signal.throwIfAborted();
     if(yes!==true)return false;
     verification={source:'caller',basis:'condition',readback:[],unobserved:inputs.map(input=>input.path)};return true;
@@ -142,16 +142,20 @@ export async function runGoal(host: RunHost, instruction: string, options: RunOp
   async function readCommitted(before: Map<string,number>|undefined): Promise<RunResult> {
     if(await callerCondition()){commit!.status='observed';return finish('complete','verified');}
     if(await callerAssertions()){commit!.status='observed';return finish('complete','verified');}
-    if(!before)return finish('unverified','observation-limit');
+    if(!before&&!options.until)return finish('unverified','observation-limit');
     let observed=await capture('readback');
     for(;;){
       if(observed.data.truncatedTexts) return finish('unverified','observation-limit');
-      verification=await verifyReadback(before,observed.data,instruction,inputs,decide);
-      if(verification){commit!.status='observed';return finish('complete','ui-readback');}
+      if(options.until){
+        if(await callerCondition()){commit!.status='observed';return finish('complete','verified');}
+      }else{
+        verification=await verifyReadback(before!,observed.data,instruction,inputs,decide);
+        if(verification){commit!.status='observed';return finish('complete','ui-readback');}
+      }
       if(!await wait(observed))break;
       observed=await capture('readback');
     }
-    return finish('unverified','effect-unknown');
+    return finish('unverified',options.until?'condition-unmet':'effect-unknown');
   }
   try {
     let lastRequest='';
@@ -235,7 +239,7 @@ Input literals are available locally, not missing. Choose __none__ only if no ob
         if(!operation)continue;
         if(steps.length>=maxSteps)return finish('stopped','step-limit');
         const current=await readControl(ref);
-        if(!matchesControl(current,operation.expected)){
+        if(!matchesControl(current,operation.expected)||(target.role==='combobox'&&target.tag!=='select'&&!input.applied)){
           if(target.role==='combobox'&&target.tag!=='select'){
             input.ref=await applyCombobox(input,ref,observed,{
               perform:(action,snapshot,value)=>perform(action,snapshot,'input',value,confidences.get(input)!),

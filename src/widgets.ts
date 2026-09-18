@@ -11,7 +11,6 @@ export interface ChoiceHost {
 /** A single bound widget, not a site script: open/filter -> owned option -> verified selection. */
 export async function applyCombobox(input:InputBinding,ref:ElementRef,observed:Captured,host:ChoiceHost):Promise<ElementRef> {
   if(typeof input.value!=='string'||!input.value.trim())throw new BrowserError('UNSUPPORTED_INPUT','Combobox selection requires a nonempty option label.');
-  if(!ref.info.controls?.length)throw new BrowserError('UNSUPPORTED_WIDGET','The combobox does not declare a popup via aria-controls or aria-owns.');
   const editable=ref.info.fillable&&!ref.info.readOnly;
   const opened=await host.perform({kind:editable?'fill':'click',target:ref.info,valueKey:input.path},observed,editable?input.value:undefined);
   if(opened.status==='dialog')throw new BrowserError('DIALOG_PENDING','A dialog interrupted the combobox interaction; inspect the partial result.');
