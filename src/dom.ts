@@ -44,6 +44,9 @@ export function describe(el: Element) {
     inputType: el instanceof HTMLInputElement ? input.type : '',
     fieldName: el.getAttribute('name') ?? '',
     popup: el.getAttribute('aria-haspopup') ?? undefined,
+    controls: (el.getAttribute('aria-controls') ?? el.getAttribute('aria-owns') ?? '').split(/\s+/).filter(Boolean),
+    expanded: el.getAttribute('aria-expanded') === 'true',
+    ...(role === 'option' ? {listboxId:el.closest('[role="listbox"]')?.id} : {}),
     ...('form' in el && (el as HTMLInputElement).form ? {
       formId: `form${Array.from(document.forms).indexOf((el as HTMLInputElement).form!)}`,
       formName: computeAccessibleName((el as HTMLInputElement).form!),
@@ -58,7 +61,7 @@ export function describe(el: Element) {
     ...(options ? { options, multiple: (el as HTMLSelectElement).multiple } : {}),
   };
   // Exclude mutable input values and unrelated layout; include row identity and actual destinations.
-  const signature = JSON.stringify([info.role, info.name, info.context, info.tag, info.inputType, info.fieldName, info.formName,
+  const signature = JSON.stringify([info.role, info.name, info.context, info.tag, info.inputType, info.fieldName, info.formName, info.controls, info.listboxId,
     el instanceof HTMLAnchorElement ? el.href : el.getAttribute('href'), el.getAttribute('formaction'), (el as HTMLButtonElement).form?.action,
     info.multiple, info.options?.map(o => [o.label, o.value, o.disabled, ...(info.multiple ? [o.selected] : [])]), info.disabled, info.readOnly, info.fillable]);
   return { info, signature, connected: el.isConnected, visible: visible(el) };
@@ -129,5 +132,35 @@ export function observe(options: { maxElements: number; maxTexts: number }, scop
     const parent = recordNodes.findIndex(other => other !== el && other.contains(el) && !recordNodes.some(between => between !== other && between !== el && other.contains(between) && between.contains(el)));
     return { index, parent: parent < 0 ? undefined : parent, readOnly: !el.matches('form,input,textarea,select,[contenteditable="true"]') && !el.querySelector('input,textarea,select,[contenteditable="true"]'), context: normalize((el as HTMLElement).innerText).slice(0, 1000), texts: textNodes.flatMap((node, i) => el === node || el.contains(node) ? [i] : []) };
   });
-  return { nodes, elements, texts, records, truncatedElements, truncatedTexts, changeKey: String(progressChanged()), busy: !!document.querySelector('[aria-busy="true"]') };
+  return { nodes, elements, texts, records, recordInventoryComplete:scanned<=6000, truncatedElements, truncatedTexts, changeKey: String(progressChanged()), busy: !!document.querySelector('[aria-busy="true"]') };
+}
+
+/** No global text search: options must belong to the popup declared by this control. */
+export function matchingComboboxOptions(element: Element, wanted: string): Element[] {
+  if (!element.isConnected) return [];
+  const root = element.getRootNode() as Document | ShadowRoot;
+  const ids = (element.getAttribute('aria-controls') ?? element.getAttribute('aria-owns') ?? '').split(/\s+/).filter(Boolean);
+  const matches = new Set<Element>();
+  for (const id of ids) {
+    const popup = root.getElementById(id);
+    if (!popup || popup.getAttribute('role') !== 'listbox' || !visible(popup)) continue;
+    for (const option of popup.querySelectorAll('[role="option"]'))
+      if (option.closest('[role="listbox"]') === popup && visible(option) && !option.matches(':disabled,[aria-disabled="true"]') && normalize(computeAccessibleName(option)) === normalize(wanted)) matches.add(option);
+  }
+  return [...matches];
+}
+
+/** A bounded index of real semantic regions, not a guessed selector or a truncated action list. */
+export function regionNodes(): Element[] {
+  const roots:(Document|ShadowRoot)[]=[document],regions:Element[]=[];
+  for(const root of roots){
+    for(const node of root.querySelectorAll('*'))if(node.shadowRoot)roots.push(node.shadowRoot);
+    for(const node of root.querySelectorAll('form,main,nav,section,article,dialog,[role="form"],[role="main"],[role="region"],[role="dialog"],[role="navigation"]'))
+      if(visible(node))regions.push(node);
+  }
+  return regions;
+}
+export function regionDescription(element:Element){
+  const d=describe(element);
+  return {...d,info:{...d.info,role:d.info.role||element.tagName.toLowerCase(),name:d.info.name||normalize(element.querySelector('h1,h2,h3,legend')?.textContent)}};
 }

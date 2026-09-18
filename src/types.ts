@@ -14,6 +14,9 @@ export interface ElementInfo {
   formId?: string;
   formName?: string;
   popup?: string;
+  controls?: string[];
+  expanded?: boolean;
+  listboxId?: string;
   required?: boolean;
   disabled: boolean;
   readOnly: boolean;
@@ -35,6 +38,7 @@ export interface TextEvidence {
 export interface RecordEvidence { id: string; frame: number; context: string; textIds: string[]; parentId?: string; readOnly?: boolean }
 export interface Snapshot {
   records?: RecordEvidence[];
+  recordInventoryComplete?: boolean;
   busy?: boolean;
   id: string;
   url: string;
@@ -53,6 +57,10 @@ export interface GroundedAction {
   valueKey?: string;
   option?: { index: number; label: string; value: string };
   optionIndices?: number[];
+  /** Internal staged choice; resolved to an observed option before execution. */
+  deferred?: boolean;
+  /** The actual combobox ref whose declared popup owns an option action. */
+  ownerId?: string;
   dialog?: BrowserDialog;
   accept?: boolean;
   key?: 'Enter';
@@ -89,12 +97,13 @@ export interface RunInput { path: string; applied: boolean; readback: boolean; t
 export interface RunEffect { id: string; kind: 'input' | 'advance' | 'commit'; status: 'attempted' | 'observed' | 'unknown'; input?: string }
 export interface RunVerification { source: 'caller' | 'inferred'; basis: 'ui-readback' | 'assertion' | 'condition'; recordId?: string; readback: string[]; unobserved: string[] }
 export interface RunResult {
+  regions?: {purpose:'act'|'readback';name:string;role:string;frame:number}[];
   inputs?: RunInput[];
   effects?: RunEffect[];
   verification?: RunVerification;
   usage?: { requests: number; questions: number; inputTokens: number; outputTokens: number };
   status: 'complete' | 'unverified' | 'stopped';
-  reason: 'verified' | 'ui-readback' | 'model-complete' | 'no-match' | 'step-limit' | 'dialog' | 'ambiguous' | 'missing-input' | 'permission-required' | 'validation' | 'value-mismatch' | 'effect-unknown' | 'error' | 'observation-limit';
+  reason: 'verified' | 'ui-readback' | 'model-complete' | 'no-match' | 'step-limit' | 'dialog' | 'ambiguous' | 'missing-input' | 'permission-required' | 'validation' | 'value-mismatch' | 'effect-unknown' | 'error' | 'observation-limit' | 'condition-unmet';
   steps: ActResult[];
 }
 export interface BrowserOptions extends JevOptions {

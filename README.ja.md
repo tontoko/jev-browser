@@ -11,7 +11,7 @@ Playwright MCP／CLIのブラウザー操作と、Stagehand型の自然言語操
 Node.js 22.15以上。[GitHub Releases](https://github.com/tontoko/jev-browser/releases)のtarballをプロジェクトへインストールします。
 
 ```sh
-npm install --save-dev ./tontoko-jev-browser-0.3.0.tgz
+npm install --save-dev ./tontoko-jev-browser-0.4.0.tgz
 npx playwright install chromium
 npx jev-browser open https://example.com --session work
 npx jev-browser snapshot --session work
@@ -33,7 +33,7 @@ const result = await browser.run(
 );
 ```
 
-フォームの入口、項目の対応、入力順序、画面変化の待機、通常の保存確認をコアが担当します。同じ画面から答えられる質問はJevへまとめ、書き込みはPlaywrightで直列に実行します。CLIの`run`とMCPの`browser_run`にも、同じ`instruction`と入れ子の`values`を渡せます。
+フォームの入口、項目の対応、入力順序、画面変化の待機、通常の保存確認をコアが担当します。同じ画面から答えられる質問はJevへまとめ、書き込みはPlaywrightで直列に実行します。長大なnative selectは全候補を毎回モデルへ送らず、必要なときだけ境界付きで解決します。`aria-controls`／`aria-owns`で所有関係が分かるcomboboxは、開く・絞る・所有popup内の選択・値確認まで同じ実行系で扱います。大きなページでは、全体を無理に詰め込まず意味のあるフォーム／結果領域を選んで追加観測します。CLIの`run`とMCPの`browser_run`にも、同じ`instruction`と入れ子の`values`を渡せます。
 
 保存後の新しいレコードを特定し、入力値と表示値をローカルで照合できた場合は`complete / ui-readback`です。`verification.readback`と`unobserved`で確認範囲を区別します。これは画面上の確認で、全フィールドのDB永続化を保証するものではありません。厳密なテストには共通の`expect`、SDKの`until`、通常のPlaywright assertionを加えられます。
 

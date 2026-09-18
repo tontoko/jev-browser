@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.0
+
+- Long native selects no longer explode the action inventory: exact named values stay local, while prose-only choices are resolved in bounded option partitions without dropping the tail of the list.
+- Native select verification now binds the selected index to its observed label/value semantics, so replacing options at the same index cannot silently satisfy an old plan.
+- Standards-associated ARIA comboboxes (`aria-controls` / `aria-owns`) support portal, inline, editable and search variants through the same native execution and authorization lane; typed query text alone is never treated as a committed choice.
+- Crowded pages can select a bounded semantic form/result region instead of requiring callers to raise whole-page observation limits. Explicit caller scope is never widened.
+- New application fixtures use opaque control names and human labels rather than caller input paths, with genuinely distinct layout permutations.
+- Cancellation, authorization, popup replacement, ambiguity and step-budget regressions cover the new widget substeps.
+
+These are DOM/ARIA-grounded capabilities, not a claim of arbitrary custom widgets or visual-only Canvas automation. Multiple independent commits and resumable business workflows remain a later slice.
+
 ## 0.3.0
 
 - One-instruction creation goals across SDK, CLI and MCP: nested input paths, parallel binding questions, serial native execution, multi-screen forms and fresh result readback.

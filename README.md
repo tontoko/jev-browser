@@ -13,7 +13,7 @@ Native operations and assertions run **without an AI key**. Natural-language ope
 Node.js **22.15 or newer**. Download the package from [GitHub Releases](https://github.com/tontoko/jev-browser/releases), then install it into your project:
 
 ```sh
-npm install --save-dev ./tontoko-jev-browser-0.3.0.tgz
+npm install --save-dev ./tontoko-jev-browser-0.4.0.tgz
 npx playwright install chromium
 ```
 
@@ -43,7 +43,7 @@ const result = await browser.run(
 );
 ```
 
-`run` owns form discovery, parallel field-binding questions, serial native inputs, relevant waits, onward steps and ordinary save confirmations. It checks current input values before a commit, then looks for a new result record and compares its values locally. It does not call the model after every field. Existing native tools and single-action `act` remain available.
+`run` owns form discovery, parallel field-binding questions, serial native inputs, relevant waits, onward steps and ordinary save confirmations. It checks current input values before a commit, then looks for a new result record and compares its values locally. Long native selects are resolved only when their semantics are needed; exact named values stay local. Standards-associated ARIA comboboxes are handled as bounded open/filter → owned-option → verified-selection interactions. Crowded pages can narrow themselves to a semantic form/result region instead of transmitting a truncated whole page. It does not call the model after every field. Existing native tools and single-action `act` remain available.
 
 Read `result.status`, `verification` and `inputs`: `complete / ui-readback` identifies UI evidence, not a database durability guarantee. `unobserved` explicitly lists fields not shown after saving. A model's done opinion alone is never completion. Add `expect` assertions or an SDK `until` predicate for application-specific acceptance criteria. A failed/uncertain save is not replayed.
 
@@ -177,7 +177,7 @@ expect(result.status).toBe('complete');
 
 This is a **functional alternative**, not a binary-compatible re-export of Microsoft or Browserbase packages. Tool configuration, CLI flags, SDK types, and result envelopes have documented differences. [The migration guide](docs/migration.md) maps the supported workflows and remaining boundaries.
 
-The AI layer is DOM-based. Native screenshots and coordinate mouse operations are available to an outer vision-capable client, but Jev does not infer Canvas coordinates or invent text from images. Cloud session infrastructure, browser extensions, generated summaries, and arbitrary Node-side MCP code execution are not part of this package. Explicit page evaluation is off by default; trusted SDK callers already have the full Playwright Page.
+The AI layer is DOM/ARIA-based. Native HTML controls, very long select lists, open shadow roots, child frames, and standards-associated ARIA comboboxes are covered by the shared core. Native screenshots and coordinate mouse operations are available to an outer vision-capable client, but Jev does not infer Canvas coordinates or invent text from images. Arbitrary widget conventions without a grounded ownership/value signal, cloud session infrastructure, browser extensions, generated summaries, and arbitrary Node-side MCP code execution are not part of this package. Explicit page evaluation is off by default; trusted SDK callers already have the full Playwright Page.
 
 ## Verify and contribute
 

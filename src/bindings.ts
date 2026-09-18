@@ -50,7 +50,7 @@ export function privateFilter(inputs: InputBinding[]): <T>(data: T) => T {
   const escape = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const alternatives = [...publicTokens, ...[...replacements.keys()].filter(value => value.length >= 3)].sort((a,b) => b.length-a.length);
   const pattern = alternatives.length ? new RegExp(alternatives.map(escape).join('|'), 'g') : undefined;
-  const identifiers = new Set(['id','snapshotId','recordId','parentId','sourceId','control','path','valueKey','fieldName','formId','kind','status','reason','role','tag','inputType','type','key','direction','source','basis','choice','model']);
+  const identifiers = new Set(['id','ownerId','snapshotId','recordId','parentId','sourceId','control','path','valueKey','fieldName','formId','kind','status','reason','role','tag','inputType','type','key','direction','source','basis','choice','model']);
   function walk(value: unknown): unknown {
     if (typeof value === 'string') {
       const exact = replacements.get(value);
@@ -68,7 +68,7 @@ export function privateFilter(inputs: InputBinding[]): <T>(data: T) => T {
 export const needsBinding = (input: InputBinding) => !input.applied || !input.ref;
 
 export function bindingQuestions(snapshot: Snapshot, inputs: InputBinding[]): DecisionRequest['questions'] {
-  const controls = snapshot.elements.filter(e => !e.disabled && !e.readOnly && (e.fillable || e.tag === 'select' || ['checkbox','switch','radio'].includes(e.role)));
+  const controls = snapshot.elements.filter(e => !e.disabled && (!e.readOnly || e.role === 'combobox') && (e.fillable || e.tag === 'select' || ['combobox','checkbox','switch','radio'].includes(e.role)));
   if (!controls.length) return {};
   const criteria = Object.fromEntries(controls.map(control => [modelElementId(control.id), { control: modelElementId(control.id) }]));
   return Object.fromEntries(inputs.filter(needsBinding).map((input,index) => [`bind_${index}`, {
@@ -79,33 +79,43 @@ export function bindingQuestions(snapshot: Snapshot, inputs: InputBinding[]): De
 }
 
 export interface ControlState {
-  connected: boolean; value: string | boolean | string[] | undefined; valid: boolean;
+  connected: boolean; value: string | boolean | string[] | undefined; valid: boolean; expanded?: boolean;
 }
 /** This returns local values only. It is not part of the model observation. */
 export async function readControl(ref: ElementRef): Promise<ControlState> {
   return ref.handle.evaluate(el => {
     const input = el as HTMLInputElement;
     let value: string | boolean | string[] | undefined;
-    if (el instanceof HTMLSelectElement) value = el.multiple ? Array.from(el.selectedOptions, option => String(option.index)) : String(el.selectedIndex);
+    if (el instanceof HTMLSelectElement) {
+      const identity = (option: HTMLOptionElement) => JSON.stringify([option.index, option.label, option.value]);
+      value = el.multiple ? Array.from(el.selectedOptions, identity) : el.selectedIndex < 0 ? undefined : identity(el.options[el.selectedIndex]!);
+    }
+    else if (el.getAttribute('role') === 'combobox') value = el.getAttribute('aria-valuetext') ?? (el instanceof HTMLInputElement ? el.value : (el as HTMLElement).innerText);
     else if (el instanceof HTMLInputElement && ['checkbox','radio'].includes(el.type)) value = el.indeterminate ? undefined : el.checked;
     else if (['checkbox','switch','radio'].includes(el.getAttribute('role') ?? '')) {
       const checked = el.getAttribute('aria-checked'); value = checked === 'true' ? true : checked === 'false' ? false : undefined;
     } else if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) value = input.value;
     else if (el instanceof HTMLElement && el.isContentEditable) value = el.innerText;
-    return { connected: el.isConnected, value, valid: (!('validity' in el) || input.validity.valid) && el.getAttribute('aria-invalid') !== 'true' };
+    return { connected: el.isConnected, value, expanded: el.getAttribute('role') === 'combobox' && el.getAttribute('aria-expanded') === 'true', valid: (!('validity' in el) || input.validity.valid) && el.getAttribute('aria-invalid') !== 'true' };
   });
 }
 
 export function inputAction(input: InputBinding, target: ElementInfo): { action: GroundedAction; value?: string; expected: ControlState['value'] } | undefined {
-  if (target.disabled || target.readOnly) return;
+  if (target.disabled || target.readOnly && target.role !== 'combobox') return;
+  if (target.role === 'combobox' && target.tag !== 'select') {
+    if (typeof input.value !== 'string' || !input.value.trim()) return;
+    return {action:{kind:target.fillable&&!target.readOnly?'fill':'click',target,valueKey:input.path},value:input.value,expected:input.value};
+  }
   if (target.tag === 'select') {
     if (target.multiple && target.options?.some(option => option.disabled && option.selected)) return;
     const desired = Array.isArray(input.value) ? input.value : [input.value];
     if (!target.multiple && desired.length !== 1) return;
     const selected = desired.map(value => (target.options ?? []).filter(option => !option.disabled && (option.label === String(value ?? '') || option.value === String(value ?? ''))));
     if (selected.some(matches => matches.length !== 1)) return;
-    const indices = [...new Set(selected.map(matches => matches[0]!.index))].sort((a,b) => a-b);
-    return { action: { kind: 'select', target, valueKey: input.path, optionIndices: indices }, expected: target.multiple ? indices.map(String) : String(indices[0]) };
+    const chosen = [...new Map(selected.map(matches => [matches[0]!.index, matches[0]!])).values()].sort((a,b) => a.index-b.index);
+    const indices = chosen.map(option => option.index);
+    const identities = chosen.map(option => JSON.stringify([option.index, option.label, option.value]));
+    return { action: { kind: 'select', target, valueKey: input.path, optionIndices: indices }, expected: target.multiple ? identities : identities[0] };
   }
   if (['checkbox','radio','switch'].includes(target.role)) {
     if (typeof input.value !== 'boolean' || target.role === 'radio' && input.value === false) return;
@@ -163,4 +173,4 @@ export function reuseQuestions(controls: ElementInfo[], inputs: InputBinding[]):
     criteria: { ...Object.fromEntries(inputs.map(input => [input.path, { input: input.path, meaning: input.label }])), __none__: 'This control is not a confirmation of any supplied value; leave it unchanged.' },
   }]));
 }
-export const matchesControl = (state: ControlState, expected: ControlState['value']) => state.connected && JSON.stringify(state.value) === JSON.stringify(expected);
+export const matchesControl = (state: ControlState, expected: ControlState['value']) => state.connected && !state.expanded && JSON.stringify(state.value) === JSON.stringify(expected);
