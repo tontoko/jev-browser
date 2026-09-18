@@ -8,6 +8,8 @@ const instruction = z.string().trim().min(1);
 const values = z.record(z.string().min(1), z.string()).optional();
 const fieldType = z.enum(['string', 'number', 'boolean']);
 const field = z.union([fieldType, z.object({ type: fieldType, description: z.string().optional(), nullable: z.boolean().optional() }).strict()]);
+const confidence = z.number().min(0).max(1).optional();
+const semanticActual = z.union([z.object({ description: instruction }).strict(), z.object({ ref: z.string().min(1) }).strict()]);
 export const commandSchemas = {
   ...nativeSchemas,
   goto: z.object({ url: z.url() }).strict(),
@@ -17,6 +19,9 @@ export const commandSchemas = {
     .refine(v => Number(v.instruction !== undefined) + Number(v.planId !== undefined) === 1, { message: 'Provide exactly one of instruction or planId.' }),
   extract: z.object({ instruction, fields: z.record(z.string().min(1), field).optional(), schema: z.record(z.string(), z.unknown()).optional(), scope, recordsScope: scope }).strict()
     .refine(v => Number(v.fields !== undefined) + Number(v.schema !== undefined) === 1, { message: 'Provide exactly one of fields or schema (JSON Schema).' }),
+  semantic_locate: z.object({ description: instruction, minConfidence: confidence, scope }).strict(),
+  semantic_compare: z.object({ actual: semanticActual, expected: z.string().min(1), minConfidence: confidence, scope }).strict(),
+  semantic_assert: z.object({ actual: semanticActual, expected: z.string().min(1), minConfidence: confidence, scope }).strict(),
   run: z.object({ instruction, values: z.record(z.string(),z.json()).optional(), scope, maxSteps: z.number().int().positive().optional(), maxDecisions:z.number().int().positive().optional(),decisionRetries:z.number().int().min(0).max(2).optional(),settleTimeoutMs:z.number().int().positive().optional(),timeoutMs:z.number().int().positive().optional(),expect:z.union([nativeSchemas.assert,z.array(nativeSchemas.assert).min(1)]).optional() }).strict(),
   screenshot: z.object({}).strict(),
   close: z.object({}).strict(),
@@ -30,6 +35,9 @@ const descriptions: Partial<Record<CommandName, string>> = {
   observe: 'Use Jev to choose one grounded action without executing it. Values are explicit named local inputs. Returns a single-use plan or null.',
   act: 'Use Jev to execute one instruction, or execute a previous planId. Literal input text belongs in named values. No automatic mutation retries.',
   extract: 'Copy source-grounded data. Use fields for scalar fields or JSON Schema for nested objects and arrays. recordsScope selects repeated DOM rows/cards. Returns data and source evidence.',
+  semantic_locate: 'Use Jev to bind one caller description to a grounded current element. Returns a short-lived real ref, confidence and evidence; never a model-generated selector.',
+  semantic_compare: 'Compare grounded actual evidence with caller expected meaning. Exact local equality avoids Jev; semantic outcomes include confidence, threshold and evidence.',
+  semantic_assert: 'Read-only semantic assertion. Passed requires equivalent at/above threshold; different or inconclusive results are errors. Deterministic assertions remain available separately.',
   run: 'Complete a goal with supplied nested JSON inputs. Independent field judgments are batched; browser writes are serial. Saved results require readback or explicit expect assertions. Returns input coverage, effect state, usage and partial progress on errors.',
   assert: 'Deterministically assert a page/element fact with Playwright polling. Failure is an error, never a model opinion.',
   click: 'Click a snapshot ref or caller-authored Playwright selector. element is a human-readable description, not a selector. No model call.',
@@ -49,7 +57,7 @@ const descriptions: Partial<Record<CommandName, string>> = {
 };
 export const commandDescriptions = Object.fromEntries(Object.keys(commandSchemas).map(name => [name, descriptions[name as CommandName] ?? `Execute native Playwright ${name.replaceAll('_', ' ')} on the selected browser session. No model call.`])) as Record<CommandName, string>;
 export function commandReadOnly(name: CommandName): boolean {
-  return ['snapshot', 'observe', 'extract', 'screenshot'].includes(name) || nativeReadOnly.has(name as NativeName);
+  return ['snapshot', 'observe', 'extract', 'semantic_locate', 'semantic_compare', 'semantic_assert', 'screenshot'].includes(name) || nativeReadOnly.has(name as NativeName);
 }
 export function parseCommand(input: unknown): Command {
   if (typeof input !== 'object' || input === null || !('command' in input) || typeof input.command !== 'string' || !Object.hasOwn(commandSchemas, input.command))
@@ -68,6 +76,9 @@ export async function executeCommand(browser: JevBrowser, request: Command, sign
     case 'observe': return { plan: await browser.observe(request.instruction, options) };
     case 'act': return browser.act(request.planId ? { id: request.planId } : request.instruction!, options);
     case 'run': { const {command,instruction,...runOptions}=request;return browser.run(instruction,{...runOptions,signal}); }
+    case 'semantic_locate': return browser.locateSemantic(request.description, { ...options, minConfidence: request.minConfidence });
+    case 'semantic_compare': return browser.compareSemantic({ actual: request.actual, expected: request.expected, minConfidence: request.minConfidence }, options);
+    case 'semantic_assert': return browser.assertSemantic({ actual: request.actual, expected: request.expected, minConfidence: request.minConfidence }, options);
     case 'extract': {
       let schema: z.ZodType;
       if (request.schema) {
