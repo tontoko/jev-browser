@@ -85,7 +85,7 @@ export type SemanticActual = SemanticTarget | { description: string } | { ref: s
 export interface SemanticComparisonRequest { actual: SemanticActual; expected: string; minConfidence?: number }
 export interface SemanticCompareOptions extends OperationOptions { minConfidence?: number }
 export interface SemanticUsage { requests: number; questions: number; serialDecisionDepth: number; inputTokens: number; outputTokens: number; providerMs: number }
-export interface SemanticComparisonResult { status: SemanticAssertionStatus; choice: SemanticChoice; confidence: number; threshold: number; source: 'deterministic' | 'semantic'; evidence: SemanticEvidence; model?: string; usage: SemanticUsage }
+export interface SemanticComparisonResult { status: SemanticAssertionStatus; choice: SemanticChoice; confidence: number; sourceConfidence: number; threshold: number; source: 'deterministic' | 'semantic'; evidence: SemanticEvidence; model?: string; usage: SemanticUsage }
 export interface ExtractOptions extends OperationOptions { recordsScope?: string }
 /** Remaining operation budget at callback entry. Awaited callbacks must honor signal. */
 export interface OperationContext { readonly signal: AbortSignal; readonly timeoutMs: number }

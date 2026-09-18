@@ -64,16 +64,41 @@ test('semantic batch: cancellation after source selection prevents comparison fr
   assert.equal(engine.requests.length,1);
 });
 
-test('semantic batch: below-threshold source selection is inconclusive without comparison',async t=>{
-  const page=await browser.newPage();await page.setContent('<p>Actual</p>');
+test('semantic batch: source confidence is evidence, while minConfidence gates the semantic comparison',async t=>{
+  const page=await browser.newPage();await page.setContent('<p>Actual status text</p>');
   const requestsSeen=[];
   const engine={async decide(request){
     requestsSeen.push(structuredClone(request));
-    return {answers:Object.fromEntries(Object.keys(request.questions).map(id=>[id,{choice:Object.keys(request.questions[id].criteria).find(key=>!key.startsWith('__')),confidence:0.5}]))};
+    if(request.questions.source_0){
+      const choice=Object.keys(request.questions.source_0.criteria).find(key=>!key.startsWith('__'));
+      return {answers:{source_0:{choice,confidence:0.5}},model:'fixture'};
+    }
+    return {answers:{compare_0:{choice:'equivalent',confidence:0.95}},model:'fixture'};
   }};
   const core=new JevBrowser({page,engine});t.after(async()=>{await core.close();await page.close();});
   const [result]=await core.compareSemanticBatch([{actual:{description:'Actual status'},expected:'Equivalent status'}],{minConfidence:0.8});
-  assert.equal(result.status,'inconclusive');
-  assert.equal(result.choice,'insufficient_evidence');
-  assert.equal(requestsSeen.length,1);
+  assert.equal(result.status,'passed');
+  assert.equal(result.choice,'equivalent');
+  assert.equal(result.confidence,0.95);
+  assert.equal(result.sourceConfidence,0.5);
+  assert.equal(requestsSeen.length,2);
+  assert.equal(result.usage.serialDecisionDepth,2);
+});
+
+test('semantic source discovery: definition-list terms are labels, not actual value candidates',async t=>{
+  const page=await browser.newPage();await page.setContent('<dl><dt>Plan</dt><dd>Pro annual</dd></dl>');
+  const engine={async decide(request){
+    if(request.questions.source_0){
+      const question=request.questions.source_0;
+      const candidates=Object.entries(question.criteria).filter(([id])=>!id.startsWith('__')).map(([,candidate])=>candidate);
+      assert.equal(candidates.some(candidate=>candidate.role==='term'),false);
+      const actual=Object.entries(question.criteria).find(([,candidate])=>candidate?.role==='definition'&&candidate.text==='Pro annual')?.[0];
+      return {answers:{source_0:{choice:actual,confidence:0.9}}};
+    }
+    return {answers:{compare_0:{choice:'equivalent',confidence:0.95}}};
+  }};
+  const core=new JevBrowser({page,engine});t.after(async()=>{await core.close();await page.close();});
+  const result=await core.compareSemantic({actual:{description:'Current plan'},expected:'Professional annual plan',minConfidence:0.8});
+  assert.equal(result.status,'passed');
+  assert.equal(result.evidence.text,'Pro annual');
 });
