@@ -102,3 +102,14 @@ test('semantic source discovery: definition-list terms are labels, not actual va
   assert.equal(result.status,'passed');
   assert.equal(result.evidence.text,'Pro annual');
 });
+
+test('semantic metrics: observation provider and local verification time are explicit',async t=>{
+  const {core}=await makeCore(t);
+  const [result]=await core.compareSemanticBatch([{actual:{description:'Value for Field 0'},expected:'Expected 0'}],{minConfidence:0.8});
+  for(const key of ['providerMs','observationMs','verificationMs']){
+    assert.equal(typeof result.usage[key],'number',key);
+    assert.ok(Number.isFinite(result.usage[key])&&result.usage[key]>=0,key);
+  }
+  assert.ok(result.usage.observationMs>0);
+  assert.equal(result.usage.serialDecisionDepth,2);
+});

@@ -201,10 +201,14 @@ export class JevBrowser {
         work.push({ ...actual, expected: request.expected, threshold: thresholds[index]! });
       }
       const needsObservation = work.some(item => !item.evidence);
+      const observationStarted = performance.now();
       const observed = needsObservation ? await capture(this.page,{...this.limits,scope:options.scope}) : undefined;
+      const observationMs = needsObservation ? performance.now()-observationStarted : 0;
       try {
         operation.signal.throwIfAborted();
-        return await compareSemanticWork(observed?.data,work,this.engine(),operation.signal,this.limits.maxCandidates);
+        const results = await compareSemanticWork(observed?.data,work,this.engine(),operation.signal,this.limits.maxCandidates);
+        for (const result of results) result.usage.observationMs += observationMs;
+        return results;
       } finally { await observed?.dispose(); }
     });
   }

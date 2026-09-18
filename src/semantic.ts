@@ -155,6 +155,7 @@ export async function compareSemanticWork(
   maxCandidates: number,
 ): Promise<SemanticComparisonResult[]> {
   if (!work.length) return [];
+  const started = performance.now();
   const usage = emptyDecisionUsage();
   const prepared = work.map((item,index)=>({
     index,
@@ -257,6 +258,6 @@ Choose equivalent only when these mean the same thing in this context. Choose di
       };
     }
   }
-  const finalUsage={...usage};
+  const finalUsage={...usage,observationMs:0,verificationMs:Math.max(0,performance.now()-started-usage.providerMs)};
   return partial.map(result=>({...result!,usage:{...finalUsage}}));
 }
