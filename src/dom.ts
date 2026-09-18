@@ -132,7 +132,7 @@ export function observe(options: { maxElements: number; maxTexts: number }, scop
     const parent = recordNodes.findIndex(other => other !== el && other.contains(el) && !recordNodes.some(between => between !== other && between !== el && other.contains(between) && between.contains(el)));
     return { index, parent: parent < 0 ? undefined : parent, readOnly: !el.matches('form,input,textarea,select,[contenteditable="true"]') && !el.querySelector('input,textarea,select,[contenteditable="true"]'), context: normalize((el as HTMLElement).innerText).slice(0, 1000), texts: textNodes.flatMap((node, i) => el === node || el.contains(node) ? [i] : []) };
   });
-  return { nodes, elements, texts, records, truncatedElements, truncatedTexts, changeKey: String(progressChanged()), busy: !!document.querySelector('[aria-busy="true"]') };
+  return { nodes, elements, texts, records, recordInventoryComplete:scanned<=6000, truncatedElements, truncatedTexts, changeKey: String(progressChanged()), busy: !!document.querySelector('[aria-busy="true"]') };
 }
 
 /** No global text search: options must belong to the popup declared by this control. */
@@ -148,4 +148,19 @@ export function matchingComboboxOptions(element: Element, wanted: string): Eleme
       if (option.closest('[role="listbox"]') === popup && visible(option) && !option.matches(':disabled,[aria-disabled="true"]') && normalize(computeAccessibleName(option)) === normalize(wanted)) matches.add(option);
   }
   return [...matches];
+}
+
+/** A bounded index of real semantic regions, not a guessed selector or a truncated action list. */
+export function regionNodes(): Element[] {
+  const roots:(Document|ShadowRoot)[]=[document],regions:Element[]=[];
+  for(const root of roots){
+    for(const node of root.querySelectorAll('*'))if(node.shadowRoot)roots.push(node.shadowRoot);
+    for(const node of root.querySelectorAll('form,main,nav,section,article,dialog,[role="form"],[role="main"],[role="region"],[role="dialog"],[role="navigation"]'))
+      if(visible(node))regions.push(node);
+  }
+  return regions;
+}
+export function regionDescription(element:Element){
+  const d=describe(element);
+  return {...d,info:{...d.info,role:d.info.role||element.tagName.toLowerCase(),name:d.info.name||normalize(element.querySelector('h1,h2,h3,legend')?.textContent)}};
 }

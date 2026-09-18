@@ -20,7 +20,7 @@ export async function applyCombobox(input:InputBinding,ref:ElementRef,observed:C
   if(!control||!await control.handle.evaluate((node,original)=>node===original,ref.handle))throw new BrowserError('STALE_TARGET','The bound combobox changed identity while opening its popup.');
   const options=choices.data.elements.filter(element=>element.role==='option'&&!element.disabled);
   if(options.length!==1)throw new BrowserError('AMBIGUOUS_SELECTION','A unique owned option is required.');
-  const result=await host.perform({kind:'click',target:options[0]!,valueKey:input.path},choices);
+  const result=await host.perform({kind:'click',target:options[0]!,valueKey:input.path,ownerId:control.info.id},choices);
   if(result.status==='dialog')throw new BrowserError('DIALOG_PENDING','A dialog interrupted option selection; inspect the partial result.');
   if(!matchesControl(await readControl(control),input.value)){
     const operation=host.operation();

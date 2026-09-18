@@ -27,7 +27,7 @@ export async function capture(page: Page, options: { scope?: string; recordsScop
   const rawURL = page.url();
   const data: Snapshot = {
     id: randomUUID(), url: publicURL(rawURL), title: await page.title(), elements: [], texts: [], records: [],
-    truncated: false, truncatedElements: false, truncatedTexts: false,
+    truncated: false, truncatedElements: false, truncatedTexts: false, recordInventoryComplete:true,
     scroll: await page.evaluate(() => ({ y: window.scrollY, maxY: Math.max(0, document.documentElement.scrollHeight - window.innerHeight), height: window.innerHeight })),
   };
   try {
@@ -43,7 +43,7 @@ export async function capture(page: Page, options: { scope?: string; recordsScop
       const observe = new Function('args', `${source()}; return JevDOM.observe(${JSON.stringify(frameOptions)}, args.roots, args.recordRoots);`) as (args: { roots?: Element[]; recordRoots?: Element[] }) => ReturnType<typeof DOM.observe>;
       const result = await frame.evaluateHandle(observe, { roots, recordRoots });
       owned.push(result);
-      const observed = await result.evaluate(r => ({ elements: r.elements, texts: r.texts, records: r.records, busy: r.busy, changeKey: r.changeKey, truncatedElements: r.truncatedElements, truncatedTexts: r.truncatedTexts }));
+      const observed = await result.evaluate(r => ({ elements: r.elements, texts: r.texts, records: r.records, recordInventoryComplete:r.recordInventoryComplete, busy: r.busy, changeKey: r.changeKey, truncatedElements: r.truncatedElements, truncatedTexts: r.truncatedTexts }));
       changeKeys[frameIndex] = observed.changeKey;
       data.busy ||= observed.busy;
       const nodes = await result.getProperty('nodes'); owned.push(nodes);
@@ -60,6 +60,7 @@ export async function capture(page: Page, options: { scope?: string; recordsScop
       }
       data.texts.push(...observed.texts.map((text, i) => ({ ...text, id: `t${frameIndex}_${i}`, frame: frameIndex })));
       data.records!.push(...observed.records.map(r => ({ id: `record${frameIndex}_${r.index}`, frame: frameIndex, context: r.context, readOnly: r.readOnly, textIds: r.texts.map(i => `t${frameIndex}_${i}`), ...(r.parent !== undefined ? { parentId: `record${frameIndex}_${r.parent}` } : {}) })));
+      data.recordInventoryComplete &&= observed.recordInventoryComplete;
       data.truncatedElements ||= observed.truncatedElements;
       data.truncatedTexts ||= observed.truncatedTexts;
     }
@@ -102,4 +103,36 @@ export async function captureComboboxChoice(page: Page, ref: ElementRef, value: 
     if(!options.length)throw new BrowserError('NO_MATCH','The matching option disappeared before observation.');
     return await capture(page,{...limits,selection:{frame:ref.frame,roots:[ref.handle,options[0]!]}});
   } finally {await Promise.allSettled([result,...handles].map(handle=>handle.dispose()));}
+}
+
+export interface RegionIndex {
+  data:{id:string;role:string;name:string;context:string;frame:number}[];
+  refs:Map<string,ElementRef>;
+  dispose():Promise<void>;
+}
+export async function captureRegions(page:Page):Promise<RegionIndex>{
+  const owned:JSHandle[]=[],refs=new Map<string,ElementRef>(),data:RegionIndex['data']=[];
+  const dispose=async()=>{await Promise.allSettled(owned.splice(0).map(handle=>handle.dispose()));refs.clear();};
+  try{
+    for(const [frameIndex,frame]of page.frames().entries()){
+      const find=new Function(`${source()}; return JevDOM.regionNodes();`) as ()=>Element[];
+      const result=await frame.evaluateHandle(find);owned.push(result);
+      const props=await result.getProperties();owned.push(...props.values());
+      for(const handle of props.values()){
+        const element=handle.asElement() as ElementHandle<Element>|null;if(!element)continue;
+        if(data.length>=64)throw new BrowserError('OBSERVATION_LIMIT','More than 64 semantic regions are present. A caller scope is required.');
+        const describe=new Function('element',`${source()}; return JevDOM.regionDescription(element);`) as (element:Element)=>ReturnType<typeof DOM.describe>;
+        const described=await element.evaluate(describe),id=`region_${frameIndex}_${data.length}`;
+        const info={...described.info,id,frame:frameIndex};refs.set(id,{frame,handle:element,info,signature:described.signature});
+        data.push({id,role:info.role,name:info.name,context:info.context,frame:frameIndex});
+      }
+    }
+    return {data,refs,dispose};
+  }catch(error){await dispose();throw error;}
+}
+export async function verifyOwnedOption(control:ElementRef,option:ElementRef):Promise<void>{
+  await verifyTarget(control);
+  if(control.frame!==option.frame)throw new BrowserError('STALE_TARGET','Option and its owner belong to different frames.');
+  const check=new Function('element','option',`${source()}; const matches=JevDOM.matchingComboboxOptions(element,${JSON.stringify(option.info.name)}); return matches.length===1&&matches[0]===option;`) as (element:Element,option:Element)=>boolean;
+  if(!await control.handle.evaluate(check,option.handle))throw new BrowserError('STALE_TARGET','The option no longer uniquely belongs to the observed combobox.');
 }

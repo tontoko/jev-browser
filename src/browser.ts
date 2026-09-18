@@ -5,7 +5,7 @@ import { z } from 'zod';
 import type { EntryType } from '@typesafe-ai/sdk';
 import { JevDecisionEngine, type DecisionEngine, type DecisionRequest } from './decision.js';
 import { BrowserError } from './errors.js';
-import { capture, publicURL, verifyTarget, captureComboboxChoice, type Captured } from './observation.js';
+import { capture, publicURL, verifyTarget, captureComboboxChoice, captureRegions, verifyOwnedOption, type Captured } from './observation.js';
 import { actionCandidates, actionDescription, modelElementId, inputBindings, modelElement, resolveSelectChoice } from './actions.js';
 import { extractStructured } from './structured.js';
 import { NativeBrowser } from './native.js';
@@ -201,6 +201,8 @@ export class JevBrowser {
       await this.invalidate();
       return runGoal({
         page: () => this.page, capture: () => capture(this.page,{...this.limits,scope:options.scope}),
+        regions: () => captureRegions(this.page),
+        captureRegion: ref => capture(this.page,{...this.limits,selection:{frame:ref.frame,roots:[ref.handle]}}),
         captureChoice: (ref,value) => captureComboboxChoice(this.page,ref,value,this.limits,{signal:operation.signal,timeoutMs:Math.min(this.remaining(operation),options.settleTimeoutMs??2000)}),
         engine: () => this.engine(), operation: () => ({signal:operation.signal,timeoutMs:this.remaining(operation)}),
         perform: (plan,observed,values,started) => this.executeCaptured(plan,observed,values,operation,started),
@@ -294,6 +296,10 @@ export class JevBrowser {
       throw new BrowserError('ACTION_DENIED','The caller policy denied this action.');
     operation.signal.throwIfAborted();
     if(ref)await verifyTarget(ref);
+    if(action.ownerId){
+      const owner=captured.refs.get(action.ownerId);if(!owner||!ref)throw new BrowserError('STALE_TARGET','The observed option owner is no longer available.');
+      await verifyOwnedOption(owner,ref);
+    }
     operation.signal.throwIfAborted();
     if(action.kind==='dialog' && !this.nativeBrowser.isCurrentDialog(action.dialog!))throw new BrowserError('STALE_DIALOG','The dialog changed during authorization; nothing was accepted.');
     started();

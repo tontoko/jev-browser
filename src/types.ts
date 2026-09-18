@@ -38,6 +38,7 @@ export interface TextEvidence {
 export interface RecordEvidence { id: string; frame: number; context: string; textIds: string[]; parentId?: string; readOnly?: boolean }
 export interface Snapshot {
   records?: RecordEvidence[];
+  recordInventoryComplete?: boolean;
   busy?: boolean;
   id: string;
   url: string;
@@ -58,6 +59,8 @@ export interface GroundedAction {
   optionIndices?: number[];
   /** Internal staged choice; resolved to an observed option before execution. */
   deferred?: boolean;
+  /** The actual combobox ref whose declared popup owns an option action. */
+  ownerId?: string;
   dialog?: BrowserDialog;
   accept?: boolean;
   key?: 'Enter';
@@ -94,6 +97,7 @@ export interface RunInput { path: string; applied: boolean; readback: boolean; t
 export interface RunEffect { id: string; kind: 'input' | 'advance' | 'commit'; status: 'attempted' | 'observed' | 'unknown'; input?: string }
 export interface RunVerification { source: 'caller' | 'inferred'; basis: 'ui-readback' | 'assertion' | 'condition'; recordId?: string; readback: string[]; unobserved: string[] }
 export interface RunResult {
+  regions?: {purpose:'act'|'readback';name:string;role:string;frame:number}[];
   inputs?: RunInput[];
   effects?: RunEffect[];
   verification?: RunVerification;
