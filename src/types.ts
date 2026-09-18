@@ -53,6 +53,8 @@ export interface GroundedAction {
   valueKey?: string;
   option?: { index: number; label: string; value: string };
   optionIndices?: number[];
+  /** Internal staged choice; resolved to an observed option before execution. */
+  deferred?: boolean;
   dialog?: BrowserDialog;
   accept?: boolean;
   key?: 'Enter';
