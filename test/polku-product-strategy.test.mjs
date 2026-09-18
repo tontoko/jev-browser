@@ -52,11 +52,11 @@ test('all Polku scenarios keep evaluation oracle out of model payloads', () => {
     buildBriefSourceScenario(),
     buildImportColumnScenario(),
     buildImportRowScenario({
-      name: 'name',
-      date: 'date',
-      time: 'time',
-      duration: 'duration',
-      course: 'course',
+      name: 'c1',
+      date: 'c2',
+      time: 'c3',
+      duration: 'c4',
+      course: 'c5',
     }),
     buildCompanionInitialScenario(),
     buildCompanionResultScenario({
@@ -120,11 +120,11 @@ test('component-first and source-first Brief experiments judge the same source f
 
 test('import row questions use the interpreted columns and stable source row ids', () => {
   const scenario = buildImportRowScenario({
-    name: 'name',
-    date: 'date',
-    time: 'time',
-    duration: 'duration',
-    course: 'course',
+    name: 'c1',
+    date: 'c2',
+    time: 'c3',
+    duration: 'c4',
+    course: 'c5',
   });
 
   assert.ok(scenario.state.rows.every(row => /^r\d+$/.test(row.id)));
