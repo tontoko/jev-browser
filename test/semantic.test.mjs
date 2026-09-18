@@ -158,6 +158,14 @@ test('semantic assert: failed and inconclusive outcomes use distinct errors',asy
   }
 });
 
+test('semantic compare: invalid source threshold fails before provider work',async t=>{
+  let calls=0;const decider={async decide(){calls++;return {answers:{}};}};
+  const {core}=await coreFor(t,'<button>A</button>',decider);
+  const actual=await groundedTarget(core,'A');
+  for(const minSourceConfidence of [-1,2,NaN])await assert.rejects(core.compareSemantic({actual,expected:'B',minSourceConfidence}),{code:'INVALID_ARGUMENT'});
+  assert.equal(calls,0);
+});
+
 test('semantic compare: invalid threshold fails before provider work',async t=>{
   let calls=0;const decider={async decide(){calls++;return {answers:{}};}};
   const {core}=await coreFor(t,'<button>A</button>',decider);

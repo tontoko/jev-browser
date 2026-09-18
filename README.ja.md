@@ -72,7 +72,7 @@ await browser.assertSemantic({
 });
 ```
 
-semantic比較は、実際に選ばれたDOM上の`evidence`、`passed | failed | inconclusive`、比較の`confidence`、別個の`sourceConfidence`、閾値を返します。`minConfidence`の既定値は`0.8`です。**confidenceは正解確率ではなくJevのdecision scoreです。** 閾値未満や証拠不足はpassになりません。actual sourceの特定もsemanticだった場合、その`sourceConfidence`も閾値を満たす必要があります。groundedなactualとexpectedが決定的に一致する場合は、2回目のsemantic比較を呼ばずローカルで完了します。
+semantic比較は、実際に選ばれたDOM上の`evidence`、`passed | failed | inconclusive`、比較の`confidence`、別個の`sourceConfidence`、2つの閾値を返します。`minConfidence`の既定値は`0.8`、`minSourceConfidence`は指定しなければその`minConfidence`と同じ値です。source選択と意味比較のscore分布が違う場合だけ、source側を個別に調整できます。**confidenceは正解確率ではなくJevのdecision scoreです。** 閾値未満や証拠不足はpassになりません。source自体が閾値未満なら、結論がpassになり得ないため2回目のsemantic比較を呼びません。groundedなactualとexpectedが決定的に一致する場合も、2回目のsemantic比較を呼ばずローカルで完了します。
 
 複数の独立した比較は`compareSemanticBatch()`でまとめられ、source discoveryとsemantic comparisonをそれぞれdecision frontierとして処理します。結果には`serialDecisionDepth`、token/request数、`providerMs`、`observationMs`、`verificationMs`も含まれます。詳しくは[Semantic verification](docs/semantic-verification.md)を参照してください。
 

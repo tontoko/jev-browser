@@ -45,7 +45,7 @@ and three public statuses:
 - `failed`
 - `inconclusive`
 
-The default `minConfidence` is `0.8` and accepts any finite value from `0` through `1`.
+The default `minConfidence` is `0.8` and accepts any finite value from `0` through `1`. `minSourceConfidence` is optional and defaults to the effective `minConfidence`; it can be tuned independently when source-selection confidence has a different distribution from comparison confidence.
 
 **Jev confidence is a decision score, not a calibrated probability that the assertion is correct.** A threshold of `0.8` means “accept this semantic decision only when the returned score is at least 0.8.” It does not mean “80% probability of correctness.”
 
@@ -56,6 +56,7 @@ The default `minConfidence` is `0.8` and accepts any finite value from `0` throu
   confidence: 0.93,
   sourceConfidence: 0.94,
   threshold: 0.8,
+  sourceThreshold: 0.8,
   source: 'semantic',
   evidence: {
     sourceId: 't0_3',
@@ -81,11 +82,26 @@ The default `minConfidence` is `0.8` and accepts any finite value from `0` throu
 
 `sourceConfidence` describes Jev's selection of the grounded actual source. `confidence` describes the final semantic comparison when a comparison model call was needed.
 
-They are intentionally not collapsed into one number. A semantic assertion passes only when every model-dependent link it relied on clears `minConfidence`: source selection and, when a semantic comparison call is needed, the comparison itself. A low source score therefore makes the result inconclusive even if the later comparison is high-confidence. Exact equality after a semantic source selection performs no second model call and is reported as a deterministic comparison, while the separate `sourceConfidence` still determines whether the overall result is conclusive.
+They are intentionally not collapsed into one number. A semantic assertion passes only when every model-dependent link it relied on clears its configured threshold. `minConfidence` gates semantic comparison; `minSourceConfidence` gates source selection and defaults to `minConfidence`. A low source score therefore makes the result inconclusive before a later comparison is attempted; the second frontier is skipped because it cannot turn that assertion into a pass. Exact equality after a semantic source selection performs no second model call and is reported as a deterministic comparison, while the separate `sourceConfidence` still determines whether the overall result is conclusive.
 
 Source binding still fails closed on an explicit no-match or ambiguity. The selected source is always returned so callers can inspect what was actually compared.
 
-When a semantic source is selected and the actual value then matches the expected text exactly, there is no second Jev comparison. The comparison provenance is deterministic, `confidence` is `1`, and the separately retained `sourceConfidence` still has to clear the threshold for the overall result to pass.
+### Tuning source confidence separately
+
+Source selection and semantic comparison can have different score distributions. Keep the comparison threshold strict while lowering only the source threshold when your own calibration justifies it:
+
+```ts
+const result = await browser.compareSemantic({
+  actual: { description: 'Current plan' },
+  expected: 'Professional annual plan',
+  minConfidence: 0.8,
+  minSourceConfidence: 0.4,
+});
+```
+
+This does not reinterpret either score as a probability. The result reports both `threshold` and `sourceThreshold` so callers and CI logs can see exactly which policy was applied.
+
+When a semantic source is selected and the actual value then matches the expected text exactly, there is no second Jev comparison. The comparison provenance is deterministic, `confidence` is `1`, and the separately retained `sourceConfidence` still has to clear `sourceThreshold` for the overall result to pass.
 
 ### Throwing assertion
 

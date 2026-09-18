@@ -20,8 +20,8 @@ export const commandSchemas = {
   extract: z.object({ instruction, fields: z.record(z.string().min(1), field).optional(), schema: z.record(z.string(), z.unknown()).optional(), scope, recordsScope: scope }).strict()
     .refine(v => Number(v.fields !== undefined) + Number(v.schema !== undefined) === 1, { message: 'Provide exactly one of fields or schema (JSON Schema).' }),
   semantic_locate: z.object({ description: instruction, minConfidence: confidence, scope }).strict(),
-  semantic_compare: z.object({ actual: semanticActual, expected: z.string().min(1), minConfidence: confidence, scope }).strict(),
-  semantic_assert: z.object({ actual: semanticActual, expected: z.string().min(1), minConfidence: confidence, scope }).strict(),
+  semantic_compare: z.object({ actual: semanticActual, expected: z.string().min(1), minConfidence: confidence, minSourceConfidence: confidence, scope }).strict(),
+  semantic_assert: z.object({ actual: semanticActual, expected: z.string().min(1), minConfidence: confidence, minSourceConfidence: confidence, scope }).strict(),
   run: z.object({ instruction, values: z.record(z.string(),z.json()).optional(), scope, maxSteps: z.number().int().positive().optional(), maxDecisions:z.number().int().positive().optional(),decisionRetries:z.number().int().min(0).max(2).optional(),settleTimeoutMs:z.number().int().positive().optional(),timeoutMs:z.number().int().positive().optional(),expect:z.union([nativeSchemas.assert,z.array(nativeSchemas.assert).min(1)]).optional() }).strict(),
   screenshot: z.object({}).strict(),
   close: z.object({}).strict(),
@@ -77,8 +77,8 @@ export async function executeCommand(browser: JevBrowser, request: Command, sign
     case 'act': return browser.act(request.planId ? { id: request.planId } : request.instruction!, options);
     case 'run': { const {command,instruction,...runOptions}=request;return browser.run(instruction,{...runOptions,signal}); }
     case 'semantic_locate': return browser.locateSemantic(request.description, { ...options, minConfidence: request.minConfidence });
-    case 'semantic_compare': return browser.compareSemantic({ actual: request.actual, expected: request.expected, minConfidence: request.minConfidence }, options);
-    case 'semantic_assert': return browser.assertSemantic({ actual: request.actual, expected: request.expected, minConfidence: request.minConfidence }, options);
+    case 'semantic_compare': return browser.compareSemantic({ actual: request.actual, expected: request.expected, minConfidence: request.minConfidence, minSourceConfidence: request.minSourceConfidence }, options);
+    case 'semantic_assert': return browser.assertSemantic({ actual: request.actual, expected: request.expected, minConfidence: request.minConfidence, minSourceConfidence: request.minSourceConfidence }, options);
     case 'extract': {
       let schema: z.ZodType;
       if (request.schema) {

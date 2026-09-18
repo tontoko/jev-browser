@@ -3,7 +3,7 @@
 ## 0.5.0
 
 - Grounded semantic verification across SDK, CLI and MCP: `locateSemantic`, `compareSemantic`, `compareSemanticBatch`, and `assertSemantic`.
-- Semantic assertions distinguish `passed`, `failed`, and `inconclusive`; configurable `minConfidence` defaults to 0.8. Low source-selection confidence, low comparison confidence, or insufficient evidence never passes.
+- Semantic assertions distinguish `passed`, `failed`, and `inconclusive`; configurable `minConfidence` defaults to 0.8. `minSourceConfidence` defaults to the comparison threshold but can be tuned independently. Low source-selection confidence, low comparison confidence, or insufficient evidence never passes; low source confidence short-circuits before the comparison frontier.
 - Model confidence is exposed as a decision score, not a correctness probability. Source-selection confidence is reported separately from final semantic-comparison confidence.
 - Exact grounded equality short-circuits locally without an additional semantic comparison call. Deterministic Playwright/native assertions remain unchanged and preferred when exact truth is available.
 - Independent Jev questions use a shared decision frontier: transport chunks at one dependency level can run concurrently, while `serialDecisionDepth` reports the actual sequential semantic depth.

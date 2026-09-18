@@ -165,7 +165,7 @@ await browser.assertSemantic({
 });
 ```
 
-Semantic comparison returns grounded evidence, `passed | failed | inconclusive`, the comparison `confidence`, the separate `sourceConfidence`, and the configured threshold. `minConfidence` defaults to `0.8`. **Confidence is a Jev decision score, not a probability that the assertion is correct.** Low-confidence and insufficient-evidence outcomes never pass. If source discovery was semantic, its confidence must also clear the threshold. Exact grounded equality then short-circuits locally without a second semantic comparison call.
+Semantic comparison returns grounded evidence, `passed | failed | inconclusive`, the comparison `confidence`, the separate `sourceConfidence`, and both thresholds. `minConfidence` defaults to `0.8`. `minSourceConfidence` defaults to the effective `minConfidence`, but can be tuned separately when source-selection scores have a different distribution. **Confidence is a Jev decision score, not a probability that the assertion is correct.** Low-confidence and insufficient-evidence outcomes never pass. A below-threshold source stops there instead of spending a second comparison request. Exact grounded equality likewise short-circuits locally without a second semantic comparison call.
 
 Independent assertions can use `compareSemanticBatch()`: source discovery is one decision frontier and unresolved comparisons another, so more independent fields increase questions before they increase serial decision depth. Results expose `serialDecisionDepth`, provider/token usage, `providerMs`, `observationMs`, and local `verificationMs`. See [Semantic verification](docs/semantic-verification.md).
 

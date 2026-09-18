@@ -11,10 +11,10 @@ import type {
   Snapshot,
 } from './types.js';
 
-export const semanticThreshold = (value: number | undefined): number => {
-  const threshold = value ?? 0.8;
+export const semanticThreshold = (value: number | undefined, name = 'minConfidence', fallback = 0.8): number => {
+  const threshold = value ?? fallback;
   if (!Number.isFinite(threshold) || threshold < 0 || threshold > 1)
-    throw new BrowserError('INVALID_ARGUMENT','minConfidence must be a finite number between 0 and 1.');
+    throw new BrowserError('INVALID_ARGUMENT',`${name} must be a finite number between 0 and 1.`);
   return threshold;
 };
 
@@ -123,6 +123,7 @@ export interface SemanticComparisonWork {
   description?: string;
   expected: string;
   threshold: number;
+  sourceThreshold: number;
   sourceSemantic?: boolean;
   sourceConfidence?: number;
 }
@@ -143,8 +144,9 @@ function classified(
   confidence: number,
   sourceConfidence: number,
   threshold: number,
+  sourceThreshold: number,
 ): SemanticComparisonResult['status'] {
-  if (choice === 'insufficient_evidence' || confidence < threshold || sourceConfidence < threshold) return 'inconclusive';
+  if (choice === 'insufficient_evidence' || confidence < threshold || sourceConfidence < sourceThreshold) return 'inconclusive';
   return choice === 'equivalent' ? 'passed' : 'failed';
 }
 
@@ -210,12 +212,27 @@ A field label, definition term, heading, or control name that merely names the p
     if (normalizeExact(evidenceText(evidence)) === normalizeExact(item.expected)) {
       const semanticSource = item.sourceSemantic === true;
       partial[item.index]={
-        status:semanticSource && sourceConfidence < item.threshold ? 'inconclusive' : 'passed',
+        status:semanticSource && sourceConfidence < item.sourceThreshold ? 'inconclusive' : 'passed',
         choice:'equivalent',
         confidence:1,
         sourceConfidence,
         threshold:item.threshold,
+        sourceThreshold:item.sourceThreshold,
         source:'deterministic',
+        evidence,
+        ...(item.sourceModel?{model:item.sourceModel}:{}),
+      };
+      continue;
+    }
+    if (item.sourceSemantic && sourceConfidence < item.sourceThreshold) {
+      partial[item.index]={
+        status:'inconclusive',
+        choice:'insufficient_evidence',
+        confidence:sourceConfidence,
+        sourceConfidence,
+        threshold:item.threshold,
+        sourceThreshold:item.sourceThreshold,
+        source:'semantic',
         evidence,
         ...(item.sourceModel?{model:item.sourceModel}:{}),
       };
@@ -248,11 +265,12 @@ Choose equivalent only when these mean the same thing in this context. Choose di
       const answer=result.answers[`compare_${item.index}`]!;
       const choice=answer.choice as SemanticChoice;
       partial[item.index]={
-        status:classified(choice,answer.confidence,item.sourceConfidence ?? 1,item.threshold),
+        status:classified(choice,answer.confidence,item.sourceConfidence ?? 1,item.threshold,item.sourceThreshold),
         choice,
         confidence:answer.confidence,
         sourceConfidence:item.sourceConfidence ?? 1,
         threshold:item.threshold,
+        sourceThreshold:item.sourceThreshold,
         source:'semantic',
         evidence:item.evidence!,
         ...(result.model?{model:result.model}:{}),

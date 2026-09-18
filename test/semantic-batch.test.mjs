@@ -64,7 +64,7 @@ test('semantic batch: cancellation after source selection prevents comparison fr
   assert.equal(engine.requests.length,1);
 });
 
-test('semantic batch: low source confidence makes a high-confidence comparison inconclusive',async t=>{
+test('semantic batch: low source confidence short-circuits before the comparison frontier',async t=>{
   const page=await browser.newPage();await page.setContent('<p>Actual status text</p>');
   const requestsSeen=[];
   const engine={async decide(request){
@@ -78,9 +78,31 @@ test('semantic batch: low source confidence makes a high-confidence comparison i
   const core=new JevBrowser({page,engine});t.after(async()=>{await core.close();await page.close();});
   const [result]=await core.compareSemanticBatch([{actual:{description:'Actual status'},expected:'Equivalent status'}],{minConfidence:0.8});
   assert.equal(result.status,'inconclusive');
-  assert.equal(result.choice,'equivalent');
+  assert.equal(result.choice,'insufficient_evidence');
+  assert.equal(result.confidence,0.5);
+  assert.equal(result.sourceConfidence,0.5);
+  assert.equal(requestsSeen.length,1);
+  assert.equal(result.usage.serialDecisionDepth,1);
+});
+
+test('semantic batch: source threshold can be tuned independently from comparison threshold',async t=>{
+  const page=await browser.newPage();await page.setContent('<p>Actual status text</p>');
+  const requestsSeen=[];
+  const engine={async decide(request){
+    requestsSeen.push(structuredClone(request));
+    if(request.questions.source_0){
+      const choice=Object.keys(request.questions.source_0.criteria).find(key=>!key.startsWith('__'));
+      return {answers:{source_0:{choice,confidence:0.5}},model:'fixture'};
+    }
+    return {answers:{compare_0:{choice:'equivalent',confidence:0.95}},model:'fixture'};
+  }};
+  const core=new JevBrowser({page,engine});t.after(async()=>{await core.close();await page.close();});
+  const [result]=await core.compareSemanticBatch([{actual:{description:'Actual status'},expected:'Equivalent status',minConfidence:0.8,minSourceConfidence:0.4}]);
+  assert.equal(result.status,'passed');
   assert.equal(result.confidence,0.95);
   assert.equal(result.sourceConfidence,0.5);
+  assert.equal(result.threshold,0.8);
+  assert.equal(result.sourceThreshold,0.4);
   assert.equal(requestsSeen.length,2);
   assert.equal(result.usage.serialDecisionDepth,2);
 });

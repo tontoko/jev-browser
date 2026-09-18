@@ -191,6 +191,7 @@ export class JevBrowser {
   async compareSemanticBatch(requests: SemanticComparisonRequest[], options: SemanticCompareOptions = {}): Promise<SemanticComparisonResult[]> {
     if (!Array.isArray(requests)) throw new BrowserError('INVALID_ARGUMENT','Semantic comparison requests must be an array.');
     const thresholds = requests.map(request => semanticThreshold(request.minConfidence ?? options.minConfidence));
+    const sourceThresholds = requests.map((request,index) => semanticThreshold(request.minSourceConfidence ?? options.minSourceConfidence, 'minSourceConfidence', thresholds[index]!));
     for (const request of requests) if (typeof request.expected !== 'string' || !request.expected.trim())
       throw new BrowserError('INVALID_ARGUMENT','Semantic expected meaning must be a nonempty string.');
     if (!requests.length) return [];
@@ -198,7 +199,7 @@ export class JevBrowser {
       const work = [];
       for (const [index, request] of requests.entries()) {
         const actual = await this.semanticActual(request.actual);
-        work.push({ ...actual, expected: request.expected, threshold: thresholds[index]! });
+        work.push({ ...actual, expected: request.expected, threshold: thresholds[index]!, sourceThreshold: sourceThresholds[index]! });
       }
       const needsObservation = work.some(item => !item.evidence);
       const observationStarted = performance.now();

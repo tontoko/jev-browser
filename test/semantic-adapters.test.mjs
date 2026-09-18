@@ -40,8 +40,9 @@ async function cli(env,args){
 test('semantic adapters: command schemas are read-only and validate threshold',()=>{
   for(const name of ['semantic_locate','semantic_compare','semantic_assert'])assert.equal(commandReadOnly(name),true);
   assert.equal(parseCommand({command:'semantic_locate',description:'Manage plan',minConfidence:0.8}).command,'semantic_locate');
-  assert.equal(parseCommand({command:'semantic_compare',actual:{description:'Current plan'},expected:'Professional annual plan',minConfidence:0.8}).command,'semantic_compare');
+  assert.equal(parseCommand({command:'semantic_compare',actual:{description:'Current plan'},expected:'Professional annual plan',minConfidence:0.8,minSourceConfidence:0.4}).command,'semantic_compare');
   assert.throws(()=>parseCommand({command:'semantic_assert',actual:{description:'Plan'},expected:'Pro',minConfidence:2}),{code:'INVALID_ARGUMENT'});
+  assert.throws(()=>parseCommand({command:'semantic_assert',actual:{description:'Plan'},expected:'Pro',minSourceConfidence:2}),{code:'INVALID_ARGUMENT'});
 });
 
 test('semantic CLI: compare returns grounded semantic result',async t=>{

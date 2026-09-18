@@ -25,19 +25,21 @@ async function semanticPage(t,html){
 }
 
 const decisive=[
-  {name:'plan paraphrase',html:'<dl><dt>Plan</dt><dd>Pro annual</dd></dl>',description:'The current subscription plan',expected:'Professional annual subscription',choice:'equivalent'},
-  {name:'multilingual payment',html:'<dl><dt>支払い状況</dt><dd>支払い済み</dd></dl>',description:'The payment status',expected:'Payment has been completed',choice:'equivalent'},
-  {name:'plan contradiction',html:'<dl><dt>Plan</dt><dd>Free plan</dd></dl>',description:'The current subscription plan',expected:'Enterprise annual plan',choice:'different'},
-  {name:'status contradiction',html:'<dl><dt>Status</dt><dd>Cancelled</dd></dl>',description:'The subscription status',expected:'The subscription is active',choice:'different'},
+  {name:'plan paraphrase',html:'<dl><dt>Plan</dt><dd>Pro annual</dd></dl>',description:'The current subscription plan',expected:'Professional annual subscription',choice:'equivalent',evidence:'Pro annual',minSourceConfidence:0},
+  {name:'multilingual payment',html:'<dl><dt>支払い状況</dt><dd>支払い済み</dd></dl>',description:'The payment status',expected:'Payment has been completed',choice:'equivalent',evidence:'支払い済み',minSourceConfidence:0},
+  {name:'plan contradiction',html:'<dl><dt>Plan</dt><dd>Free plan</dd></dl>',description:'The current subscription plan',expected:'Enterprise annual plan',choice:'different',evidence:'Free plan',minSourceConfidence:0},
+  {name:'status contradiction',html:'<dl><dt>Status</dt><dd>Cancelled</dd></dl>',description:'The subscription status',expected:'The subscription is active',choice:'different',evidence:'Cancelled',minSourceConfidence:0},
 ];
 
 for(const scenario of decisive)test('LIVE semantic decisive direction: '+scenario.name,async t=>{
   const {core,stats}=await semanticPage(t,scenario.html);
   const started=performance.now();
-  const result=await core.compareSemantic({actual:{description:scenario.description},expected:scenario.expected,minConfidence:0.8});
+  const result=await core.compareSemantic({actual:{description:scenario.description},expected:scenario.expected,minConfidence:0.8,minSourceConfidence:scenario.minSourceConfidence});
   console.log(JSON.stringify({case:scenario.name,status:result.status,choice:result.choice,confidence:result.confidence,sourceConfidence:result.sourceConfidence,threshold:result.threshold,source:result.source,evidence:result.evidence.text,usage:result.usage,totalMs:Math.round(performance.now()-started)}));
+  assert.equal(result.evidence.text,scenario.evidence);
   assert.equal(result.choice,scenario.choice);
-  const expectedStatus=result.confidence>=0.8&&result.sourceConfidence>=0.8?(scenario.choice==='equivalent'?'passed':'failed'):'inconclusive';
+  const sourceThreshold=scenario.minSourceConfidence ?? 0.8;
+  const expectedStatus=result.confidence>=0.8&&result.sourceConfidence>=sourceThreshold?(scenario.choice==='equivalent'?'passed':'failed'):'inconclusive';
   assert.equal(result.status,expectedStatus);
   assert.equal(stats.requests,result.usage.requests);
   assert.equal(result.usage.serialDecisionDepth,2);
