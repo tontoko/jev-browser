@@ -143,3 +143,17 @@ test('Companion second stage depends on first-stage answers and real result ids'
   assert.equal(second.oracle.result, 'report-r2');
   assert.equal(second.oracle.next_action, 'draft-goal');
 });
+
+
+test('Companion second stage cannot hide a wrong first-stage interpretation', () => {
+  const wrong = buildCompanionResultScenario({
+    intent: 'search',
+    learner: 'learner-umi',
+    period: 'last-3-months',
+    purpose: 'goal-candidate',
+  });
+
+  assert.equal(wrong.state.results.some(item => item.id === 'report-r2'), false);
+  assert.equal(Object.hasOwn(wrong.questions.result.criteria, 'report-r2'), false);
+  assert.equal(Object.hasOwn(wrong.questions.next_action.criteria, 'draft-goal'), false);
+});
