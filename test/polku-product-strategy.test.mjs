@@ -14,6 +14,7 @@ import {
   supportBillingClass,
   executeQuestions,
   scoreAnswers,
+  modeOrderForRepeat,
 } from '../experiments/polku-product.mjs';
 
 class FakeClient {
@@ -194,4 +195,11 @@ test('support routing keeps billing server-owned instead of asking Jev to decide
   assert.equal(paid.oracle.route, 'import-table');
   assert.equal(supportBillingClass(paid.oracle.route, paid.state.availableActions), 'ai-work');
   assert.match(paid.state.utterance, /無料/);
+});
+
+test('mode order rotates across repeats so latency comparisons are not tied to warmup order', () => {
+  assert.deepEqual(modeOrderForRepeat(0), ['sequential', 'parallel', 'batched']);
+  assert.deepEqual(modeOrderForRepeat(1), ['parallel', 'batched', 'sequential']);
+  assert.deepEqual(modeOrderForRepeat(2), ['batched', 'sequential', 'parallel']);
+  assert.deepEqual(modeOrderForRepeat(3), modeOrderForRepeat(0));
 });
