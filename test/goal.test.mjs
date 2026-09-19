@@ -46,6 +46,30 @@ test('goal: an input with no field is not silently discarded before saving',asyn
   assert.ok(result.inputs.some(input=>input.path==='/notes'&&!input.applied));
 });
 
+test('goal: a caller completion oracle prevents model-complete before the required save',async t=>{
+  const decider=formEngine();const decide=decider.decide.bind(decider);
+  decider.decide=async(request,options)=>{
+    const result=await decide(request,options);
+    if(request.questions.action&&request.state.phase==='bind-inputs'&&Object.hasOwn(request.questions.action.criteria,'__inputs__'))
+      result.answers.action={choice:'__inputs__',confidence:0.95};
+    else if(request.questions.action&&request.state.phase==='continue'&&request.state.callerCompletion!==false)
+      result.answers.action={choice:'__done__',confidence:0.95};
+    return result;
+  };
+  const {core,attempts}=await fixture(t,[{path:'/email',label:'email'}],{engine:decider});
+  const result=await core.run('Add the contact, fill the email, and Save.',{
+    values:{email:'oracle@example.invalid'},
+    until:async page=>await page.locator('article').count()===1,
+  });
+  assert.equal(result.status,'complete');
+  assert.equal(result.verification.source,'caller');
+  assert.equal(attempts.length,1);
+  const continued=decider.requests.filter(request=>request.state?.phase==='continue');
+  assert.ok(continued.length>=2);
+  assert.notEqual(continued[0].state.callerCompletion,false);
+  assert.equal(continued.at(-1).state.callerCompletion,false);
+});
+
 test('goal: native selects resolve exact labels locally without exposing input values',async t=>{
   const {core,page,records,decider}=await fixture(t,[{path:'/email',label:'email'},{path:'/course',label:'course',type:'select',options:['Choose','Gamba','Piano']}]);
   const result=await core.run('Add a contact with the supplied email and course, then Save.',{values:{email:'lesson@example.invalid',course:'Gamba'}});
