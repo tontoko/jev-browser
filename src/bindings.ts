@@ -6,6 +6,7 @@ import type { ElementRef } from './observation.js';
 import type { ElementInfo, GroundedAction, RunValue, RunInput, Snapshot } from './types.js';
 
 export interface InputBinding extends RunInput {
+  checkpointed?: boolean;
   value: string | number | boolean | null | (string | number | boolean | null)[];
   label: string;
   ref?: ElementRef;
@@ -38,7 +39,7 @@ export function flattenInputs(values: Record<string, RunValue> = {}): InputBindi
 export const publicInputs = (inputs: InputBinding[]) => inputs.map(({ path, applied, readback, target }) => ({ path, applied, readback, ...(target ? { target } : {}) }));
 export const inputMetadata = (inputs: InputBinding[]) => inputs.map(input => ({
   path: input.path, label: input.label, type: Array.isArray(input.value) ? 'array' : input.value === null ? 'null' : typeof input.value,
-  available: true, applied: input.applied,
+  available: true, applied: input.applied, ...(input.checkpointed?{checkpointed:true}:{}),
 }));
 
 /** Redact known value echoes, never protocol identifiers or generated replacement tokens. */
@@ -65,7 +66,7 @@ export function privateFilter(inputs: InputBinding[]): <T>(data: T) => T {
   return <T>(data: T) => walk(data) as T;
 }
 
-export const needsBinding = (input: InputBinding) => !input.applied || !input.ref;
+export const needsBinding = (input: InputBinding) => !input.checkpointed && (!input.applied || !input.ref);
 
 export function bindingQuestions(snapshot: Snapshot, inputs: InputBinding[]): DecisionRequest['questions'] {
   const controls = snapshot.elements.filter(e => !e.disabled && (!e.readOnly || e.role === 'combobox') && (e.fillable || e.tag === 'select' || ['combobox','checkbox','switch','radio'].includes(e.role)));

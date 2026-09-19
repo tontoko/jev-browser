@@ -55,13 +55,13 @@
 - Internal input state distinguishes checkpointed paths from current-stage applied paths.
 - Internal deterministic commit signature guards duplicate verified submissions.
 
-- [ ] Write failing tests: stage-1 controls disappear after checkpoint but paths remain satisfied; stage-2 failure does not recreate stage 1; same commit selected twice submits once.
-- [ ] Run focused tests and confirm RED.
-- [ ] Add checkpointed-path handling without exposing literal values.
-- [ ] Add deterministic commit signature from URL + grounded target/form semantics + stage input paths.
-- [ ] Re-arm duplicate guard only after a meaningful non-commit effect or a different signature.
-- [ ] Run focused + goal integrity tests and confirm GREEN.
-- [ ] Commit: `fix: prevent verified commit replay across goal stages`.
+- [x] Write failing tests: stage-1 controls disappear after checkpoint but paths remain satisfied; stage-2 failure does not recreate stage 1; same commit selected twice submits once.
+- [x] Run focused tests and confirm RED.
+- [x] Add checkpointed-path handling without exposing literal values.
+- [x] Add deterministic commit signature from URL + grounded target/form semantics + stage input paths.
+- [x] Re-arm duplicate guard only after a meaningful non-commit effect or a different signature.
+- [x] Run focused + goal integrity tests and confirm GREEN.
+- [x] Commit: `fix: prevent verified commit replay across goal stages`.
 
 ### Task 3: Keep final assertions at the final boundary
 
