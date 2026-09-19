@@ -1,4 +1,4 @@
-import { runGoal } from './runner.js';
+import { runGoal, type RunSeed } from './runner.js';
 import { randomUUID } from 'node:crypto';
 import { chromium, firefox, webkit, type Page, type ElementHandle } from 'playwright';
 import { z } from 'zod';
@@ -7,19 +7,39 @@ import { JevDecisionEngine, type DecisionEngine, type DecisionRequest } from './
 import { BrowserError } from './errors.js';
 import { capture, publicURL, verifyTarget, captureComboboxChoice, captureRegions, verifyOwnedOption, type Captured } from './observation.js';
 import { actionCandidates, actionDescription, modelElementId, inputBindings, modelElement, resolveSelectChoice } from './actions.js';
+import { flattenInputs } from './bindings.js';
 import { extractStructured } from './structured.js';
 import { NativeBrowser } from './native.js';
 import { compareSemanticWork, elementEvidence, locateSemanticTarget, semanticThreshold } from './semantic.js';
 import { parseNative, nativeSchemas, nativeReadOnly, type NativeCommand } from './native-schemas.js';
-import type { ActionPlan, ActOptions, ActResult, BrowserOptions, BrowserLaunchOptions, ExtractResult, ExtractOptions, OperationOptions, RunOptions, RunResult, Snapshot, SemanticLocateOptions, SemanticTarget, SemanticActual, SemanticCompareOptions, SemanticComparisonRequest, SemanticComparisonResult } from './types.js';
+import type { ActionPlan, ActOptions, ActResult, BrowserOptions, BrowserLaunchOptions, ExtractResult, ExtractOptions, GoalCheckpoint, OperationOptions, ResumeOptions, RunOptions, RunResult, RunValue, Snapshot, SemanticLocateOptions, SemanticTarget, SemanticActual, SemanticCompareOptions, SemanticComparisonRequest, SemanticComparisonResult } from './types.js';
 
 interface Operation { signal: AbortSignal; deadline: number }
 const pageLeases = new WeakMap<Page, JevBrowser>();
 interface Pending { plan: ActionPlan; captured: Captured; values: Record<string, string> }
+interface ContinuationState { instruction: string; options: RunOptions; checkpoints: GoalCheckpoint[]; checkpointedInputs: string[] }
 const json = (value: unknown): EntryType => JSON.parse(JSON.stringify(value)) as EntryType;
 function positiveInteger(value: number, name: string): number {
   if (!Number.isSafeInteger(value) || value < 1) throw new BrowserError('CONFIG', `${name} must be a positive integer.`);
   return value;
+}
+
+const plainObject = (value: unknown): value is Record<string, RunValue> => !!value && typeof value === 'object' && !Array.isArray(value) && [Object.prototype,null].includes(Object.getPrototypeOf(value));
+function mergeRunValues(base: Record<string, RunValue> = {}, extra: Record<string, RunValue> = {}): Record<string, RunValue> {
+  const known=new Map(flattenInputs(base).map(input=>[input.path,input.value]));
+  for(const input of flattenInputs(extra)){
+    if(known.has(input.path)&&JSON.stringify(known.get(input.path))!==JSON.stringify(input.value))
+      throw new BrowserError('CONTINUATION_CONFLICT','Continuation input '+input.path+' cannot change an existing value.');
+  }
+  const merge=(left: Record<string,RunValue>,right: Record<string,RunValue>): Record<string,RunValue>=>{
+    const out:Record<string,RunValue>=structuredClone(left);
+    for(const [key,value] of Object.entries(right)){
+      const current=out[key];
+      out[key]=plainObject(current)&&plainObject(value)?merge(current,value):structuredClone(value);
+    }
+    return out;
+  };
+  return merge(base,extra);
 }
 
 /** One Page and one decision/execution loop, shared by SDK, CLI and MCP. */
@@ -37,6 +57,7 @@ export class JevBrowser {
   private engineInstance?: DecisionEngine;
   private ownedCleanup?: () => Promise<void>;
   private pending?: Pending;
+  private readonly continuations = new Map<string,ContinuationState>();
   private active?: Promise<unknown>;
   private closed = false;
   private closePromise?: Promise<void>;
@@ -258,29 +279,55 @@ export class JevBrowser {
       return this.run(instruction, { ...defaults, ...options });
     } };
   }
-  async run(instruction: string, options: RunOptions = {}): Promise<RunResult> {
+  private validateRunOptions(options: RunOptions): void {
     if(options.expect!==undefined){
       const conditions=Array.isArray(options.expect)?options.expect:[options.expect];
       if(!conditions.length||conditions.some(condition=>!nativeSchemas.assert.safeParse(condition).success))
         throw new BrowserError('INVALID_ARGUMENT','expect must contain valid read-only assertions.');
     }
-    return this.exclusive({ ...options, timeoutMs: options.timeoutMs ?? this.options.timeoutMs ?? 60_000 }, async operation => {
-      await this.invalidate();
-      return runGoal({
-        page: () => this.page, capture: () => capture(this.page,{...this.limits,scope:options.scope}),
-        regions: () => captureRegions(this.page),
-        captureRegion: ref => capture(this.page,{...this.limits,selection:{frame:ref.frame,roots:[ref.handle]}}),
-        captureChoice: (ref,value) => captureComboboxChoice(this.page,ref,value,this.limits,{signal:operation.signal,timeoutMs:Math.min(this.remaining(operation),options.settleTimeoutMs??2000)}),
-        engine: () => this.engine(), operation: () => ({signal:operation.signal,timeoutMs:this.remaining(operation)}),
-        perform: (plan,observed,values,started) => this.executeCaptured(plan,observed,values,operation,started),
-        assert: async condition => {
-          const command=parseNative({...condition,command:'assert'});
-          if(this.options.allowCommand && await this.options.allowCommand(command,{signal:operation.signal,timeoutMs:this.remaining(operation)})!==true)
-            throw new BrowserError('ACTION_DENIED','The caller policy denied the assertion.');
-          await this.nativeBrowser.execute(command,{signal:operation.signal,timeoutMs:this.remaining(operation)});
-        }, candidateLimit:this.limits.maxCandidates,
-      },instruction,options);
-    });
+  }
+  private storedRunOptions(options: RunOptions): RunOptions {
+    const {signal: _signal,...stored}=options;
+    return {...stored,...(options.values?{values:structuredClone(options.values)}:{})};
+  }
+  private async executeGoal(operation: Operation, instruction: string, options: RunOptions, seed: RunSeed = {}): Promise<RunResult> {
+    await this.invalidate();
+    return runGoal({
+      page: () => this.page, capture: () => capture(this.page,{...this.limits,scope:options.scope}),
+      regions: () => captureRegions(this.page),
+      captureRegion: ref => capture(this.page,{...this.limits,selection:{frame:ref.frame,roots:[ref.handle]}}),
+      captureChoice: (ref,value) => captureComboboxChoice(this.page,ref,value,this.limits,{signal:operation.signal,timeoutMs:Math.min(this.remaining(operation),options.settleTimeoutMs??2000)}),
+      engine: () => this.engine(), operation: () => ({signal:operation.signal,timeoutMs:this.remaining(operation)}),
+      perform: (plan,observed,values,started) => this.executeCaptured(plan,observed,values,operation,started),
+      assert: async condition => {
+        const command=parseNative({...condition,command:'assert'});
+        if(this.options.allowCommand && await this.options.allowCommand(command,{signal:operation.signal,timeoutMs:this.remaining(operation)})!==true)
+          throw new BrowserError('ACTION_DENIED','The caller policy denied the assertion.');
+        await this.nativeBrowser.execute(command,{signal:operation.signal,timeoutMs:this.remaining(operation)});
+      }, candidateLimit:this.limits.maxCandidates,
+    },instruction,options,seed);
+  }
+  private attachContinuation(result: RunResult, instruction: string, options: RunOptions, existingId?: string): RunResult {
+    if(result.status==='complete'){if(existingId)this.continuations.delete(existingId);return result;}
+    const checkpoints=result.checkpoints??[];
+    if(result.reason!=='missing-input'||!checkpoints.length){if(existingId)this.continuations.delete(existingId);return result;}
+    const id=existingId??randomUUID();
+    this.continuations.set(id,{instruction,options:this.storedRunOptions(options),checkpoints:structuredClone(checkpoints),checkpointedInputs:[...new Set(checkpoints.flatMap(checkpoint=>checkpoint.inputPaths))]});
+    return {...result,continuation:{id,reason:result.reason}};
+  }
+  async run(instruction: string, options: RunOptions = {}): Promise<RunResult> {
+    this.validateRunOptions(options);
+    return this.exclusive({ ...options, timeoutMs: options.timeoutMs ?? this.options.timeoutMs ?? 60_000 }, async operation =>
+      this.attachContinuation(await this.executeGoal(operation,instruction,options),instruction,options));
+  }
+  async resume(continuationId: string, options: ResumeOptions = {}): Promise<RunResult> {
+    if(!continuationId.trim())throw new BrowserError('INVALID_ARGUMENT','A continuation ID is required.');
+    const state=this.continuations.get(continuationId);
+    if(!state)throw new BrowserError('CONTINUATION_NOT_FOUND','This continuation is expired, completed, or belongs to another browser session.');
+    const values=mergeRunValues(state.options.values??{},options.values??{});
+    const runOptions:RunOptions={...state.options,values,...(options.scope!==undefined?{scope:options.scope}:{}),...(options.timeoutMs!==undefined?{timeoutMs:options.timeoutMs}:{}),...(options.signal?{signal:options.signal}:{})};
+    return this.exclusive({...options,timeoutMs:options.timeoutMs??state.options.timeoutMs??this.options.timeoutMs??60_000},async operation=>
+      this.attachContinuation(await this.executeGoal(operation,state.instruction,runOptions,{checkpoints:state.checkpoints,checkpointedInputs:state.checkpointedInputs}),state.instruction,runOptions,continuationId));
   }
   private async chooseAction(instruction: string, options: ActOptions, operation: Operation, history: unknown[], allowDone: boolean): Promise<ActionPlan | null | 'done'> {
     if (!instruction.trim()) throw new BrowserError('INVALID_ARGUMENT', 'A nonempty instruction is required.');
@@ -392,6 +439,7 @@ export class JevBrowser {
       await this.nativeBrowser.dispose();
       await this.active?.catch(() => undefined);
       await this.invalidate();
+      this.continuations.clear();
       await this.ownedCleanup?.();
     })();
   }

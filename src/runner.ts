@@ -10,6 +10,8 @@ import { recordCounts, verifyReadback, waitForRelevantChange } from './completio
 import type { Captured, ElementRef, RegionIndex } from './observation.js';
 import type { ActionPlan, ActResult, GoalCheckpoint, GroundedAction, OperationContext, RunEffect, RunOptions, RunResult, RunVerification, RunAssertion } from './types.js';
 
+export interface RunSeed { checkpoints?: GoalCheckpoint[]; checkpointedInputs?: string[] }
+
 export interface RunHost {
   page(): Page;
   capture(): Promise<Captured>;
@@ -34,15 +36,17 @@ const actionAuthorityKey = (action: GroundedAction, rawURL: string): string => {
 };
 
 /** One task owns one write lane. Independent questions share a state; effects never race. */
-export async function runGoal(host: RunHost, instruction: string, options: RunOptions): Promise<RunResult> {
+export async function runGoal(host: RunHost, instruction: string, options: RunOptions, seed: RunSeed = {}): Promise<RunResult> {
   if (!instruction.trim()) throw new BrowserError('INVALID_ARGUMENT','A nonempty instruction is required.');
-  const inputs = flattenInputs(options.values), filter = privateFilter(inputs), runSignal = host.operation().signal;
+  const inputs = flattenInputs(options.values), checkpointed=new Set(seed.checkpointedInputs??[]), priorReadback=new Set((seed.checkpoints??[]).flatMap(checkpoint=>checkpoint.verification.readback));
+  for(const input of inputs)if(checkpointed.has(input.path)){input.checkpointed=true;input.applied=true;input.readback=priorReadback.has(input.path);}
+  const filter = privateFilter(inputs), runSignal = host.operation().signal;
   const maxSteps = positive(options.maxSteps ?? 100, 'maxSteps');
   const maxDecisions = positive(options.maxDecisions ?? 32, 'maxDecisions');
   const settle = positive(options.settleTimeoutMs ?? 2000, 'settleTimeoutMs');
   const retries=options.decisionRetries??2;
   if(!Number.isSafeInteger(retries)||retries<0||retries>2)throw new BrowserError('INVALID_ARGUMENT','decisionRetries must be 0, 1, or 2.');
-  const steps: ActResult[] = [], effects: RunEffect[] = [], checkpoints: GoalCheckpoint[] = [], captures = new Set<Captured>();
+  const steps: ActResult[] = [], effects: RunEffect[] = [], checkpoints: GoalCheckpoint[] = structuredClone(seed.checkpoints??[]), captures = new Set<Captured>();
   const usage: DecisionUsage = { requests: 0, questions: 0, serialDecisionDepth: 0, inputTokens: 0, outputTokens: 0, providerMs: 0 };
   const regionIndexes:RegionIndex[]=[],regionHistory:NonNullable<RunResult['regions']>=[];
   const activeRegions=new Map<string,{ref:ElementRef;url:string}>();

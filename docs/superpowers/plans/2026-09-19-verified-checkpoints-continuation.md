@@ -94,15 +94,15 @@
 - `JevBrowser.resume(id, options)`.
 - Private continuation map stores original instruction, local values, checkpoints, checkpointed paths, budgets, and optional unknown-commit reconciliation state.
 
-- [ ] Write failing test: stage 1 checkpoint succeeds, stage 2 stops for missing input, result contains opaque continuation but no literal values.
-- [ ] Write failing test: `resume(id,{values:{missing:'x'}})` continues from stage 2 and does not resubmit stage 1.
-- [ ] Write failing test: changing a checkpointed path rejects with `CONTINUATION_CONFLICT`.
-- [ ] Run and confirm RED.
-- [ ] Implement private continuation storage in `JevBrowser` and internal runner seed/result material.
-- [ ] Merge resume values with stored local values, enforcing checkpoint conflicts.
-- [ ] Remove continuation on final completion and core close.
-- [ ] Run resume tests and existing lifecycle tests; confirm GREEN.
-- [ ] Commit: `feat: resume stopped goals within one browser session`.
+- [x] Write failing test: stage 1 checkpoint succeeds, stage 2 stops for missing input, result contains opaque continuation but no literal values.
+- [x] Write failing test: `resume(id,{values:{missing:'x'}})` continues from stage 2 and does not resubmit stage 1.
+- [x] Write failing test: changing a checkpointed path rejects with `CONTINUATION_CONFLICT`.
+- [x] Run and confirm RED.
+- [x] Implement private continuation storage in `JevBrowser` and internal runner seed/result material.
+- [x] Merge resume values with stored local values, enforcing checkpoint conflicts.
+- [x] Remove continuation on final completion and core close.
+- [x] Run resume tests and existing lifecycle tests; confirm GREEN.
+- [x] Commit: `feat: resume stopped goals within one browser session`.
 
 ### Task 5: Unknown-effect read-only reconciliation
 
