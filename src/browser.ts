@@ -1,4 +1,4 @@
-import { runGoal, type RunSeed } from './runner.js';
+import { runGoal, type PendingCommitState, type RunSeed } from './runner.js';
 import { randomUUID } from 'node:crypto';
 import { chromium, firefox, webkit, type Page, type ElementHandle } from 'playwright';
 import { z } from 'zod';
@@ -17,7 +17,8 @@ import type { ActionPlan, ActOptions, ActResult, BrowserOptions, BrowserLaunchOp
 interface Operation { signal: AbortSignal; deadline: number }
 const pageLeases = new WeakMap<Page, JevBrowser>();
 interface Pending { plan: ActionPlan; captured: Captured; values: Record<string, string> }
-interface ContinuationState { instruction: string; options: RunOptions; checkpoints: GoalCheckpoint[]; checkpointedInputs: string[] }
+interface ContinuationState { instruction: string; options: RunOptions; checkpoints: GoalCheckpoint[]; checkpointedInputs: string[]; pendingUnknown?: PendingCommitState; lastCheckpointActionKey?: string }
+interface GoalExecution { result: RunResult; pendingUnknown?: PendingCommitState; lastCheckpointActionKey?: string }
 const json = (value: unknown): EntryType => JSON.parse(JSON.stringify(value)) as EntryType;
 function positiveInteger(value: number, name: string): number {
   if (!Number.isSafeInteger(value) || value < 1) throw new BrowserError('CONFIG', `${name} must be a positive integer.`);
@@ -290,9 +291,10 @@ export class JevBrowser {
     const {signal: _signal,...stored}=options;
     return {...stored,...(options.values?{values:structuredClone(options.values)}:{})};
   }
-  private async executeGoal(operation: Operation, instruction: string, options: RunOptions, seed: RunSeed = {}): Promise<RunResult> {
+  private async executeGoal(operation: Operation, instruction: string, options: RunOptions, seed: RunSeed = {}): Promise<GoalExecution> {
     await this.invalidate();
-    return runGoal({
+    let pendingUnknown:PendingCommitState|undefined=seed.pendingUnknown,lastCheckpointActionKey=seed.lastCheckpointActionKey;
+    const result=await runGoal({
       page: () => this.page, capture: () => capture(this.page,{...this.limits,scope:options.scope}),
       regions: () => captureRegions(this.page),
       captureRegion: ref => capture(this.page,{...this.limits,selection:{frame:ref.frame,roots:[ref.handle]}}),
@@ -304,16 +306,23 @@ export class JevBrowser {
         if(this.options.allowCommand && await this.options.allowCommand(command,{signal:operation.signal,timeoutMs:this.remaining(operation)})!==true)
           throw new BrowserError('ACTION_DENIED','The caller policy denied the assertion.');
         await this.nativeBrowser.execute(command,{signal:operation.signal,timeoutMs:this.remaining(operation)});
-      }, candidateLimit:this.limits.maxCandidates,
+      },
+      rememberPendingCommit: state => { pendingUnknown=state; },
+      rememberCheckpointAction: key => { lastCheckpointActionKey=key;pendingUnknown=undefined; },
+      candidateLimit:this.limits.maxCandidates,
     },instruction,options,seed);
+    return {result,...(result.reason==='effect-unknown'&&pendingUnknown?{pendingUnknown}:{}),...(lastCheckpointActionKey?{lastCheckpointActionKey}:{})};
   }
-  private attachContinuation(result: RunResult, instruction: string, options: RunOptions, existingId?: string): RunResult {
+  private attachContinuation(execution: GoalExecution, instruction: string, options: RunOptions, existingId?: string): RunResult {
+    const {result,pendingUnknown,lastCheckpointActionKey}=execution;
     if(result.status==='complete'){if(existingId)this.continuations.delete(existingId);return result;}
     const checkpoints=result.checkpoints??[];
-    if(result.reason!=='missing-input'||!checkpoints.length){if(existingId)this.continuations.delete(existingId);return result;}
+    const resumableMissing=result.reason==='missing-input'&&checkpoints.length>0;
+    const resumableUnknown=result.reason==='effect-unknown'&&!!pendingUnknown?.inputPaths.length;
+    if(!resumableMissing&&!resumableUnknown){if(existingId)this.continuations.delete(existingId);return result;}
     const id=existingId??randomUUID();
-    this.continuations.set(id,{instruction,options:this.storedRunOptions(options),checkpoints:structuredClone(checkpoints),checkpointedInputs:[...new Set(checkpoints.flatMap(checkpoint=>checkpoint.inputPaths))]});
-    return {...result,continuation:{id,reason:result.reason}};
+    this.continuations.set(id,{instruction,options:this.storedRunOptions(options),checkpoints:structuredClone(checkpoints),checkpointedInputs:[...new Set(checkpoints.flatMap(checkpoint=>checkpoint.inputPaths))],...(pendingUnknown?{pendingUnknown:structuredClone(pendingUnknown)}:{}),...(lastCheckpointActionKey?{lastCheckpointActionKey}:{})});
+    return {...result,continuation:{id,reason:result.reason,...(pendingUnknown?{pendingEffect:'commit' as const}:{})}};
   }
   async run(instruction: string, options: RunOptions = {}): Promise<RunResult> {
     this.validateRunOptions(options);
@@ -327,7 +336,7 @@ export class JevBrowser {
     const values=mergeRunValues(state.options.values??{},options.values??{});
     const runOptions:RunOptions={...state.options,values,...(options.scope!==undefined?{scope:options.scope}:{}),...(options.timeoutMs!==undefined?{timeoutMs:options.timeoutMs}:{}),...(options.signal?{signal:options.signal}:{})};
     return this.exclusive({...options,timeoutMs:options.timeoutMs??state.options.timeoutMs??this.options.timeoutMs??60_000},async operation=>
-      this.attachContinuation(await this.executeGoal(operation,state.instruction,runOptions,{checkpoints:state.checkpoints,checkpointedInputs:state.checkpointedInputs}),state.instruction,runOptions,continuationId));
+      this.attachContinuation(await this.executeGoal(operation,state.instruction,runOptions,{checkpoints:state.checkpoints,checkpointedInputs:state.checkpointedInputs,pendingUnknown:state.pendingUnknown,lastCheckpointActionKey:state.lastCheckpointActionKey}),state.instruction,runOptions,continuationId));
   }
   private async chooseAction(instruction: string, options: ActOptions, operation: Operation, history: unknown[], allowDone: boolean): Promise<ActionPlan | null | 'done'> {
     if (!instruction.trim()) throw new BrowserError('INVALID_ARGUMENT', 'A nonempty instruction is required.');

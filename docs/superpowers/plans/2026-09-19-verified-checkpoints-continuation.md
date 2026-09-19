@@ -115,14 +115,14 @@
 - Continuation state can retain pre-commit inventory and current-stage input state.
 - Resume reconciles before mutations when `pendingEffect === 'commit'`.
 
-- [ ] Write failing test where save server commits but response/browser observation is interrupted; first result is `effect-unknown`.
-- [ ] Assert resume discovers the now-visible result, creates checkpoint, and proceeds without another POST.
-- [ ] Write failing test where result stays absent; resume returns `effect-unknown` and POST count remains one.
-- [ ] Run and confirm RED.
-- [ ] Persist minimum read-only reconciliation state and call checkpoint verification before entering normal action loop.
-- [ ] Do not permit mutation while reconciliation remains unresolved.
-- [ ] Run resume/checkpoint regressions and confirm GREEN.
-- [ ] Commit: `fix: reconcile unknown commits before resume mutations`.
+- [x] Write failing test where save server commits but response/browser observation is interrupted; first result is `effect-unknown`.
+- [x] Assert resume discovers the now-visible result, creates checkpoint, and proceeds without another POST.
+- [x] Write failing test where result stays absent; resume returns `effect-unknown` and POST count remains one.
+- [x] Run and confirm RED.
+- [x] Persist minimum read-only reconciliation state and call checkpoint verification before entering normal action loop.
+- [x] Do not permit mutation while reconciliation remains unresolved.
+- [x] Run resume/checkpoint regressions and confirm GREEN.
+- [x] Commit: `fix: reconcile unknown commits before resume mutations`.
 
 ### Task 6: CLI/MCP parity and installed-package proof
 

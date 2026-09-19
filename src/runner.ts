@@ -10,7 +10,8 @@ import { recordCounts, verifyReadback, waitForRelevantChange } from './completio
 import type { Captured, ElementRef, RegionIndex } from './observation.js';
 import type { ActionPlan, ActResult, GoalCheckpoint, GroundedAction, OperationContext, RunEffect, RunOptions, RunResult, RunVerification, RunAssertion } from './types.js';
 
-export interface RunSeed { checkpoints?: GoalCheckpoint[]; checkpointedInputs?: string[] }
+export interface PendingCommitState { effectId: string; before: [string,number][]; inputPaths: string[]; actionKey: string }
+export interface RunSeed { checkpoints?: GoalCheckpoint[]; checkpointedInputs?: string[]; pendingUnknown?: PendingCommitState; lastCheckpointActionKey?: string }
 
 export interface RunHost {
   page(): Page;
@@ -22,6 +23,8 @@ export interface RunHost {
   operation(): OperationContext;
   perform(plan: ActionPlan, captured: Captured, values: Record<string,string>, started: () => void): Promise<ActResult>;
   assert(condition: RunAssertion): Promise<void>;
+  rememberPendingCommit?(state: PendingCommitState): void;
+  rememberCheckpointAction?(key: string): void;
   candidateLimit: number;
 }
 const positive = (value: number, name: string) => {
@@ -51,7 +54,7 @@ export async function runGoal(host: RunHost, instruction: string, options: RunOp
   const regionIndexes:RegionIndex[]=[],regionHistory:NonNullable<RunResult['regions']>=[];
   const activeRegions=new Map<string,{ref:ElementRef;url:string}>();
   let verification: RunVerification | undefined;
-  let callerRejectedDone=false, lastCheckpointActionKey: string | undefined, progressSinceCheckpoint=true;
+  let callerRejectedDone=false, lastCheckpointActionKey: string | undefined = seed.lastCheckpointActionKey ?? seed.pendingUnknown?.actionKey, progressSinceCheckpoint=!(seed.lastCheckpointActionKey||seed.pendingUnknown);
   let transitioning=new Set<InputBinding>();
   let lastDecision: Omit<DecisionResult,'answers'> = {}, commit: RunEffect | undefined;
   const finish = (status: RunResult['status'], reason: RunResult['reason']): RunResult => filter({
@@ -142,7 +145,7 @@ export async function runGoal(host: RunHost, instruction: string, options: RunOp
   async function wait(observed: Captured): Promise<boolean> {
     const op=host.operation();return waitForRelevantChange(host.page(),observed,Math.min(op.timeoutMs,observed.data.busy?op.timeoutMs:settle),op.signal);
   }
-  async function readCommitted(before: Map<string,number>|undefined): Promise<RunResult | undefined> {
+  async function readCommitted(before: Map<string,number>|undefined, actionKey: string): Promise<RunResult | undefined> {
     if(await callerCondition()){commit!.status='observed';commit=undefined;return finish('complete','verified');}
     if(!before&&!options.until&&!options.expect)return finish('unverified','observation-limit');
     let observed=await capture('readback');
@@ -156,6 +159,7 @@ export async function runGoal(host: RunHost, instruction: string, options: RunOp
           commit!.status='observed';verification=readback.verification;
           const stageInputs=inputs.filter(input=>input.applied&&!input.checkpointed);
           checkpoints.push({id:randomUUID(),effectId:commit!.id,verification:readback.verification,inputPaths:stageInputs.map(input=>input.path),...(readback.verification.recordId?{resultRecordId:readback.verification.recordId}:{})});
+          host.rememberCheckpointAction?.(actionKey);lastCheckpointActionKey=actionKey;progressSinceCheckpoint=false;
           commit=undefined;
           if(readback.stage==='continue'){
             for(const input of stageInputs){input.checkpointed=true;input.applied=true;input.ref=undefined;delete input.target;}
@@ -176,7 +180,35 @@ export async function runGoal(host: RunHost, instruction: string, options: RunOp
     if(options.expect&&await callerAssertions()){commit!.status='observed';commit=undefined;return finish('complete','verified');}
     return finish('unverified',options.until?'condition-unmet':'effect-unknown');
   }
+  async function reconcilePendingUnknown(pending: PendingCommitState): Promise<RunResult | undefined> {
+    const paths=new Set(pending.inputPaths),stageInputs=inputs.filter(input=>paths.has(input.path));
+    if(stageInputs.length!==paths.size)throw new BrowserError('CONTINUATION_CONFLICT','Continuation is missing values required to reconcile the pending commit.');
+    for(const input of stageInputs)input.applied=true;
+    let observed=await capture('readback');
+    for(;;){
+      if(observed.data.truncatedTexts)return finish('unverified','effect-unknown');
+      const readback=await verifyReadback(new Map(pending.before),observed.data,instruction,stageInputs,decide);
+      if(readback){
+        if(readback.stage==='rejected')return finish('unverified','effect-unknown');
+        verification=readback.verification;
+        checkpoints.push({id:randomUUID(),effectId:pending.effectId,verification:readback.verification,inputPaths:pending.inputPaths,...(readback.verification.recordId?{resultRecordId:readback.verification.recordId}:{})});
+        host.rememberCheckpointAction?.(pending.actionKey);lastCheckpointActionKey=pending.actionKey;progressSinceCheckpoint=false;
+        for(const input of stageInputs){input.checkpointed=true;input.applied=true;input.ref=undefined;delete input.target;}
+        if(readback.stage==='continue'||inputs.some(input=>!input.checkpointed)){verification=undefined;return undefined;}
+        if(options.expect&&await callerAssertions())return finish('complete','verified');
+        if(options.until){
+          if(await callerCondition())return finish('complete','verified');
+          verification=undefined;callerRejectedDone=true;return undefined;
+        }
+        return finish('complete','ui-readback');
+      }
+      if(!await wait(observed))break;
+      observed=await capture('readback');
+    }
+    return finish('unverified','effect-unknown');
+  }
   try {
+    if(seed.pendingUnknown){const reconciled=await reconcilePendingUnknown(seed.pendingUnknown);if(reconciled)return reconciled;}
     let lastRequest='';
     for(;;){
       host.operation().signal.throwIfAborted();
@@ -367,7 +399,11 @@ Input literals are available locally, not missing. Choose __none__ only if no ob
         const result=await perform(action,observed,kind==='commit'?'commit':'advance',action.valueKey?quoted[action.valueKey]:undefined,decision.answers.action!.confidence);
         const stopped=await answerDialogs(result,observed);if(stopped)return stopped;
       }catch(error){if(error instanceof BrowserError&&error.code==='STALE_TARGET')continue;throw error;}
-      if(kind==='commit'){const commitKey=actionAuthorityKey(action,observed.data.url),done=await readCommitted(beforeCommit);if(done)return done;lastCheckpointActionKey=commitKey;progressSinceCheckpoint=false;lastRequest='';continue;}
+      if(kind==='commit'){
+        const commitKey=actionAuthorityKey(action,observed.data.url);
+        if(beforeCommit&&commit)host.rememberPendingCommit?.({effectId:commit.id,before:[...beforeCommit],inputPaths:inputs.filter(input=>input.applied&&!input.checkpointed).map(input=>input.path),actionKey:commitKey});
+        const done=await readCommitted(beforeCommit,commitKey);if(done)return done;lastCheckpointActionKey=commitKey;progressSinceCheckpoint=false;lastRequest='';continue;
+      }
       transitioning=new Set(carried);
     }
   }catch(error){

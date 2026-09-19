@@ -75,3 +75,48 @@ test('resume: continuation IDs are local to one core and disappear on close',asy
   await core.close();
   await assert.rejects(core.resume(first.continuation.id,{values:{membershipCode:'MEM-X'}}),{code:'CONTINUATION_NOT_FOUND'});
 });
+
+
+function unknownEngine(){
+  return engine((question,request,name)=>{
+    if(name.startsWith('bind_'))return request.state.page.elements.find(e=>e.fieldName==='/reference')?.id??'__none__';
+    if(name.startsWith('effect_'))return 'commit';
+    if(name==='completion')return 'complete';
+    if(name.startsWith('read_'))return request.state.sources.find(s=>s.text==='[input:/reference]')?.id??'__none__';
+    if(name==='action')return candidate=>candidate?.kind==='click'&&candidate.target?.name==='Save';
+    return '__none__';
+  });
+}
+
+async function unknownFixture(t,{delayMs=0,omitResult=false}={}){
+  const submissions=[];
+  const service=await httpServer(async(req,res)=>{
+    if(req.url==='/save'){
+      let raw='';for await(const chunk of req)raw+=chunk;const data=JSON.parse(raw);submissions.push(data);
+      res.setHeader('Content-Type','application/json');res.end(JSON.stringify(data));return;
+    }
+    res.setHeader('Content-Type','text/html; charset=utf-8');res.end(`<form><label>Reference<input name="/reference" required></label><button type="button">Save</button></form><section></section><script>
+      document.querySelector('button').onclick=async()=>{const reference=document.querySelector('input').value;const response=await fetch('/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({reference})});const saved=await response.json();${omitResult?'':`setTimeout(()=>{const a=document.createElement('article');a.innerHTML='<h2>Created</h2><dl><dt>Reference</dt><dd></dd></dl>';a.querySelector('dd').textContent=saved.reference;document.querySelector('section').append(a);},${delayMs});`}};
+    </script>`);
+  });
+  const page=await browser.newPage();await page.goto(service.url);const core=new JevBrowser({page,engine:unknownEngine()});
+  t.after(async()=>{await core.close();await page.close();await service.close();});
+  return {core,page,submissions};
+}
+
+test('resume: an unknown commit is reconciled read-only when its result later appears',async t=>{
+  const {core,submissions}=await unknownFixture(t,{delayMs:350});
+  const first=await core.run('Save this record once.',{values:{reference:'late-visible'},settleTimeoutMs:80});
+  assert.equal(first.status,'unverified');assert.equal(first.reason,'effect-unknown');assert.equal(submissions.length,1);assert.equal(first.continuation?.pendingEffect,'commit');
+  await new Promise(resolve=>setTimeout(resolve,450));
+  const second=await core.resume(first.continuation.id,{settleTimeoutMs:80});
+  assert.equal(second.status,'complete',JSON.stringify(second));assert.equal(second.checkpoints.length,1);assert.equal(submissions.length,1);
+});
+
+test('resume: unresolved unknown commit never causes another submission',async t=>{
+  const {core,submissions}=await unknownFixture(t,{omitResult:true});
+  const first=await core.run('Save this record once.',{values:{reference:'still-unknown'},settleTimeoutMs:80});
+  assert.equal(first.reason,'effect-unknown');assert.equal(submissions.length,1);assert.ok(first.continuation?.id);
+  const second=await core.resume(first.continuation.id,{settleTimeoutMs:80});
+  assert.equal(second.status,'unverified');assert.equal(second.reason,'effect-unknown');assert.equal(second.continuation.id,first.continuation.id);assert.equal(submissions.length,1);
+});
