@@ -76,6 +76,16 @@ export interface ActionPlan {
 export interface BrowserDialog { id: number; type: string; message: string; defaultValue: string }
 export interface ActResult { status: 'executed' | 'dialog'; plan: ActionPlan; url: string; dialog?: BrowserDialog }
 export interface OperationOptions { signal?: AbortSignal; scope?: string; timeoutMs?: number }
+export interface SemanticLocateOptions extends OperationOptions { minConfidence?: number }
+export interface SemanticEvidence { sourceId: string; frame: number; role: string; text: string; context: string; attribute?: string; value?: string | number | boolean }
+export interface SemanticTarget { ref: string; snapshotId: string; confidence: number; evidence: SemanticEvidence }
+export type SemanticChoice = 'equivalent' | 'different' | 'insufficient_evidence';
+export type SemanticAssertionStatus = 'passed' | 'failed' | 'inconclusive';
+export type SemanticActual = SemanticTarget | { description: string } | { ref: string };
+export interface SemanticComparisonRequest { actual: SemanticActual; expected: string; minConfidence?: number; minSourceConfidence?: number }
+export interface SemanticCompareOptions extends OperationOptions { minConfidence?: number; minSourceConfidence?: number }
+export interface SemanticUsage { requests: number; questions: number; serialDecisionDepth: number; inputTokens: number; outputTokens: number; providerMs: number; observationMs: number; verificationMs: number }
+export interface SemanticComparisonResult { status: SemanticAssertionStatus; choice: SemanticChoice; confidence: number; sourceConfidence: number; threshold: number; sourceThreshold: number; source: 'deterministic' | 'semantic'; evidence: SemanticEvidence; model?: string; usage: SemanticUsage }
 export interface ExtractOptions extends OperationOptions { recordsScope?: string }
 /** Remaining operation budget at callback entry. Awaited callbacks must honor signal. */
 export interface OperationContext { readonly signal: AbortSignal; readonly timeoutMs: number }
@@ -101,7 +111,7 @@ export interface RunResult {
   inputs?: RunInput[];
   effects?: RunEffect[];
   verification?: RunVerification;
-  usage?: { requests: number; questions: number; inputTokens: number; outputTokens: number };
+  usage?: { requests: number; questions: number; serialDecisionDepth: number; inputTokens: number; outputTokens: number; providerMs: number };
   status: 'complete' | 'unverified' | 'stopped';
   reason: 'verified' | 'ui-readback' | 'model-complete' | 'no-match' | 'step-limit' | 'dialog' | 'ambiguous' | 'missing-input' | 'permission-required' | 'validation' | 'value-mismatch' | 'effect-unknown' | 'error' | 'observation-limit' | 'condition-unmet';
   steps: ActResult[];

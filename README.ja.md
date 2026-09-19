@@ -1,6 +1,6 @@
 # Jev Browser
 
-**Playwrightを実行基盤に、Jevによる判断を加えたブラウザー自動化ツールです。共通コアからCLI・MCP・TypeScript SDKを提供します。**
+**Jevの並列な意味判断、Playwrightの決定的な実行、検証根拠の明示を1つの共通コアで扱います。CLI・MCP・TypeScript SDKを提供します。**
 
 Playwright MCP／CLIのブラウザー操作と、Stagehand型の自然言語操作・構造化抽出・エージェント処理を、1つの実装で扱います。ネイティブ操作とassertionにAIキーは不要です。自然言語処理にはJevのAPIキーを使用します。
 
@@ -11,7 +11,7 @@ Playwright MCP／CLIのブラウザー操作と、Stagehand型の自然言語操
 Node.js 22.15以上。[GitHub Releases](https://github.com/tontoko/jev-browser/releases)のtarballをプロジェクトへインストールします。
 
 ```sh
-npm install --save-dev ./tontoko-jev-browser-0.4.0.tgz
+npm install --save-dev ./tontoko-jev-browser-0.5.0.tgz
 npx playwright install chromium
 npx jev-browser open https://example.com --session work
 npx jev-browser snapshot --session work
@@ -24,11 +24,10 @@ npx jev-browser close --session work
 
 ```ts
 const result = await browser.run(
-  '生徒の新規追加フォームを開き、渡した情報を入力して保存する。招待メールは送らない。',
+  '顧客の新規追加フォームを開き、渡した情報を入力して保存する。マーケティングメールは送らない。',
   { values: {
-      student: { name: '検証用の生徒', email: 'student@example.invalid' },
-      guardian: { name: '検証用の保護者', email: 'guardian@example.invalid' },
-      course: 'ヴィオラ・ダ・ガンバ',
+      customer: { name: '検証用の顧客', email: 'customer@example.invalid' },
+      account: { plan: 'Professional annual', region: 'Japan' },
   } },
 );
 ```
@@ -51,6 +50,33 @@ await expect(page.getByText('保存済み', { exact: true })).toBeVisible();
 ```
 
 借りた`Page`はSDKの`close()`で閉じません。既存のPlaywright Test、fixture、locator、アプリ固有のassertionと併用できます。
+
+### 意味的な検索とconfidence付きassertion
+
+文字列やDOM状態を決定的に比較できる場合は、通常のPlaywright/native assertionを優先します。表現が違っても同じ意味かを判定したい場合だけ、semantic verificationを明示的に使えます。
+
+```ts
+const target = await browser.locateSemantic('現在の契約を管理するボタン');
+await browser.native({ command: 'click', ref: target.ref });
+
+const result = await browser.compareSemantic({
+  actual: { description: '現在の契約プラン' },
+  expected: 'Professional annual subscription',
+  minConfidence: 0.8,
+});
+
+await browser.assertSemantic({
+  actual: { description: '請求状態' },
+  expected: '支払い済み',
+  minConfidence: 0.9,
+});
+```
+
+semantic比較は、実際に選ばれたDOM上の`evidence`、`passed | failed | inconclusive`、比較の`confidence`、別個の`sourceConfidence`、2つの閾値を返します。`minConfidence`の既定値は`0.8`、`minSourceConfidence`は指定しなければその`minConfidence`と同じ値です。source選択と意味比較のscore分布が違う場合だけ、source側を個別に調整できます。**confidenceは正解確率ではなくJevのdecision scoreです。** 閾値未満や証拠不足はpassになりません。source自体が閾値未満なら、結論がpassになり得ないため2回目のsemantic比較を呼びません。groundedなactualとexpectedが決定的に一致する場合も、2回目のsemantic比較を呼ばずローカルで完了します。
+
+複数の独立した比較は`compareSemanticBatch()`でまとめられ、source discoveryとsemantic comparisonをそれぞれdecision frontierとして処理します。結果には`serialDecisionDepth`、token/request数、`providerMs`、`observationMs`、`verificationMs`も含まれます。詳しくは[Semantic verification](docs/semantic-verification.md)を参照してください。
+
+CLIの`semantic_locate` / `semantic_compare` / `semantic_assert`と、MCPの`browser_semantic_*`も同じコアを使います。
 
 抽出はZodのスカラー・入れ子オブジェクト・配列に対応し、結果の`data`と元のDOMテキストを示す`evidence`を返します。配列は行・カード単位で根拠を分け、別の行の名前と金額を混ぜないようにします。生成された文章や、存在しない値の補完は行いません。
 

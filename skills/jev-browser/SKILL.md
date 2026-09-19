@@ -1,6 +1,6 @@
 ---
 name: jev-browser
-description: Automate and test browsers with native Playwright commands, Jev decisions, persistent CLI sessions, structured extraction, and deterministic assertions.
+description: Automate and test browsers with native Playwright commands, parallel Jev decisions, persistent CLI sessions, structured extraction, deterministic assertions, and grounded semantic verification.
 ---
 
 # Jev Browser
@@ -13,6 +13,7 @@ For a whole creation task, prefer one `run --session task --args JSON` with `ins
 2. Read `snapshot --session task`. Use the returned refs for native actions, or trusted caller-authored selectors. Re-observe after navigation or replacement; never invent refs.
 3. Use `click REF`, `fill REF TEXT`, `press Enter`, or another native command. All commands also accept `--args JSON`. For natural-language target selection use `act INSTRUCTION --values JSON`.
 4. Use deterministic `assert --args '{"target":"selector","property":"text","expected":"Saved"}'` to establish facts. AI completion is not a test pass.
+   When literal equality is not the intended contract, `semantic_assert --args JSON` can compare one grounded actual source with expected meaning at a configurable `minConfidence`. Inspect `evidence`, `confidence`, `sourceConfidence`, and `threshold`; inconclusive never passes. Prefer deterministic assertions whenever exact truth is available.
 5. Extract tables with `extract INSTRUCTION --schema JSON --records-scope 'tbody tr'`. Read `data` and `evidence`; do not invent missing values or merge unrelated rows.
 6. A command can return a pending dialog. Answer it with `handle_dialog --args '{"accept":true}'` before other operations. Never auto-accept a purchase, deletion or sensitive submission without caller authority.
 7. On an interrupted or failed mutation, inspect the page before deciding whether another attempt is appropriate. Do not blindly retry.

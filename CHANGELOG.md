@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.5.0
+
+- Grounded semantic verification across SDK, CLI and MCP: `locateSemantic`, `compareSemantic`, `compareSemanticBatch`, and `assertSemantic`.
+- Semantic assertions distinguish `passed`, `failed`, and `inconclusive`; configurable `minConfidence` defaults to 0.8. `minSourceConfidence` defaults to the comparison threshold but can be tuned independently. Low source-selection confidence, low comparison confidence, or insufficient evidence never passes; low source confidence short-circuits before the comparison frontier.
+- Model confidence is exposed as a decision score, not a correctness probability. Source-selection confidence is reported separately from final semantic-comparison confidence.
+- Exact grounded equality short-circuits locally without an additional semantic comparison call. Deterministic Playwright/native assertions remain unchanged and preferred when exact truth is available.
+- Independent Jev questions use a shared decision frontier: transport chunks at one dependency level can run concurrently, while `serialDecisionDepth` reports the actual sequential semantic depth.
+- Semantic usage reports provider requests/questions/tokens plus provider, observation and local verification time.
+- Semantic source grounding excludes definition-list terms from value candidates and returns the actual evidence used for every result.
+- Installed-package verification exercises semantic SDK, persistent CLI and MCP paths with a deterministic synthetic provider; explicit real-Jev semantic fixtures cover multilingual equivalence, contradiction, low-confidence inconclusive outcomes, batching and candidate-order variation.
+- Public examples and documentation use neutral OSS scenarios rather than adopter-specific application context.
+
+Semantic verification is opt-in. It does not convert Jev confidence into a probability, replace application-specific truth sources, or weaken existing deterministic assertions. Verified multi-commit checkpoints/resume remain a later architecture slice.
+
 ## 0.4.0
 
 - Long native selects no longer explode the action inventory: exact named values stay local, while prose-only choices are resolved in bounded option partitions without dropping the tail of the list.

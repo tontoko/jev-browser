@@ -32,7 +32,7 @@ CLI output is always JSON (apart from help/version). Screenshots return image da
 
 ```ts
 const browser = new JevBrowser({ page });
-await browser.act('Fill email with email', { values: { email: 'teacher@example.invalid' } });
+await browser.act('Fill email with email', { values: { email: 'user@example.invalid' } });
 const plan = await browser.observe('Click Save');
 if (plan) await browser.act(plan);
 const { data, evidence } = await browser.extract('Read rows', schema, { recordsScope: 'tbody tr' });

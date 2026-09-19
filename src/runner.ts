@@ -4,6 +4,7 @@ import type { Page } from 'playwright';
 import type { DecisionEngine, DecisionRequest, DecisionResult } from './decision.js';
 import { BrowserError } from './errors.js';
 import { actionCandidates, actionDescription, modelElementId, inputBindings, modelElement, resolveSelectChoice } from './actions.js';
+import { decideFrontier, type DecisionUsage } from './frontier.js';
 import { bindingQuestions, flattenInputs, inputAction, inputMetadata, matchesControl, privateFilter, publicInputs, readControl, bindingAuthority, nativeFormValid, nativeFormBusy, reuseQuestions, needsBinding, sameNativeForm, type InputBinding } from './bindings.js';
 import { recordCounts, verifyReadback, waitForRelevantChange } from './completion.js';
 import type { Captured, ElementRef, RegionIndex } from './observation.js';
@@ -37,7 +38,7 @@ export async function runGoal(host: RunHost, instruction: string, options: RunOp
   const retries=options.decisionRetries??2;
   if(!Number.isSafeInteger(retries)||retries<0||retries>2)throw new BrowserError('INVALID_ARGUMENT','decisionRetries must be 0, 1, or 2.');
   const steps: ActResult[] = [], effects: RunEffect[] = [], captures = new Set<Captured>();
-  const usage = { requests: 0, questions: 0, inputTokens: 0, outputTokens: 0 };
+  const usage: DecisionUsage = { requests: 0, questions: 0, serialDecisionDepth: 0, inputTokens: 0, outputTokens: 0, providerMs: 0 };
   const regionIndexes:RegionIndex[]=[],regionHistory:NonNullable<RunResult['regions']>=[];
   const activeRegions=new Map<string,{ref:ElementRef;url:string}>();
   let verification: RunVerification | undefined;
@@ -47,29 +48,19 @@ export async function runGoal(host: RunHost, instruction: string, options: RunOp
     status, reason, steps, ...(regionHistory.length?{regions:regionHistory}:{}), inputs: publicInputs(inputs), effects, usage, ...(verification ? { verification } : {}),
   });
   async function decide(request: DecisionRequest): Promise<DecisionResult> {
-    const entries = Object.entries(request.questions), answers: DecisionResult['answers'] = {};
-    let metadata: Omit<DecisionResult,'answers'> = {};
-    for (let index=0; index<entries.length; index+=64) {
-      if (usage.requests >= maxDecisions) throw new BrowserError('DECISION_LIMIT','The run exhausted its decision budget.');
-      const chunk = filter({ state: request.state, questions: Object.fromEntries(entries.slice(index,index+64)) });
-      if (Buffer.byteLength(JSON.stringify(chunk)) > 128*1024) throw new BrowserError('OBSERVATION_LIMIT','The decision request exceeds 128 KiB. Narrow the task scope.');
-      const { signal } = host.operation(); signal.throwIfAborted();
-      usage.requests++; usage.questions+=Object.keys(chunk.questions).length;
-      let response: DecisionResult;
-      try { response=await host.engine().decide(chunk,{signal,maxRetries:retries}); }
-      catch(error) { if(error instanceof BrowserError)throw error; signal.throwIfAborted();throw new BrowserError('PROVIDER_ERROR','The decision provider failed; browser effects were not replayed.'); }
+    const filtered = filter(request) as DecisionRequest;
+    const { signal } = host.operation(); signal.throwIfAborted();
+    let result: DecisionResult;
+    try {
+      result = await decideFrontier(host.engine(), filtered, { signal, usage, maxRequests: maxDecisions, maxRetries: retries });
+    } catch (error) {
+      if (error instanceof BrowserError) throw error;
       signal.throwIfAborted();
-      for(const [id,question] of Object.entries(chunk.questions)) {
-        const answer=response.answers[id];
-        if(!answer || !Object.hasOwn(question.criteria,answer.choice) || !Number.isFinite(answer.confidence) || answer.confidence<0 || answer.confidence>1)
-          throw new BrowserError('INVALID_DECISION','A decision was missing, invalid, or outside its offered candidates.');
-        answers[id]=answer;
-      }
-      const { answers: unused, ...rest }=response; metadata=rest;
-      usage.inputTokens+=response.usage?.input_tokens ?? 0; usage.outputTokens+=response.usage?.output_tokens ?? 0;
+      throw new BrowserError('PROVIDER_ERROR','The decision provider failed; browser effects were not replayed.');
     }
-    lastDecision=metadata;
-    return { ...metadata,answers };
+    signal.throwIfAborted();
+    const { answers: unused, ...metadata } = result; lastDecision = metadata;
+    return result;
   }
   async function capture(purpose:'act'|'readback'='act'): Promise<Captured> {
     const current=activeRegions.get(purpose);
