@@ -33,11 +33,12 @@ const wireResult = z.object({
 export class JevDecisionEngine implements DecisionEngine {
   private readonly client: TypeSafeClient;
   constructor(options: JevOptions = {}) {
-    const apiKey = options.apiKey ?? process.env.JEV_API_KEY ?? process.env.TYPESAFE_API_KEY;
-    if (!apiKey) throw new BrowserError('CONFIG', 'Set JEV_API_KEY or TYPESAFE_API_KEY.');
+    const baseURL = options.baseURL ?? process.env.JEV_BASE_URL;
+    const apiKey = options.apiKey ?? process.env.JEV_API_KEY ?? process.env.TYPESAFE_API_KEY ?? (baseURL ? 'local' : undefined);
+    if (!apiKey) throw new BrowserError('CONFIG', 'Set JEV_API_KEY or TYPESAFE_API_KEY, or configure a custom System One baseURL.');
     this.client = new TypeSafeClient({
       apiKey,
-      baseURL: options.baseURL ?? process.env.JEV_BASE_URL,
+      baseURL,
       defaultModel: options.model ?? process.env.JEV_MODEL,
       timeout: options.timeoutMs ?? 15_000,
       retry: { maxRetries: 0 },
