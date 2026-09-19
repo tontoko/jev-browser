@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.1
+
+- A custom `baseURL` / `JEV_BASE_URL` can use a TypeSafe-compatible System One endpoint without requiring a hosted Jev API key.
+- The wire contract remains `POST /v1/systemone` with the existing `state/questions` request and `model/answers/usage` response; no provider-specific runtime dependency or model router was added.
+- The hosted default still fails closed when no API key is configured.
+
+This enables local or self-hosted decision backends while keeping browser semantics, validation, policies and verification inside Jev Browser. Backend confidence/accuracy remains distribution-specific and must be calibrated independently.
+
 ## 0.5.0
 
 - Grounded semantic verification across SDK, CLI and MCP: `locateSemantic`, `compareSemantic`, `compareSemanticBatch`, and `assertSemantic`.

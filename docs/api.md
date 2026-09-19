@@ -6,7 +6,7 @@
 
 Options include:
 
-- Provider: `apiKey`, `model`, `baseURL`, `fetch` and `timeoutMs`. Environment fallbacks are `JEV_API_KEY` / `TYPESAFE_API_KEY`, `JEV_MODEL`, `JEV_BASE_URL`.
+- Provider: `apiKey`, `model`, `baseURL`, `fetch` and `timeoutMs`. Environment fallbacks are `JEV_API_KEY` / `TYPESAFE_API_KEY`, `JEV_MODEL`, `JEV_BASE_URL`. The hosted default requires an API key. A custom `baseURL` may be keyless and must expose TypeSafe-compatible `POST /v1/systemone` request/response envelopes.
 - Observation: `maxElements` (120), `maxTexts` (160), `maxCandidates` (250). Limits fail explicitly instead of silently excluding action candidates. `scope` narrows a particular observation; `recordsScope` identifies repeated records but does not itself remove unrelated page text.
 - Launch: `browser` (`chromium`, `firefox`, `webkit`; environment `JEV_BROWSER`), `headless`, `launchOptions`, `contextOptions`, `storageState`, `userDataDir`, `cdpEndpoint`, `wsEndpoint`. Choose at most one profile/CDP/WebSocket mode. CDP requires Chromium; PDF requires Chromium. Context options include ordinary Playwright locale, viewport, device, permissions and HTTP credentials settings.
 - Files: `fileRoots`, `outputDir`. Native uploads/artifacts use these boundaries. Explicit launch/profile paths are independently granted by the caller.
