@@ -36,13 +36,13 @@
 - Produces public `GoalCheckpoint` and `RunResult.checkpoints`.
 - `runGoal` continues after a verified `continue` checkpoint instead of returning.
 
-- [ ] Write a failing two-commit fixture test where the first fresh record is verified but the model stage answer is `continue`; assert the run executes a second Save rather than returning after the first.
-- [ ] Run `npm run build && node --test test/checkpoints.test.mjs` and confirm RED.
-- [ ] Refactor `verifyReadback` so local record/evidence validation occurs independently from a `final | continue | rejected` classification.
-- [ ] Add `GoalCheckpoint` and ordered `checkpoints` to `RunResult`.
-- [ ] Teach `runGoal` to append a checkpoint and continue on `continue`.
-- [ ] Run checkpoint + existing single-commit tests and confirm GREEN.
-- [ ] Commit: `feat: add verified goal checkpoints`.
+- [x] Write a failing two-commit fixture test where the first fresh record is verified but the model stage answer is `continue`; assert the run executes a second Save rather than returning after the first.
+- [x] Run `npm run build && node --test test/checkpoints.test.mjs` and confirm RED.
+- [x] Refactor `verifyReadback` so local record/evidence validation occurs independently from a `final | continue | rejected` classification.
+- [x] Add `GoalCheckpoint` and ordered `checkpoints` to `RunResult`.
+- [x] Teach `runGoal` to append a checkpoint and continue on `continue`.
+- [x] Run checkpoint + existing single-commit tests and confirm GREEN.
+- [x] Commit: `feat: add verified goal checkpoints`.
 
 ### Task 2: Track checkpointed inputs and prevent duplicate commits
 

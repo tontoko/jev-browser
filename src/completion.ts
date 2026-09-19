@@ -3,6 +3,7 @@ import type { DecisionRequest, DecisionResult } from './decision.js';
 import type { Captured } from './observation.js';
 import { progressChanged } from './dom.js';
 import type { RunVerification, Snapshot, TextEvidence } from './types.js';
+export interface CommitReadback { verification: RunVerification; stage: 'final' | 'continue' | 'rejected' }
 import type { InputBinding } from './bindings.js';
 const normalized = (text: string) => text.replace(/\s+/g,' ').trim();
 const hasAnchor = (inputs: InputBinding[]) => inputs.some(input => typeof input.value === 'number' || typeof input.value === 'string' && normalized(input.value).length > 0);
@@ -25,7 +26,7 @@ function sourceMatches(value: InputBinding['value'], source: TextEvidence): bool
 export async function verifyReadback(
   before: Map<string, number>, snapshot: Snapshot, instruction: string, inputs: InputBinding[],
   decide: (request: DecisionRequest) => Promise<DecisionResult>,
-): Promise<RunVerification | undefined> {
+): Promise<CommitReadback | undefined> {
   const candidates = (snapshot.records ?? []).filter(record => {
     if (record.readOnly === false) return false;
     const old = before.get(record.context) ?? 0;
@@ -48,7 +49,6 @@ export async function verifyReadback(
     criteria:{...Object.fromEntries(sources.filter(source=>!['term','heading'].includes(source.role)).map(source=>[source.id,{source:source.id}])),__none__:'This field is not displayed in the result; this does not mean that a displayed value is different.'},
   };
   const result=await decide({state:{task:instruction,commit:{attempted:true,inputsMatched:true},page:{url:snapshot.url,title:snapshot.title,texts:snapshot.texts.filter(source=>['status','alert','heading'].includes(source.role)).map(({id,text,context,role})=>({id,text,context,role}))},record:{id:record.id,context:record.context},sources:sources.map(source=>({id:source.id,text:source.text,context:source.context})),inputs:inputs.map(input=>({path:input.path,label:input.label,applied:input.applied}))},questions});
-  if(result.answers.completion?.choice!=='complete')return;
   const readback:string[]=[],unobserved:string[]=[];
   for(const[index,input]of inputs.entries()){
     const choice=result.answers[`read_${index}`]?.choice;
@@ -61,7 +61,9 @@ export async function verifyReadback(
   const identity=hasAnchor(identities);
   if(!identity)return;
   for(const input of inputs)input.readback=readback.includes(input.path);
-  return {source:'inferred',basis:'ui-readback',recordId:record.id,readback,unobserved};
+  const choice=result.answers.completion?.choice;
+  const stage=choice==='complete'?'final':choice==='incomplete'?'continue':'rejected';
+  return {verification:{source:'inferred',basis:'ui-readback',recordId:record.id,readback,unobserved},stage};
 }
 
 /** Native read-only progress waits; no dynamic code construction and no provider polling. */

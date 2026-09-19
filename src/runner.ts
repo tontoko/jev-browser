@@ -8,7 +8,7 @@ import { decideFrontier, type DecisionUsage } from './frontier.js';
 import { bindingQuestions, flattenInputs, inputAction, inputMetadata, matchesControl, privateFilter, publicInputs, readControl, bindingAuthority, nativeFormValid, nativeFormBusy, reuseQuestions, needsBinding, sameNativeForm, type InputBinding } from './bindings.js';
 import { recordCounts, verifyReadback, waitForRelevantChange } from './completion.js';
 import type { Captured, ElementRef, RegionIndex } from './observation.js';
-import type { ActionPlan, ActResult, GroundedAction, OperationContext, RunEffect, RunOptions, RunResult, RunVerification, RunAssertion } from './types.js';
+import type { ActionPlan, ActResult, GoalCheckpoint, GroundedAction, OperationContext, RunEffect, RunOptions, RunResult, RunVerification, RunAssertion } from './types.js';
 
 export interface RunHost {
   page(): Page;
@@ -37,7 +37,7 @@ export async function runGoal(host: RunHost, instruction: string, options: RunOp
   const settle = positive(options.settleTimeoutMs ?? 2000, 'settleTimeoutMs');
   const retries=options.decisionRetries??2;
   if(!Number.isSafeInteger(retries)||retries<0||retries>2)throw new BrowserError('INVALID_ARGUMENT','decisionRetries must be 0, 1, or 2.');
-  const steps: ActResult[] = [], effects: RunEffect[] = [], captures = new Set<Captured>();
+  const steps: ActResult[] = [], effects: RunEffect[] = [], checkpoints: GoalCheckpoint[] = [], captures = new Set<Captured>();
   const usage: DecisionUsage = { requests: 0, questions: 0, serialDecisionDepth: 0, inputTokens: 0, outputTokens: 0, providerMs: 0 };
   const regionIndexes:RegionIndex[]=[],regionHistory:NonNullable<RunResult['regions']>=[];
   const activeRegions=new Map<string,{ref:ElementRef;url:string}>();
@@ -46,7 +46,7 @@ export async function runGoal(host: RunHost, instruction: string, options: RunOp
   let transitioning=new Set<InputBinding>();
   let lastDecision: Omit<DecisionResult,'answers'> = {}, commit: RunEffect | undefined;
   const finish = (status: RunResult['status'], reason: RunResult['reason']): RunResult => filter({
-    status, reason, steps, ...(regionHistory.length?{regions:regionHistory}:{}), inputs: publicInputs(inputs), effects, usage, ...(verification ? { verification } : {}),
+    status, reason, steps, ...(regionHistory.length?{regions:regionHistory}:{}), inputs: publicInputs(inputs), effects, ...(checkpoints.length?{checkpoints}:{}), usage, ...(verification ? { verification } : {}),
   });
   async function decide(request: DecisionRequest): Promise<DecisionResult> {
     const filtered = filter(request) as DecisionRequest;
@@ -132,7 +132,7 @@ export async function runGoal(host: RunHost, instruction: string, options: RunOp
   async function wait(observed: Captured): Promise<boolean> {
     const op=host.operation();return waitForRelevantChange(host.page(),observed,Math.min(op.timeoutMs,observed.data.busy?op.timeoutMs:settle),op.signal);
   }
-  async function readCommitted(before: Map<string,number>|undefined): Promise<RunResult> {
+  async function readCommitted(before: Map<string,number>|undefined): Promise<RunResult | undefined> {
     if(await callerCondition()){commit!.status='observed';return finish('complete','verified');}
     if(await callerAssertions()){commit!.status='observed';return finish('complete','verified');}
     if(!before&&!options.until)return finish('unverified','observation-limit');
@@ -142,8 +142,14 @@ export async function runGoal(host: RunHost, instruction: string, options: RunOp
       if(options.until){
         if(await callerCondition()){commit!.status='observed';return finish('complete','verified');}
       }else{
-        verification=await verifyReadback(before!,observed.data,instruction,inputs,decide);
-        if(verification){commit!.status='observed';return finish('complete','ui-readback');}
+        const readback=await verifyReadback(before!,observed.data,instruction,inputs,decide);
+        if(readback){
+          if(readback.stage==='rejected')return finish('unverified','effect-unknown');
+          commit!.status='observed';verification=readback.verification;
+          checkpoints.push({id:randomUUID(),effectId:commit!.id,verification:readback.verification,inputPaths:inputs.filter(input=>input.applied).map(input=>input.path),...(readback.verification.recordId?{resultRecordId:readback.verification.recordId}:{})});
+          if(readback.stage==='final')return finish('complete','ui-readback');
+          verification=undefined;commit=undefined;return undefined;
+        }
       }
       if(!await wait(observed))break;
       observed=await capture('readback');
@@ -341,7 +347,7 @@ Input literals are available locally, not missing. Choose __none__ only if no ob
         const result=await perform(action,observed,kind==='commit'?'commit':'advance',action.valueKey?quoted[action.valueKey]:undefined,decision.answers.action!.confidence);
         const stopped=await answerDialogs(result,observed);if(stopped)return stopped;
       }catch(error){if(error instanceof BrowserError&&error.code==='STALE_TARGET')continue;throw error;}
-      if(kind==='commit')return await readCommitted(beforeCommit);
+      if(kind==='commit'){const done=await readCommitted(beforeCommit);if(done)return done;lastRequest='';continue;}
       transitioning=new Set(carried);
     }
   }catch(error){

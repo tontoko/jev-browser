@@ -15,7 +15,11 @@ test('readback: each field sees value evidence and causal context, not label-onl
    assert.ok(request.state.page.texts.some(text=>text.id==='status'));
    return {answers:{completion:{choice:'complete',confidence:1},read_0:{choice:'email',confidence:1},read_1:{choice:'name',confidence:1}}};
  });
- assert.deepEqual(result.readback,['/email','/name']);
+ assert.equal(result.stage,'final');assert.deepEqual(result.verification.readback,['/email','/name']);
+});
+test('readback: locally verified evidence survives an incomplete stage classification',async()=>{
+ const result=await verifyReadback(new Map(),snapshot,'Create then continue',inputs(),async()=>({answers:{completion:{choice:'incomplete',confidence:1},read_0:{choice:'email',confidence:1},read_1:{choice:'name',confidence:1}}}));
+ assert.equal(result.stage,'continue');assert.deepEqual(result.verification.readback,['/email','/name']);
 });
 test('readback: invented or mismatched evidence cannot verify completion',async()=>{
  for(const choice of ['label','invented'])assert.equal(await verifyReadback(new Map(),snapshot,'Create',inputs(),async()=>({answers:{completion:{choice:'complete'},read_0:{choice},read_1:{choice:'name'}}})),undefined);
@@ -40,21 +44,21 @@ test('readback: a visibly wrong saved field cannot be hidden by filtering its ca
 test('readback: genuinely undisplayed fields retain explicit unobserved coverage',async()=>{
  const changed={...snapshot,texts:snapshot.texts.filter(source=>source.id!=='name'),records:[{...snapshot.records[0],textIds:['email'],context:'Email fixture@example.invalid'}]};
  const result=await verifyReadback(new Map(),changed,'Create the contact',inputs(),async()=>({answers:{completion:{choice:'complete'},read_0:{choice:'email'},read_1:{choice:'__none__'}}}));
- assert.deepEqual(result.unobserved,['/name']);assert.deepEqual(result.readback,['/email']);
+ assert.equal(result.stage,'final');assert.deepEqual(result.verification.unobserved,['/name']);assert.deepEqual(result.verification.readback,['/email']);
 });
 
 test('readback: one explicitly supplied field can identify a unique new result',async()=>{
  const supplied=flattenInputs({name:'One-field contact'}).map(input=>({...input,applied:true}));
  const current={...snapshot,texts:[{id:'name',frame:0,text:'One-field contact',context:'Name One-field contact',role:'definition'}],records:[{id:'new',frame:0,textIds:['name'],context:'Name One-field contact',readOnly:true}]};
  const result=await verifyReadback(new Map(),current,'Create this contact',supplied,async()=>({answers:{completion:{choice:'complete',confidence:1},read_0:{choice:'name',confidence:1}}}));
- assert.equal(result.basis,'ui-readback');assert.deepEqual(result.readback,['/name']);
+ assert.equal(result.stage,'final');assert.equal(result.verification.basis,'ui-readback');assert.deepEqual(result.verification.readback,['/name']);
 });
 
 for (const [expected,shown] of [[true,'on'],[true,'true'],[false,'off'],[false,'false']]) test(`readback: canonical boolean ${shown} verifies the supplied ${expected}`,async()=>{
   const supplied=flattenInputs({email:'fixture@example.invalid',subscribed:expected}).map(input=>({...input,applied:true}));
   const current={...snapshot,texts:[snapshot.texts[1],{id:'subscribed',frame:0,text:shown,context:`Subscribed ${shown}`,role:'definition'}],records:[{id:'new',frame:0,textIds:['email','subscribed'],context:`Email fixture@example.invalid Subscribed ${shown}`,readOnly:true}]};
   const result=await verifyReadback(new Map(),current,'Save the supplied contact',supplied,async()=>({answers:{completion:{choice:'complete'},read_0:{choice:'email'},read_1:{choice:'subscribed'}}}));
-  assert.deepEqual(result?.readback,['/email','/subscribed']);
+  assert.deepEqual(result?.verification.readback,['/email','/subscribed']);
 });
 test('readback: a mismatched visible boolean cannot verify the requested state',async()=>{
   const supplied=flattenInputs({email:'fixture@example.invalid',subscribed:true}).map(input=>({...input,applied:true}));
