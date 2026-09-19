@@ -74,12 +74,12 @@
 - `expect` evaluates only when a verified checkpoint is classified final.
 - `until` remains read-only and authoritative but cannot be replaced by model completion.
 
-- [ ] Write failing three-stage test with a final assertion that is false after checkpoints 1/2 and true after checkpoint 3; assert it is not invoked as a failing final gate early.
-- [ ] Run and confirm RED.
-- [ ] Remove early final `expect` evaluation from intermediate stages; invoke it only at final boundary.
-- [ ] Preserve existing caller-`until` regressions from PR #8.
-- [ ] Run checkpoint + goal + regression tests and confirm GREEN.
-- [ ] Commit: `fix: separate checkpoint and final goal verification`.
+- [x] Write failing three-stage test with a final assertion that is false after checkpoints 1/2 and true after checkpoint 3; assert it is not invoked as a failing final gate early.
+- [x] Run and confirm RED.
+- [x] Remove early final `expect` evaluation from intermediate stages; invoke it only at final boundary.
+- [x] Preserve existing caller-`until` regressions from PR #8.
+- [x] Run checkpoint + goal + regression tests and confirm GREEN.
+- [x] Commit: `fix: separate checkpoint and final goal verification`.
 
 ### Task 4: Session-local continuation and resume
 

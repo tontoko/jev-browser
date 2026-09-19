@@ -139,29 +139,37 @@ export async function runGoal(host: RunHost, instruction: string, options: RunOp
     const op=host.operation();return waitForRelevantChange(host.page(),observed,Math.min(op.timeoutMs,observed.data.busy?op.timeoutMs:settle),op.signal);
   }
   async function readCommitted(before: Map<string,number>|undefined): Promise<RunResult | undefined> {
-    if(await callerCondition()){commit!.status='observed';return finish('complete','verified');}
-    if(await callerAssertions()){commit!.status='observed';return finish('complete','verified');}
-    if(!before&&!options.until)return finish('unverified','observation-limit');
+    if(await callerCondition()){commit!.status='observed';commit=undefined;return finish('complete','verified');}
+    if(!before&&!options.until&&!options.expect)return finish('unverified','observation-limit');
     let observed=await capture('readback');
     for(;;){
-      if(observed.data.truncatedTexts) return finish('unverified','observation-limit');
-      if(options.until){
-        if(await callerCondition()){commit!.status='observed';return finish('complete','verified');}
-      }else{
-        const readback=await verifyReadback(before!,observed.data,instruction,inputs,decide);
+      if(observed.data.truncatedTexts)return finish('unverified','observation-limit');
+      if(options.until&&await callerCondition()){commit!.status='observed';commit=undefined;return finish('complete','verified');}
+      if(before){
+        const readback=await verifyReadback(before,observed.data,instruction,inputs,decide);
         if(readback){
           if(readback.stage==='rejected')return finish('unverified','effect-unknown');
           commit!.status='observed';verification=readback.verification;
           const stageInputs=inputs.filter(input=>input.applied&&!input.checkpointed);
           checkpoints.push({id:randomUUID(),effectId:commit!.id,verification:readback.verification,inputPaths:stageInputs.map(input=>input.path),...(readback.verification.recordId?{resultRecordId:readback.verification.recordId}:{})});
-          if(readback.stage==='final')return finish('complete','ui-readback');
-          for(const input of stageInputs){input.checkpointed=true;input.applied=true;input.ref=undefined;delete input.target;}
-          verification=undefined;commit=undefined;return undefined;
+          commit=undefined;
+          if(readback.stage==='continue'){
+            for(const input of stageInputs){input.checkpointed=true;input.applied=true;input.ref=undefined;delete input.target;}
+            verification=undefined;return undefined;
+          }
+          if(options.expect){if(await callerAssertions())return finish('complete','verified');}
+          if(options.until){
+            if(await callerCondition())return finish('complete','verified');
+            for(const input of stageInputs){input.checkpointed=true;input.applied=true;input.ref=undefined;delete input.target;}
+            verification=undefined;callerRejectedDone=true;return undefined;
+          }
+          return finish('complete','ui-readback');
         }
       }
       if(!await wait(observed))break;
       observed=await capture('readback');
     }
+    if(options.expect&&await callerAssertions()){commit!.status='observed';commit=undefined;return finish('complete','verified');}
     return finish('unverified',options.until?'condition-unmet':'effect-unknown');
   }
   try {

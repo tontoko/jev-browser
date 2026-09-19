@@ -133,3 +133,29 @@ test('checkpoints: the same verified commit cannot be submitted twice without pr
   const result=await core.run('Save this account once. Do not submit the same save twice.',{values:{reference:'duplicate-guard'},settleTimeoutMs:100});
   assert.equal(result.status,'stopped');assert.equal(submissions.length,1);assert.equal(result.checkpoints.length,1);
 });
+
+test('checkpoints: final expect is not evaluated at intermediate checkpoints',async t=>{
+  const submissions=[];let completions=0;
+  const service=await httpServer(async(req,res)=>{
+    if(req.url?.startsWith('/stage')){
+      let raw='';for await(const chunk of req)raw+=chunk;const data=JSON.parse(raw);submissions.push(req.url);res.setHeader('Content-Type','application/json');res.end(JSON.stringify(data));return;
+    }
+    res.setHeader('Content-Type','text/html; charset=utf-8');res.end(`<form><label>Reference<input name="/reference" required></label><button type="button">Save stage 1</button><button type="button" hidden>Save stage 2</button><button type="button" hidden>Save stage 3</button></form><section id="results"></section><p id="final">Pending</p><script>
+      const buttons=[...document.querySelectorAll('button')],input=document.querySelector('input'),results=document.querySelector('#results');
+      function add(stage,value){const a=document.createElement('article');a.innerHTML='<h2>Stage '+stage+' saved</h2><dl><dt>Reference</dt><dd></dd></dl>';a.querySelector('dd').textContent=value;results.append(a);buttons[stage-1].hidden=true;if(buttons[stage])buttons[stage].hidden=false;else document.querySelector('#final').textContent='Ready';}
+      buttons.forEach((button,index)=>button.onclick=async()=>{const value=input.value;await fetch('/stage'+(index+1),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({reference:value})});add(index+1,value);});
+    </script>`);
+  });
+  const decider=engine((question,request,name)=>{
+    if(name.startsWith('bind_'))return request.state.page.elements.find(e=>e.fieldName==='/reference')?.id??'__none__';
+    if(name.startsWith('effect_'))return 'commit';
+    if(name==='completion')return ++completions<3?'incomplete':'complete';
+    if(name.startsWith('read_'))return request.state.sources.find(s=>s.text==='[input:/reference]')?.id??'__none__';
+    if(name==='action'){const target=['Save stage 1','Save stage 2','Save stage 3'][submissions.length];return candidate=>candidate?.target?.name===target;}return '__none__';
+  });
+  const page=await browser.newPage();await page.goto(service.url);const core=new JevBrowser({page,engine:decider});t.after(async()=>{await core.close();await page.close();await service.close();});
+  const result=await core.run('Save stage 1, then stage 2, then stage 3. Finish only after all three.',{
+    values:{reference:'three-stage'},expect:{target:'#final',property:'text',expected:'Ready'},
+  });
+  assert.equal(result.status,'complete',JSON.stringify(result));assert.equal(result.verification.source,'caller');assert.deepEqual(submissions,['/stage1','/stage2','/stage3']);assert.equal(result.checkpoints.length,3);
+});
