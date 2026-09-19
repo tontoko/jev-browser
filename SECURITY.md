@@ -10,9 +10,9 @@ This package is a local automation tool, not a browser sandbox, a network firewa
 
 Jev can choose only operations supplied by the runtime. This prevents generated selectors/commands, not incorrect choices among legitimate candidates. `allowAction` controls AI-selected actions. `allowCommand` controls native commands and the native primitives selected by the goal runtime, including dialog responses. They do not constrain direct SDK `page` access, website scripts, redirects, or browser networking. A policy must return literal `true` to permit a guarded operation.
 
-## What goes to Jev
+## What goes to the configured decision endpoint
 
-Natural-language instructions, observed page URL/title, visible semantic text, element names, context, options, href evidence, action history and available input binding names may be sent to the configured TypeSafe endpoint. Explicit input values in `values` are withheld, but input echoed into page text, labels, option values, link query strings, or instructions can still contain secrets. This is not a general redaction filter. Quoted input is already part of the instruction and is not secret from the provider.
+Natural-language instructions, observed page URL/title, visible semantic text, element names, context, options, href evidence, action history and available input binding names may be sent to the configured decision endpoint. Hosted Jev is the default; `baseURL` / `JEV_BASE_URL` can redirect the same System One wire format to another trusted endpoint. Custom endpoints may log or retain data independently of this package. Explicit input values in `values` are withheld, but input echoed into page text, labels, option values, link query strings, or instructions can still contain secrets. This is not a general redaction filter. Quoted input is already part of the instruction and is not secret from the provider.
 
 `locateSemantic` sends the caller description. `compareSemantic` / `assertSemantic` send the caller-provided expected semantic meaning whenever local exact comparison cannot settle the result, together with the selected grounded actual evidence. Using semantic comparison on a secret expected literal therefore explicitly exposes that literal to the configured provider. Prefer deterministic/native/Playwright assertions when a sensitive fact can be checked locally.
 
