@@ -15,7 +15,7 @@ function resumeEngine(){
       return request.state.page.elements.find(element=>element.fieldName===input?.path)?.id??'__none__';
     }
     if(name.startsWith('effect_'))return request.state.actions?.[name.slice('effect_'.length)]?.target?.name?.startsWith('Save ')?'commit':'advance';
-    if(name==='completion')return ++completions===1?'incomplete':'complete';
+    if(name==='completion')return ++completions===1?'continue':'complete';
     if(name.startsWith('read_')){
       const input=request.state.inputs.find(input=>question.instructions.includes(JSON.stringify(input.path)));
       return request.state.sources.find(source=>source.text===`[input:${input?.path}]`)?.id??'__none__';
@@ -88,7 +88,7 @@ function unknownEngine(){
   });
 }
 
-async function unknownFixture(t,{delayMs=0,omitResult=false}={}){
+async function unknownFixture(t,{omitResult=false}={}){
   const submissions=[];
   const service=await httpServer(async(req,res)=>{
     if(req.url==='/save'){
@@ -96,7 +96,7 @@ async function unknownFixture(t,{delayMs=0,omitResult=false}={}){
       res.setHeader('Content-Type','application/json');res.end(JSON.stringify(data));return;
     }
     res.setHeader('Content-Type','text/html; charset=utf-8');res.end(`<form><label>Reference<input name="/reference" required></label><button type="button">Save</button></form><section></section><script>
-      document.querySelector('button').onclick=async()=>{const reference=document.querySelector('input').value;const response=await fetch('/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({reference})});const saved=await response.json();${omitResult?'':`setTimeout(()=>{const a=document.createElement('article');a.innerHTML='<h2>Created</h2><dl><dt>Reference</dt><dd></dd></dl>';a.querySelector('dd').textContent=saved.reference;document.querySelector('section').append(a);},${delayMs});`}};
+      document.querySelector('button').onclick=async()=>{const reference=document.querySelector('input').value;const response=await fetch('/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({reference})});const saved=await response.json();${omitResult?'':`window.releaseSavedResult=()=>{const a=document.createElement('article');a.innerHTML='<h2>Created</h2><dl><dt>Reference</dt><dd></dd></dl>';a.querySelector('dd').textContent=saved.reference;document.querySelector('section').append(a);};`}};
     </script>`);
   });
   const page=await browser.newPage();await page.goto(service.url);const core=new JevBrowser({page,engine:unknownEngine()});
@@ -105,11 +105,12 @@ async function unknownFixture(t,{delayMs=0,omitResult=false}={}){
 }
 
 test('resume: an unknown commit is reconciled read-only when its result later appears',async t=>{
-  const {core,submissions}=await unknownFixture(t,{delayMs:350});
+  const {core,page,submissions}=await unknownFixture(t);
   const first=await core.run('Save this record once.',{values:{reference:'late-visible'},settleTimeoutMs:80});
   assert.equal(first.status,'unverified');assert.equal(first.reason,'effect-unknown');assert.equal(submissions.length,1);assert.equal(first.continuation?.pendingEffect,'commit');
-  await new Promise(resolve=>setTimeout(resolve,450));
-  const second=await core.resume(first.continuation.id,{settleTimeoutMs:80});
+  await page.waitForFunction(()=>typeof window.releaseSavedResult==='function');
+  await page.evaluate(()=>window.releaseSavedResult());
+  const second=await core.resume(first.continuation.id);
   assert.equal(second.status,'complete',JSON.stringify(second));assert.equal(second.checkpoints.length,1);assert.equal(submissions.length,1);
 });
 
@@ -117,6 +118,6 @@ test('resume: unresolved unknown commit never causes another submission',async t
   const {core,submissions}=await unknownFixture(t,{omitResult:true});
   const first=await core.run('Save this record once.',{values:{reference:'still-unknown'},settleTimeoutMs:80});
   assert.equal(first.reason,'effect-unknown');assert.equal(submissions.length,1);assert.ok(first.continuation?.id);
-  const second=await core.resume(first.continuation.id,{settleTimeoutMs:80});
+  const second=await core.resume(first.continuation.id);
   assert.equal(second.status,'unverified');assert.equal(second.reason,'effect-unknown');assert.equal(second.continuation.id,first.continuation.id);assert.equal(submissions.length,1);
 });

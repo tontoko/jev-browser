@@ -7,7 +7,7 @@ description: Automate and test browsers with native Playwright commands, paralle
 
 Use the installed `jev-browser` executable, or `node /path/to/jev-browser/dist/cli.js`. Read `--help` once for available commands. Native operations need no model key; AI operations need JEV_API_KEY.
 
-For a whole creation task, prefer one `run --session task --args JSON` with `instruction` and nested `values`; use `browser_run` in MCP. The runtime batches judgments, fills serially, saves and checks a new result. Inspect `verification.readback`/`unobserved` and `effects`; never repeat an `unknown` commit. Optional `expect` uses the native read-only assertion schema. Use the low-level sequence below for direct control or unsupported widgets.
+For a whole creation task, prefer one `run --session task --args JSON` with `instruction` and nested `values`; use `browser_run` in MCP. The runtime batches judgments, fills serially, saves and checks a new result. Inspect `verification.readback`/`unobserved` and `effects`; never repeat an `unknown` commit. A `continuation.id` on the result or `error.partial` can be resumed with `resume ID --session task` / `browser_resume` in the same running session; unknown saves are reconciled read-only first. Existing values and observation scope cannot change. Inspect ordered `checkpoints` separately from final verification. Optional `expect` uses the native read-only assertion schema. Use the low-level sequence below for direct control or unsupported widgets.
 
 1. Open an isolated named session: `jev-browser open URL --session task`.
 2. Read `snapshot --session task`. Use the returned refs for native actions, or trusted caller-authored selectors. Re-observe after navigation or replacement; never invent refs.

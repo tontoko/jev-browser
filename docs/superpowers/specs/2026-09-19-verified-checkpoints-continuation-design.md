@@ -258,3 +258,7 @@ This keeps the implementation honest while preserving a path to later semantic/r
 - cross-machine continuation IDs;
 - checkpointing commits that have no independently grounded result evidence;
 - private-adopter-specific public documentation.
+
+## Implementation rulings (2026-09-20)
+
+Verified action signatures are retained for the entire goal and its continuations, rather than rearmed by unrelated non-commit actions. A scrolling regression exposed the weaker rule. Current bindings can explicitly defer later-stage inputs in the same frontier; fallback classification is used only when that answer was not available. `incomplete` is not successful stage evidence: only the explicit `continue` choice permits subsequent work. Pending metadata is recorded when execution starts and normal readback and reconciliation share one path. Both caller `until` and `expect` must pass when both exist. Continuations are bound to Page/origin and immutable scope/value structure.

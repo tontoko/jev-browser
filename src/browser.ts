@@ -1,5 +1,6 @@
 import { runGoal, type PendingCommitState, type RunSeed } from './runner.js';
 import { randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import { chromium, firefox, webkit, type Page, type ElementHandle } from 'playwright';
 import { z } from 'zod';
 import type { EntryType } from '@typesafe-ai/sdk';
@@ -17,8 +18,9 @@ import type { ActionPlan, ActOptions, ActResult, BrowserOptions, BrowserLaunchOp
 interface Operation { signal: AbortSignal; deadline: number }
 const pageLeases = new WeakMap<Page, JevBrowser>();
 interface Pending { plan: ActionPlan; captured: Captured; values: Record<string, string> }
-interface ContinuationState { instruction: string; options: RunOptions; checkpoints: GoalCheckpoint[]; checkpointedInputs: string[]; pendingUnknown?: PendingCommitState; lastCheckpointActionKey?: string }
-interface GoalExecution { result: RunResult; pendingUnknown?: PendingCommitState; lastCheckpointActionKey?: string }
+interface CarriedState { inputPaths: string[]; context: string }
+interface ContinuationState { carried?: CarriedState; page: Page; origin: string; instruction: string; options: RunOptions; checkpoints: GoalCheckpoint[]; checkpointedInputs: string[]; pendingUnknown?: PendingCommitState; verifiedActionKeys?: string[] }
+interface GoalExecution { carried?: CarriedState; result: RunResult; error?: BrowserError; pendingUnknown?: PendingCommitState; verifiedActionKeys?: string[] }
 const json = (value: unknown): EntryType => JSON.parse(JSON.stringify(value)) as EntryType;
 function positiveInteger(value: number, name: string): number {
   if (!Number.isSafeInteger(value) || value < 1) throw new BrowserError('CONFIG', `${name} must be a positive integer.`);
@@ -27,21 +29,21 @@ function positiveInteger(value: number, name: string): number {
 
 const plainObject = (value: unknown): value is Record<string, RunValue> => !!value && typeof value === 'object' && !Array.isArray(value) && [Object.prototype,null].includes(Object.getPrototypeOf(value));
 function mergeRunValues(base: Record<string, RunValue> = {}, extra: Record<string, RunValue> = {}): Record<string, RunValue> {
-  const known=new Map(flattenInputs(base).map(input=>[input.path,input.value]));
-  for(const input of flattenInputs(extra)){
-    if(known.has(input.path)&&JSON.stringify(known.get(input.path))!==JSON.stringify(input.value))
-      throw new BrowserError('CONTINUATION_CONFLICT','Continuation input '+input.path+' cannot change an existing value.');
-  }
-  const merge=(left: Record<string,RunValue>,right: Record<string,RunValue>): Record<string,RunValue>=>{
-    const out:Record<string,RunValue>=structuredClone(left);
-    for(const [key,value] of Object.entries(right)){
-      const current=out[key];
-      out[key]=plainObject(current)&&plainObject(value)?merge(current,value):structuredClone(value);
-    }
-    return out;
-  };
-  return merge(base,extra);
+  const original=flattenInputs(base);
+  flattenInputs(extra);
+  const merge=(left: Record<string,RunValue>,right: Record<string,RunValue>): Record<string,RunValue> =>
+    Object.fromEntries([...new Set([...Object.keys(left),...Object.keys(right)])].map(key=> {
+      if(!Object.hasOwn(right,key))return [key,structuredClone(left[key]!)];
+      const previous=Object.hasOwn(left,key)?left[key]:undefined,next=right[key]!;
+      if(plainObject(previous)&&!plainObject(next))throw new BrowserError('CONTINUATION_CONFLICT','Resume cannot replace an existing object, including an empty object.');
+      return [key,plainObject(previous)&&plainObject(next)?merge(previous,next):structuredClone(next)];
+    }));
+  const merged=merge(base,extra),result=new Map(flattenInputs(merged).map(input=>[input.path,input.value]));
+  if(original.some(input=>!result.has(input.path)||!isDeepStrictEqual(input.value,result.get(input.path))))
+    throw new BrowserError('CONTINUATION_CONFLICT','Resume may add inputs, but cannot replace an existing value or its object structure.');
+  return merged;
 }
+const pageOrigin = (page: Page): string => new URL(page.url()).origin;
 
 /** One Page and one decision/execution loop, shared by SDK, CLI and MCP. */
 export class JevBrowser {
@@ -289,12 +291,15 @@ export class JevBrowser {
   }
   private storedRunOptions(options: RunOptions): RunOptions {
     const {signal: _signal,...stored}=options;
-    return {...stored,...(options.values?{values:structuredClone(options.values)}:{})};
+    return {...stored,...(options.values?{values:structuredClone(options.values)}:{}),...(options.expect?{expect:structuredClone(options.expect)}:{})};
   }
   private async executeGoal(operation: Operation, instruction: string, options: RunOptions, seed: RunSeed = {}): Promise<GoalExecution> {
     await this.invalidate();
-    let pendingUnknown:PendingCommitState|undefined=seed.pendingUnknown,lastCheckpointActionKey=seed.lastCheckpointActionKey;
-    const result=await runGoal({
+    let pendingUnknown:PendingCommitState|undefined=seed.pendingUnknown;
+    const verifiedActionKeys=new Set(seed.verifiedActionKeys??[]);
+    let carriedInputs:string[]=[];
+    let result:RunResult, failure:BrowserError|undefined;
+    try {result=await runGoal({
       page: () => this.page, capture: () => capture(this.page,{...this.limits,scope:options.scope}),
       regions: () => captureRegions(this.page),
       captureRegion: ref => capture(this.page,{...this.limits,selection:{frame:ref.frame,roots:[ref.handle]}}),
@@ -308,24 +313,39 @@ export class JevBrowser {
         await this.nativeBrowser.execute(command,{signal:operation.signal,timeoutMs:this.remaining(operation)});
       },
       rememberPendingCommit: state => { pendingUnknown=state; },
-      rememberCheckpointAction: key => { lastCheckpointActionKey=key;pendingUnknown=undefined; },
+      rememberCarriedInputs: paths => { carriedInputs=paths; },
+      rememberCheckpointAction: key => { verifiedActionKeys.add(key);pendingUnknown=undefined; },
       candidateLimit:this.limits.maxCandidates,
     },instruction,options,seed);
-    return {result,...(result.reason==='effect-unknown'&&pendingUnknown?{pendingUnknown}:{}),...(lastCheckpointActionKey?{lastCheckpointActionKey}:{})};
+    }catch(error){
+      if(!(error instanceof BrowserError)||!error.partial)throw error;
+      result=error.partial;failure=error;
+    }
+    // Uncommitted wizard values are reusable only while the paused browser view
+    // remains unchanged. They are never promoted to saved checkpoint evidence.
+    let carried:CarriedState|undefined;
+    if(carriedInputs.length&&!pendingUnknown&&result.status!=='complete'){
+      const observed=await capture(this.page,{...this.limits,scope:options.scope});
+      try{carried={inputPaths:carriedInputs,context:JSON.stringify([observed.rawURL,observed.changeKeys])};}
+      finally{await observed.dispose();}
+    }
+    return {result,...(failure?{error:failure}:{}),...(pendingUnknown?{pendingUnknown}:{}),...(carried?{carried}:{}),...(verifiedActionKeys.size?{verifiedActionKeys:[...verifiedActionKeys]}:{})};
   }
   private attachContinuation(execution: GoalExecution, instruction: string, options: RunOptions, existingId?: string): RunResult {
-    const {result,pendingUnknown,lastCheckpointActionKey}=execution;
-    if(result.status==='complete'){if(existingId)this.continuations.delete(existingId);return result;}
+    const {result,error,pendingUnknown,verifiedActionKeys,carried}=execution;
+    const finish=(value:RunResult):RunResult=>{if(error){error.partial=value;throw error;}return value;};
+    if(result.status==='complete'){if(existingId)this.continuations.delete(existingId);return finish(result);}
     const checkpoints=result.checkpoints??[];
-    const resumableMissing=result.reason==='missing-input'&&checkpoints.length>0;
-    const resumableUnknown=result.reason==='effect-unknown'&&!!pendingUnknown?.inputPaths.length;
-    if(!resumableMissing&&!resumableUnknown){if(existingId)this.continuations.delete(existingId);return result;}
+    const resumableMissing=checkpoints.length>0&&!result.effects?.some(effect=>effect.kind!=='commit'&&effect.status==='unknown');
+    const resumableUnknown=!!pendingUnknown;
+    if(!resumableMissing&&!resumableUnknown){if(existingId)this.continuations.delete(existingId);return finish(result);}
     const id=existingId??randomUUID();
-    this.continuations.set(id,{instruction,options:this.storedRunOptions(options),checkpoints:structuredClone(checkpoints),checkpointedInputs:[...new Set(checkpoints.flatMap(checkpoint=>checkpoint.inputPaths))],...(pendingUnknown?{pendingUnknown:structuredClone(pendingUnknown)}:{}),...(lastCheckpointActionKey?{lastCheckpointActionKey}:{})});
-    return {...result,continuation:{id,reason:result.reason,...(pendingUnknown?{pendingEffect:'commit' as const}:{})}};
+    this.continuations.set(id,{...(carried?{carried:structuredClone(carried)}:{}),page:this.page,origin:pageOrigin(this.page),instruction,options:this.storedRunOptions(options),checkpoints:structuredClone(checkpoints),checkpointedInputs:[...new Set(checkpoints.flatMap(checkpoint=>checkpoint.inputPaths))],...(pendingUnknown?{pendingUnknown:structuredClone(pendingUnknown)}:{}),...(verifiedActionKeys?{verifiedActionKeys:[...verifiedActionKeys]}:{})});
+    return finish({...result,continuation:{id,reason:result.reason,...(pendingUnknown?{pendingEffect:'commit' as const}:{})}});
   }
   async run(instruction: string, options: RunOptions = {}): Promise<RunResult> {
     this.validateRunOptions(options);
+    options={...this.storedRunOptions(options),...(options.signal?{signal:options.signal}:{})};
     return this.exclusive({ ...options, timeoutMs: options.timeoutMs ?? this.options.timeoutMs ?? 60_000 }, async operation =>
       this.attachContinuation(await this.executeGoal(operation,instruction,options),instruction,options));
   }
@@ -333,10 +353,21 @@ export class JevBrowser {
     if(!continuationId.trim())throw new BrowserError('INVALID_ARGUMENT','A continuation ID is required.');
     const state=this.continuations.get(continuationId);
     if(!state)throw new BrowserError('CONTINUATION_NOT_FOUND','This continuation is expired, completed, or belongs to another browser session.');
+    if(this.page!==state.page||pageOrigin(this.page)!==state.origin)
+      throw new BrowserError('CONTINUATION_CONTEXT_CHANGED','Resume must use the original Page and origin.');
+    if(options.scope!==undefined&&options.scope!==state.options.scope)
+      throw new BrowserError('CONTINUATION_CONFLICT','Resume cannot change the original observation scope.');
     const values=mergeRunValues(state.options.values??{},options.values??{});
     const runOptions:RunOptions={...state.options,values,...(options.scope!==undefined?{scope:options.scope}:{}),...(options.timeoutMs!==undefined?{timeoutMs:options.timeoutMs}:{}),...(options.signal?{signal:options.signal}:{})};
-    return this.exclusive({...options,timeoutMs:options.timeoutMs??state.options.timeoutMs??this.options.timeoutMs??60_000},async operation=>
-      this.attachContinuation(await this.executeGoal(operation,state.instruction,runOptions,{checkpoints:state.checkpoints,checkpointedInputs:state.checkpointedInputs,pendingUnknown:state.pendingUnknown,lastCheckpointActionKey:state.lastCheckpointActionKey}),state.instruction,runOptions,continuationId));
+    return this.exclusive({...options,timeoutMs:options.timeoutMs??state.options.timeoutMs??this.options.timeoutMs??60_000},async operation=>{
+      if(state.carried){
+        const observed=await capture(this.page,{...this.limits,scope:state.options.scope});
+        try{if(state.carried.context!==JSON.stringify([observed.rawURL,observed.changeKeys]))
+          throw new BrowserError('CONTINUATION_CONTEXT_CHANGED','The paused wizard view changed; carried input cannot be reused.');}
+        finally{await observed.dispose();}
+      }
+      return this.attachContinuation(await this.executeGoal(operation,state.instruction,runOptions,{checkpoints:state.checkpoints,checkpointedInputs:state.checkpointedInputs,carriedInputs:state.carried?.inputPaths,pendingUnknown:state.pendingUnknown,verifiedActionKeys:state.verifiedActionKeys}),state.instruction,runOptions,continuationId);
+    });
   }
   private async chooseAction(instruction: string, options: ActOptions, operation: Operation, history: unknown[], allowDone: boolean): Promise<ActionPlan | null | 'done'> {
     if (!instruction.trim()) throw new BrowserError('INVALID_ARGUMENT', 'A nonempty instruction is required.');

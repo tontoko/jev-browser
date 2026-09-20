@@ -28,7 +28,8 @@ Per-operation `signal`, `timeoutMs` and `scope` are available where relevant. Th
 | `compareSemantic(request, options?)` | `SemanticComparisonResult`; deterministic short-circuit or confidence-aware semantic comparison |
 | `compareSemanticBatch(requests, options?)` | `SemanticComparisonResult[]`; independent source/comparison questions share decision frontiers |
 | `assertSemantic(request, options?)` | same result on pass; throws distinct failed/inconclusive semantic assertion errors |
-| `run(instruction, {values?, expect?, until?, ...options}?)` | `{status, reason, steps, inputs, effects, usage, verification?}`; one-instruction creation workflow |
+| `run(instruction, {values?, expect?, until?, ...options}?)` | `{status, reason, steps, inputs, effects, usage, verification?, checkpoints?, continuation?}`; verified multi-stage goal |
+| `resume(continuationId, {values?, timeoutMs?, signal?}?)` | Same-session continuation; unknown saves reconcile read-only before authorized later work |
 | `agent(defaults?).execute(instructionOrOptions)` | Same run result, same core loop |
 | `native(command, options?)` | Typed command union; mechanical operation without a model |
 | `screenshot(options?)` | Viewport PNG Buffer |
@@ -109,3 +110,7 @@ Stable codes distinguish configuration, unsupported schemas, missing candidates/
 A native/AI command returning `executed` means the operation ran, not that the business workflow succeeded. Goal execution can also establish UI readback by comparing a fresh result record with actual supplied values. Inspect the verification source and unobserved fields; this does not prove database durability. Never treat confidence or the absence of an exception as a passed E2E assertion.
 
 Downloads are reported after the browser emits a download event. A click returning does not imply a download has started. In SDK workflows, register `page.waitForEvent('download')` before clicking; native clients can inspect the current download list in a later command. Whether a resource is rendered or downloaded depends on browser behavior and the response MIME/Content-Disposition headers.
+
+## Goal continuation
+
+See [goal-continuation.md](goal-continuation.md) for checkpoint evidence, final assertions, immutable inputs, same-Page/origin/scope ownership and unknown-effect reconciliation. SDK, persistent CLI `resume` and MCP `browser_resume` share one runner. A thrown `BrowserError.partial` may contain the continuation; inspect it rather than re-running the original task.

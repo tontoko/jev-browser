@@ -19,7 +19,7 @@ function stagedEngine(){
       const wanted=request.state.history?.some(action=>action.target?.name==='Save account')?'Save membership':'Save account';
       return candidate=>candidate?.kind==='click'&&candidate.target?.name===wanted;
     }
-    if(name==='completion') return ++completions===1?'incomplete':'complete';
+    if(name==='completion') return ++completions===1?'continue':'complete';
     if(name.startsWith('read_')) return request.state.sources.find(source=>source.text==='[input:/reference]')?.id ?? '__none__';
     return '__none__';
   });
@@ -107,7 +107,7 @@ test('checkpoints: failure after checkpoint one never recreates checkpoint one',
   const decider=engine((question,request,name)=>{
     if(name.startsWith('bind_'))return request.state.page.elements.find(e=>e.fieldName==='/reference')?.id??'__none__';
     if(name.startsWith('effect_'))return 'commit';
-    if(name==='completion')return ++completions===1?'incomplete':'complete';
+    if(name==='completion')return ++completions===1?'continue':'complete';
     if(name.startsWith('read_'))return request.state.sources.find(s=>s.text==='[input:/reference]')?.id??'__none__';
     if(name==='action')return candidate=>candidate?.target?.name==='Save account';return '__none__';
   });
@@ -125,7 +125,7 @@ test('checkpoints: the same verified commit cannot be submitted twice without pr
   const decider=engine((question,request,name)=>{
     if(name.startsWith('bind_'))return request.state.page.elements.find(e=>e.fieldName==='/reference')?.id??'__none__';
     if(name.startsWith('effect_'))return 'commit';
-    if(name==='completion')return ++completions===1?'incomplete':'complete';
+    if(name==='completion')return ++completions===1?'continue':'complete';
     if(name.startsWith('read_'))return request.state.sources.find(s=>s.text==='[input:/reference]')?.id??'__none__';
     if(name==='action')return candidate=>candidate?.target?.name==='Save account';return '__none__';
   });
@@ -149,7 +149,7 @@ test('checkpoints: final expect is not evaluated at intermediate checkpoints',as
   const decider=engine((question,request,name)=>{
     if(name.startsWith('bind_'))return request.state.page.elements.find(e=>e.fieldName==='/reference')?.id??'__none__';
     if(name.startsWith('effect_'))return 'commit';
-    if(name==='completion')return ++completions<3?'incomplete':'complete';
+    if(name==='completion')return ++completions<3?'continue':'complete';
     if(name.startsWith('read_'))return request.state.sources.find(s=>s.text==='[input:/reference]')?.id??'__none__';
     if(name==='action'){const target=['Save stage 1','Save stage 2','Save stage 3'][submissions.length];return candidate=>candidate?.target?.name===target;}return '__none__';
   });

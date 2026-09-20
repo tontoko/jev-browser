@@ -20,7 +20,7 @@ function decisionEngine(){
       return request.state.page.elements.find(element=>element.fieldName===input?.path)?.id??'__none__';
     }
     if(name.startsWith('effect_'))return request.state.actions?.[name.slice('effect_'.length)]?.target?.name?.startsWith('Save ')?'commit':'advance';
-    if(name==='completion')return ++completions===1?'incomplete':'complete';
+    if(name==='completion')return ++completions===1?'continue':'complete';
     if(name.startsWith('read_')){
       const input=request.state.inputs.find(input=>question.instructions.includes(JSON.stringify(input.path)));
       return request.state.sources.find(source=>source.text===`[input:${input?.path}]`)?.id??'__none__';

@@ -40,7 +40,7 @@ export async function checkInstalledResume(pkg,directory,baseEnv){
           return request.state.page.elements.find(element=>element.fieldName===path)?.id??'__none__';
         }
         if(id.startsWith('effect_'))return request.state.actions?.[id.slice('effect_'.length)]?.target?.name?.startsWith('Save ')?'commit':'advance';
-        if(id==='completion')return request.state.record?.context?.includes('Membership created')?'complete':'incomplete';
+        if(id==='completion')return request.state.record?.context?.includes('Membership created')?'complete':'continue';
         if(id.startsWith('read_')){
           const path=['/reference','/membershipCode'].find(value=>question.instructions.includes(JSON.stringify(value)));
           return request.state.sources.find(source=>source.text===`[input:${path}]`)?.id??'__none__';

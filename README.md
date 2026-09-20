@@ -13,7 +13,7 @@ Native operations and assertions run **without an AI key**. Natural-language ope
 Node.js **22.15 or newer**. Download the package from [GitHub Releases](https://github.com/tontoko/jev-browser/releases), then install it into your project:
 
 ```sh
-npm install --save-dev ./tontoko-jev-browser-0.5.1.tgz
+npm install --save-dev ./tontoko-jev-browser-0.6.0.tgz
 npx playwright install chromium
 ```
 
@@ -62,6 +62,13 @@ JSON
 ```
 
 For MCP, send the same JSON to `browser_run`. See [goal execution and boundaries](docs/goal-runtime.md).
+
+### Verified stages and continuation
+
+A single `run()` can save an account, create its membership, then create a reservation. Each observed result becomes a verified checkpoint; the final `expect` runs at the final boundary. Current-field binding and later-stage placement share a parallel decision frontier instead of adding a model round trip for every field or stage assignment.
+
+When stopped work returns `result.continuation.id`, use `browser.resume(id, { values: { missingField: 'value' } })`, CLI `resume ID --session work`, or MCP `browser_resume`. Unknown saves reconcile read-only first and are never automatically replayed. Already verified signatures remain blocked even after scrolling or resuming. Continuation is confined to the same running core, Page, origin and observation scope; values already supplied cannot change. See [checkpoint and continuation semantics](docs/goal-continuation.md).
+
 
 ## CLI: persistent browser, independent commands
 
@@ -197,7 +204,7 @@ const result = await browser.agent({
 expect(result.status).toBe('complete');
 ```
 
-`agent().execute()` delegates to `run()`. An SDK `until` returning literal `true`, or a supplied `expect` assertion, produces caller-verified completion once requested inputs are covered. It should promptly return `false` while work remains. Without caller checks, a fresh matching result record can produce `complete / ui-readback` with explicit evidence coverage. Model-only completion stays `unverified`. Prompt/ambiguous dialogs, missing inputs and budgets stop explicitly. Mutation failures are never automatically retried; see `error.partial` before deciding what to do next.
+`agent().execute()` delegates to `run()`. An SDK `until` returning literal `true`, or a supplied `expect` assertion, produces caller-verified completion once requested inputs are covered. When both are supplied, both must pass. It should promptly return `false` while work remains. Without caller checks, a fresh matching result record can produce `complete / ui-readback` with explicit evidence coverage. Model-only completion stays `unverified`. Prompt/ambiguous dialogs, missing inputs and budgets stop explicitly. Mutation failures are never automatically retried; see `error.partial` before deciding what to do next.
 
 ## Scope and migration
 

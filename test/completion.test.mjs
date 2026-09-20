@@ -17,8 +17,8 @@ test('readback: each field sees value evidence and causal context, not label-onl
  });
  assert.equal(result.stage,'final');assert.deepEqual(result.verification.readback,['/email','/name']);
 });
-test('readback: locally verified evidence survives an incomplete stage classification',async()=>{
- const result=await verifyReadback(new Map(),snapshot,'Create then continue',inputs(),async()=>({answers:{completion:{choice:'incomplete',confidence:1},read_0:{choice:'email',confidence:1},read_1:{choice:'name',confidence:1}}}));
+test('readback: locally verified evidence permits an explicit continue classification',async()=>{
+ const result=await verifyReadback(new Map(),snapshot,'Create then continue',inputs(),async()=>({answers:{completion:{choice:'continue',confidence:1},read_0:{choice:'email',confidence:1},read_1:{choice:'name',confidence:1}}}));
  assert.equal(result.stage,'continue');assert.deepEqual(result.verification.readback,['/email','/name']);
 });
 test('readback: invented or mismatched evidence cannot verify completion',async()=>{
@@ -64,4 +64,10 @@ test('readback: a mismatched visible boolean cannot verify the requested state',
   const supplied=flattenInputs({email:'fixture@example.invalid',subscribed:true}).map(input=>({...input,applied:true}));
   const current={...snapshot,texts:[snapshot.texts[1],{id:'subscribed',frame:0,text:'off',context:'Subscribed off',role:'definition'}],records:[{id:'new',frame:0,textIds:['email','subscribed'],context:'Email fixture@example.invalid Subscribed off',readOnly:true}]};
   assert.equal(await verifyReadback(new Map(),current,'Save',supplied,async()=>({answers:{completion:{choice:'complete'},read_0:{choice:'email'},read_1:{choice:'subscribed'}}})),undefined);
+});
+
+test('readback: a non-result marked incomplete cannot authorize another commit',async()=>{
+ const actual=inputs();
+ const result=await verifyReadback(new Map(),snapshot,'Create and continue',actual,async()=>({answers:{completion:{choice:'incomplete',confidence:1},read_0:{choice:'email',confidence:1},read_1:{choice:'name',confidence:1}}}));
+ assert.equal(result,undefined);assert.ok(actual.every(input=>input.readback===false));
 });
