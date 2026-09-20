@@ -103,17 +103,23 @@ export interface RunOptions extends OperationOptions {
   /** Must be a read-only, deterministic check. True is the only verified completion. */
   until?: (page: Page, operation: OperationContext) => Promise<boolean> | boolean;
 }
+export interface ResumeOptions extends OperationOptions { values?: Record<string, RunValue> }
 export interface RunInput { path: string; applied: boolean; readback: boolean; target?: string }
 export interface RunEffect { id: string; kind: 'input' | 'advance' | 'commit'; status: 'attempted' | 'observed' | 'unknown'; input?: string }
 export interface RunVerification { source: 'caller' | 'inferred'; basis: 'ui-readback' | 'assertion' | 'condition'; recordId?: string; readback: string[]; unobserved: string[] }
+export interface GoalCheckpoint { id: string; effectId: string; verification: RunVerification; inputPaths: string[]; resultRecordId?: string }
+export type RunReason = 'verified' | 'ui-readback' | 'model-complete' | 'no-match' | 'step-limit' | 'dialog' | 'ambiguous' | 'missing-input' | 'permission-required' | 'validation' | 'value-mismatch' | 'effect-unknown' | 'error' | 'observation-limit' | 'condition-unmet';
+export interface GoalContinuation { id: string; reason: RunReason; pendingEffect?: 'commit' }
 export interface RunResult {
   regions?: {purpose:'act'|'readback';name:string;role:string;frame:number}[];
   inputs?: RunInput[];
   effects?: RunEffect[];
   verification?: RunVerification;
+  checkpoints?: GoalCheckpoint[];
+  continuation?: GoalContinuation;
   usage?: { requests: number; questions: number; serialDecisionDepth: number; inputTokens: number; outputTokens: number; providerMs: number };
   status: 'complete' | 'unverified' | 'stopped';
-  reason: 'verified' | 'ui-readback' | 'model-complete' | 'no-match' | 'step-limit' | 'dialog' | 'ambiguous' | 'missing-input' | 'permission-required' | 'validation' | 'value-mismatch' | 'effect-unknown' | 'error' | 'observation-limit' | 'condition-unmet';
+  reason: RunReason;
   steps: ActResult[];
 }
 export interface BrowserOptions extends JevOptions {

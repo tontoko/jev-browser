@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.0
+
+- Multi-stage goals accumulate verified checkpoints and continue to explicitly requested later saves. Current-field binding and later-stage placement share a parallel decision frontier.
+- Added same-session `resume()` / CLI `resume` / MCP `browser_resume`; stopped results and interrupted commit errors retain opaque continuation IDs. Unknown saves reconcile read-only before later mutations.
+- Final caller assertions are separate from intermediate checkpoint evidence. When both `until` and `expect` are provided, both must pass.
+- Existing values and their nested structure, Page/origin and observation scope cannot change on resume. Verified action signatures remain blocked after unrelated actions and across continuations.
+- Strengthened neutral HTTP fixtures, installed-tarball continuation checks and opt-in real-provider interruption tests. No model server, planner dependency or workflow DSL was added.
+
+Continuation is in-memory only; this is not durable orchestration, an arbitrary batch-creation API, or an exactly-once/database-durability guarantee.
+
 ## 0.5.1
 
 - A custom `baseURL` / `JEV_BASE_URL` can use a TypeSafe-compatible System One endpoint without requiring a hosted Jev API key.

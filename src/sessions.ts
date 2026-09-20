@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { z } from 'zod';
 import { BrowserError } from './errors.js';
-import type { BrowserLaunchOptions } from './types.js';
+import type { BrowserLaunchOptions, RunResult } from './types.js';
 import type { Command } from './commands.js';
 
 export const descriptorSchema = z.object({ name: z.string(), cwd: z.string(), pid: z.number().int().positive(), port: z.number().int().min(1).max(65535), token: z.string().regex(/^[0-9a-f]{64}$/), createdAt: z.string() });
@@ -34,8 +34,12 @@ export async function sendSession(name: string, command: Command | { command: 'h
   let response: Response;
   try { response = await fetch(`http://127.0.0.1:${d.port}/command`, { method: 'POST', headers: { authorization: `Bearer ${d.token}`, 'content-type': 'application/json' }, body: JSON.stringify(command), signal: signal ?? AbortSignal.timeout(300_000) }); }
   catch { if (signal?.aborted) signal.throwIfAborted(); throw new BrowserError('SESSION_UNAVAILABLE', `Session ${name} is not responding. No browser action was retried.`); }
-  const envelope = await response.json() as { ok: boolean; result?: Record<string, unknown>; error?: { code: string; message: string } };
-  if (!response.ok || !envelope.ok) throw new BrowserError(envelope.error?.code ?? 'SESSION_ERROR', envelope.error?.message ?? 'The session command failed.');
+  const envelope = await response.json() as { ok: boolean; result?: Record<string, unknown>; error?: { code: string; message: string; partial?: RunResult } };
+  if (!response.ok || !envelope.ok) {
+    const error=new BrowserError(envelope.error?.code ?? 'SESSION_ERROR', envelope.error?.message ?? 'The session command failed.');
+    if(envelope.error?.partial)error.partial=envelope.error.partial;
+    throw error;
+  }
   return envelope.result ?? {};
 }
 export async function openSession(name: string, options: BrowserLaunchOptions, url?: string, idleTimeoutMs = 1_800_000): Promise<Record<string, unknown>> {

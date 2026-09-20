@@ -6,7 +6,7 @@ Release checks are executable, not inferred from a build passing. See the CI wor
 
 - `npm run check`: TypeScript build, DOM bundle, real browser regressions, injected decision tests, local HTTP provider fixtures, CLI subprocesses, MCP wire exchanges, and named-session authorization tests.
 - `npm run check:examples`: strict checking of public-package Playwright Test examples.
-- `npm run check:package`: builds the real tarball, installs it into an isolated consumer, exercises installed SDK/native/goal/semantic paths, uses independent persistent CLI commands, and talks to the installed MCP stdio executable through the official client. The semantic package check uses a deterministic synthetic provider; no real provider key is required.
+- `npm run check:package`: builds the real tarball, installs it into an isolated consumer, exercises installed SDK/native/goal/semantic/continuation paths, uses independent persistent CLI commands, and talks to the installed MCP stdio executable through the official client. The semantic package check uses a deterministic synthetic provider; no real provider key is required.
 - `npm run test:live`: explicit real Jev tests on synthetic local pages for grounded actions, extraction, adapters and goal execution.
 - `npm run test:live:semantic`: explicit real Jev semantic-verification fixtures. It records grounded source, source confidence, semantic choice, final confidence/threshold outcome, decision depth and usage for neutral synthetic pages.
 
@@ -33,3 +33,7 @@ Hosted verification runs Ubuntu with Node 22/24 and Chromium/Firefox/WebKit, plu
 The first cross-platform runs exposed fixture assumptions: a Linux-only unshared-file path, an overly short cold-browser budget in an idle-time test, and a download fixture with no content type. The file test now creates an actual unshared temporary file on every platform. The idle gap still exceeds the command budget, while cold Firefox startup is no longer treated as a latency assertion. Downloads wait for the native event rather than sleep, and the server specifies `application/octet-stream`, as in Playwright's own [download fixtures](https://github.com/microsoft/playwright/blob/v1.63.0/tests/library/download.spec.ts). Browser-specific MIME/download behavior remains Playwright's responsibility; no test is made successful by hiding an empty download list.
 
 A Gitleaks 8.30.1 scan of the commit history and runtime dependency audit reported no findings during preparation. Scanning is not a guarantee that all security issues are absent. Final release notes identify the exact CI run and distributed tarball checksum.
+
+## Checkpoint and resume regression suite
+
+`npm run test:live:resume` runs neutral multi-stage HTTP fixtures against the configured provider. It checks complete submitted data, three distinct saves, missing later input, repeated read-only reconciliation of an unknown second save, and cancellation during that save. Per-invocation usage is summed once per returned result when reporting the full task. Field binding and later-stage placement can share a frontier; the three-stage controlled fixture needs six serial frontiers rather than eight after that optimization. These are known regression cases, not claims about arbitrary sites or other agents.

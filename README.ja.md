@@ -11,7 +11,7 @@ Playwright MCP／CLIのブラウザー操作と、Stagehand型の自然言語操
 Node.js 22.15以上。[GitHub Releases](https://github.com/tontoko/jev-browser/releases)のtarballをプロジェクトへインストールします。
 
 ```sh
-npm install --save-dev ./tontoko-jev-browser-0.5.1.tgz
+npm install --save-dev ./tontoko-jev-browser-0.6.0.tgz
 npx playwright install chromium
 npx jev-browser open https://example.com --session work
 npx jev-browser snapshot --session work
@@ -85,6 +85,11 @@ CLIの`semantic_locate` / `semantic_compare` / `semantic_assert`と、MCPの`bro
 Jevは観測済みの候補から操作を選び、Playwrightが実行します。存在しないセレクターやJavaScriptをモデルに生成させません。ただし、実在する候補の選び間違いまでなくなるわけではありません。
 
 `run()`は入力の実値、新しい保存結果、呼び出し元の追加条件を区別して結果に残します。モデルが完了と判断しただけなら`unverified`です。保存要求の結果が不明な場合は再送せず、部分実行記録を返します。対応範囲・予算・追加権限が必要な場面は[goal runtime](docs/goal-runtime.md)に記載しています。
+
+複数段階の保存も一回の`run()`で実行し、確認できた段階を`checkpoints`に残します。後段の入力値を最初にまとめて渡せます。入力先の選択と「明示された後段の値か」の判断を同じ並列frontierにまとめ、不要な直列往復を減らします。最終`expect`は途中のcheckpointとは別に検証し、`until`も同時に指定した場合は両方が成立する必要があります。
+
+停止結果や`error.partial`に`continuation.id`があれば、同じcoreの`resume(id, {values: {...}})`、CLIの`resume ID --session work`、MCPの`browser_resume`で続行できます。保存結果が不明なら、再送せず読み取りによる確認を先に行います。既に確認済みの同じ保存はスクロールや再開では再実行可能になりません。再開は同じ実行中のcore・Page・origin・観測scopeに限定し、既存の入力値の変更も拒否します。[詳細と制約](docs/goal-continuation.md)。
+
 
 ページ本文・リンク・表示された入力値などは機密情報を含む可能性があります。認証済みブラウザーの接続やファイルアクセスを無制限に第三者へ公開しないでください。[SECURITY.md](SECURITY.md)に権限とデータ送信範囲を記載しています。
 

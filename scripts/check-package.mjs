@@ -10,6 +10,7 @@ import { createServer } from 'node:http';
 import { Client } from '@modelcontextprotocol/client';
 import { checkInstalledGoal } from './check-installed-goal.mjs';
 import { checkInstalledSemantic } from './check-installed-semantic.mjs';
+import { checkInstalledResume } from './check-installed-resume.mjs';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
@@ -86,7 +87,8 @@ try {
   } finally { await client.close(); }
   const goals = await checkInstalledGoal(pkg,directory,env);
   const semantic = await checkInstalledSemantic(pkg,directory,env);
-  console.log(JSON.stringify({ ...goals, ...semantic, package: packed.name, version: packed.version, filename: packed.filename, sha256: createHash('sha256').update(await readFile(tarball)).digest('hex'), installedSDK: true, nativePlaywrightAssertions: true, installedPersistentCLI: true, installedMCP: true, entryCount: packed.entryCount }, null, 2));
+  const resume = await checkInstalledResume(pkg,directory,env);
+  console.log(JSON.stringify({ ...goals, ...semantic, ...resume, package: packed.name, version: packed.version, filename: packed.filename, sha256: createHash('sha256').update(await readFile(tarball)).digest('hex'), installedSDK: true, nativePlaywrightAssertions: true, installedPersistentCLI: true, installedMCP: true, entryCount: packed.entryCount }, null, 2));
 } finally {
   if (site) { site.closeAllConnections(); await new Promise(resolve => site.close(resolve)); }
   await rm(directory, { recursive: true, force: true, maxRetries: 8, retryDelay: 125 });
