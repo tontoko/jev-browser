@@ -53,7 +53,7 @@ export async function checkInstalledResume(pkg,directory,baseEnv){
     }catch{res.statusCode=500;res.end('{"error":"resume fixture provider error"}');}
   });
   const env={...baseEnv,JEV_API_KEY:'synthetic-resume-package-fixture',JEV_BASE_URL:provider.url};
-  const runOptions=(label)=>({instruction:'Save the account, then save its membership.',values:{reference:`package-${label}`},settleTimeoutMs:100});
+  const runOptions=(label)=>({instruction:'Save the account, then save its membership.',values:{reference:`package-${label}`}});
   function verifyPair(offset,label){
     assert.equal(submissions[offset].kind,'account');assert.equal(submissions[offset].data.reference,`package-${label}`);
     assert.equal(submissions[offset+1].kind,'membership');assert.equal(submissions[offset+1].data.reference,`package-${label}`);

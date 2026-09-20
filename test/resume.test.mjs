@@ -47,7 +47,7 @@ async function resumableFixture(t){
 
 test('resume: stopped work exposes only an opaque continuation and resumes from the next stage',async t=>{
   const {core,submissions}=await resumableFixture(t);
-  const first=await core.run('Save the account, then save its membership. Do not finish before both exist.',{values:{reference:'secret-reference'},settleTimeoutMs:100});
+  const first=await core.run('Save the account, then save its membership. Do not finish before both exist.',{values:{reference:'secret-reference'}});
   assert.equal(first.status,'stopped');assert.equal(first.reason,'missing-input');assert.equal(first.checkpoints.length,1);
   assert.ok(first.continuation?.id);assert.equal(JSON.stringify(first).includes('secret-reference'),false);
   assert.deepEqual(submissions.map(entry=>entry.kind),['account']);
@@ -59,7 +59,7 @@ test('resume: stopped work exposes only an opaque continuation and resumes from 
 
 test('resume: changing a checkpointed value is rejected before another mutation',async t=>{
   const {core,submissions}=await resumableFixture(t);
-  const first=await core.run('Save the account, then save its membership.',{values:{reference:'fixed-reference'},settleTimeoutMs:100});
+  const first=await core.run('Save the account, then save its membership.',{values:{reference:'fixed-reference'}});
   assert.ok(first.continuation?.id);assert.deepEqual(submissions.map(entry=>entry.kind),['account']);
   await assert.rejects(core.resume(first.continuation.id,{values:{reference:'changed-reference',membershipCode:'MEM-99'}}),{code:'CONTINUATION_CONFLICT'});
   assert.deepEqual(submissions.map(entry=>entry.kind),['account']);
@@ -67,7 +67,7 @@ test('resume: changing a checkpointed value is rejected before another mutation'
 
 test('resume: continuation IDs are local to one core and disappear on close',async t=>{
   const {core,page}=await resumableFixture(t);
-  const first=await core.run('Save the account, then save its membership.',{values:{reference:'session-local'},settleTimeoutMs:100});
+  const first=await core.run('Save the account, then save its membership.',{values:{reference:'session-local'}});
   assert.ok(first.continuation?.id);
   const other=new JevBrowser({page,engine:resumeEngine()});
   t.after(async()=>{await other.close();});

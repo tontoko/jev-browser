@@ -112,7 +112,7 @@ test('checkpoints: failure after checkpoint one never recreates checkpoint one',
     if(name==='action')return candidate=>candidate?.target?.name==='Save account';return '__none__';
   });
   const page=await browser.newPage();await page.goto(service.url);const core=new JevBrowser({page,engine:decider});t.after(async()=>{await core.close();await page.close();await service.close();});
-  const result=await core.run('Save the account, then continue to the unavailable next stage.',{values:{reference:'once-042'},settleTimeoutMs:100});
+  const result=await core.run('Save the account, then continue to the unavailable next stage.',{values:{reference:'once-042'}});
   assert.equal(result.status,'stopped');assert.deepEqual(submissions,['account']);assert.equal(result.checkpoints.length,1);
 });
 
@@ -130,7 +130,7 @@ test('checkpoints: the same verified commit cannot be submitted twice without pr
     if(name==='action')return candidate=>candidate?.target?.name==='Save account';return '__none__';
   });
   const page=await browser.newPage();await page.goto(service.url);const core=new JevBrowser({page,engine:decider});t.after(async()=>{await core.close();await page.close();await service.close();});
-  const result=await core.run('Save this account once. Do not submit the same save twice.',{values:{reference:'duplicate-guard'},settleTimeoutMs:100});
+  const result=await core.run('Save this account once. Do not submit the same save twice.',{values:{reference:'duplicate-guard'}});
   assert.equal(result.status,'stopped');assert.equal(submissions.length,1);assert.equal(result.checkpoints.length,1);
 });
 
