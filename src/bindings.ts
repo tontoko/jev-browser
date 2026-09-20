@@ -51,7 +51,7 @@ export function privateFilter(inputs: InputBinding[]): <T>(data: T) => T {
   const escape = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const alternatives = [...publicTokens, ...[...replacements.keys()].filter(value => value.length >= 3)].sort((a,b) => b.length-a.length);
   const pattern = alternatives.length ? new RegExp(alternatives.map(escape).join('|'), 'g') : undefined;
-  const identifiers = new Set(['id','effectId','resultRecordId','ownerId','snapshotId','recordId','parentId','sourceId','control','path','valueKey','fieldName','formId','kind','status','reason','role','tag','inputType','type','key','direction','source','basis','choice','model']);
+  const identifiers = new Set(['id','effectId','resultRecordId','inputPaths','readback','unobserved','ownerId','snapshotId','recordId','parentId','sourceId','control','path','valueKey','fieldName','formId','kind','status','reason','role','tag','inputType','type','key','direction','source','basis','choice','model']);
   function walk(value: unknown): unknown {
     if (typeof value === 'string') {
       const exact = replacements.get(value);
