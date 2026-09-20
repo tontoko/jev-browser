@@ -73,7 +73,7 @@ test('resume adapters: MCP exposes and executes resume on the same core',async t
   t.after(async()=>{await client.close();await server.close();await core.close();await page.close();});
   await server.connect(serverTransport);await client.connect(clientTransport);
   const tools=await client.listTools();assert.ok(tools.tools.some(tool=>tool.name==='browser_resume'));
-  const first=await client.callTool({name:'browser_run',arguments:{instruction:'Save the account, then save its membership.',values:{reference:'mcp-reference'},settleTimeoutMs:100}});
+  const first=await client.callTool({name:'browser_run',arguments:{instruction:'Save the account, then save its membership.',values:{reference:'mcp-reference'}}});
   assert.notEqual(first.isError,true,JSON.stringify(first));
   const firstResult=first.structuredContent??JSON.parse(first.content.find(item=>item.type==='text').text);
   assert.equal(firstResult.reason,'missing-input');assert.ok(firstResult.continuation?.id);
@@ -88,7 +88,7 @@ test('resume adapters: persistent CLI session resumes, fresh one-shot core canno
   const env={...process.env,JEV_API_KEY:'fixture',JEV_BASE_URL:app.provider.url,JEV_SESSION_DIR:join(tmpdir(),`jev-resume-session-${process.pid}-${Date.now()}`)};
   try{
     const opened=await cli(env,['open',app.site.url,'--session',session]);assert.equal(opened.code,0,opened.stdout+opened.stderr);
-    const first=await cli(env,['run','--session',session,'--args',JSON.stringify({instruction:'Save the account, then save its membership.',values:{reference:'cli-reference'},settleTimeoutMs:100})]);
+    const first=await cli(env,['run','--session',session,'--args',JSON.stringify({instruction:'Save the account, then save its membership.',values:{reference:'cli-reference'}})]);
     assert.equal(first.code,2,first.stdout+first.stderr);const firstResult=JSON.parse(first.stdout).result;assert.ok(firstResult.continuation?.id);
     const second=await cli(env,['resume',firstResult.continuation.id,'--session',session,'--values',JSON.stringify({membershipCode:'CLI-42'})]);
     assert.equal(second.code,0,second.stdout+second.stderr);assert.equal(JSON.parse(second.stdout).result.status,'complete');

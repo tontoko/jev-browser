@@ -17,7 +17,7 @@ test('continuation paths: value echoes cannot replace structural checkpoint path
 
 test('continuation paths: a literal equal to its path remains resumable',async t=>{
   const app=await continuationFixture(t,browser,{count:2});
-  const first=await app.core.run(goal,{values:{email:'/email'},settleTimeoutMs:100});
+  const first=await app.core.run(goal,{values:{email:'/email'}});
   assert.equal(first.reason,'missing-input');
   assert.deepEqual(first.checkpoints[0].inputPaths,['/email']);
   const result=await app.core.resume(first.continuation.id,{values:{membershipCode:values.membershipCode}});

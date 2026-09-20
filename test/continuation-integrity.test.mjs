@@ -10,7 +10,7 @@ after(async()=>{await browser?.close();});
 
 test('continuation integrity: all stage values may be supplied in one request',async t=>{
   const app=await continuationFixture(t,browser);
-  const result=await app.core.run(goal,{values,settleTimeoutMs:100});
+  const result=await app.core.run(goal,{values});
   assert.equal(result.status,'complete',JSON.stringify(result));
   assert.deepEqual(app.submissions.map(x=>x.stage),['account','membership','reservation']);
   assert.deepEqual(app.submissions.map(x=>Object.values(x.data)[0]),Object.values(values));
@@ -20,7 +20,7 @@ test('continuation integrity: all stage values may be supplied in one request',a
 
 test('continuation integrity: changing an existing leaf into an object is rejected',async t=>{
   const app=await continuationFixture(t,browser,{count:2});
-  const first=await app.core.run(goal,{values:{email:values.email},settleTimeoutMs:100});
+  const first=await app.core.run(goal,{values:{email:values.email}});
   assert.ok(first.continuation?.id);
   await assert.rejects(app.core.resume(first.continuation.id,{values:{email:{address:'different@example.invalid'}}}),{code:'CONTINUATION_CONFLICT'});
   assert.equal(app.submissions.length,1);
@@ -28,7 +28,7 @@ test('continuation integrity: changing an existing leaf into an object is reject
 
 test('continuation integrity: a new origin cannot consume old verified work',async t=>{
   const app=await continuationFixture(t,browser,{count:2});
-  const first=await app.core.run(goal,{values:{email:values.email},settleTimeoutMs:100});
+  const first=await app.core.run(goal,{values:{email:values.email}});
   assert.ok(first.continuation?.id);
   await app.page.route('https://other.example.invalid/',route=>route.fulfill({contentType:'text/html',body:'<p>Different account</p>'}));
   await app.page.goto('https://other.example.invalid/');
@@ -98,7 +98,7 @@ test('continuation integrity: scrolling cannot rearm a verified save',async t=>{
   });
   const page=await browser.newPage();await page.goto(service.url);const core=new JevBrowser({page,engine:decider});
   t.after(async()=>{await core.close();await page.close();await service.close();});
-  const result=await core.run('Save one record, then inspect the page below. Do not save again.',{values:{reference:'scroll-test'},maxSteps:5,settleTimeoutMs:100});
+  const result=await core.run('Save one record, then inspect the page below. Do not save again.',{values:{reference:'scroll-test'},maxSteps:5});
   assert.equal(submissions.length,1);assert.equal(result.checkpoints.length,1);
 });
 
@@ -139,7 +139,7 @@ test('caller verification: true assertion cannot override a false until',async t
 
 test('continuation review: empty object structure cannot be replaced by a scalar',async t=>{
   const app=await continuationFixture(t,browser,{count:2});
-  const first=await app.core.run(goal,{values:{email:values.email,metadata:{nested:{}}},settleTimeoutMs:100});
+  const first=await app.core.run(goal,{values:{email:values.email,metadata:{nested:{}}}});
   assert.ok(first.continuation?.id);
   await assert.rejects(app.core.resume(first.continuation.id,{values:{metadata:null}}),{code:'CONTINUATION_CONFLICT'});
   assert.equal(app.submissions.length,1);

@@ -20,6 +20,7 @@ function childEnvironment(){
   const env={JEV_API_KEY:process.env.JEV_API_KEY??process.env.TYPESAFE_API_KEY};
   if(process.env.JEV_MODEL)env.JEV_MODEL=process.env.JEV_MODEL;
   if(process.env.JEV_BASE_URL)env.JEV_BASE_URL=process.env.JEV_BASE_URL;
+  if(process.env.PLAYWRIGHT_BROWSERS_PATH)env.PLAYWRIGHT_BROWSERS_PATH=process.env.PLAYWRIGHT_BROWSERS_PATH;
   return env;
 }
 test('LIVE CLI: real Jev selects an action and JSONL retains its page result',async()=>{
