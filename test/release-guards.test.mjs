@@ -34,6 +34,8 @@ test('invalid constructor limits do not attach browser listeners', async t => {
 });
 test('interrupted native dialog execution is settled and the session remains usable', async t => {
  const { core, page } = await fixture(t, `<button onclick="alert('Stop')">Alert</button>`, { timeoutMs: 1000 });
+ // Readiness is setup; the one-second budget measures the interrupted dialog, not browser startup.
+ await page.locator('button').click({trial:true,timeout:10000});
  const r = await core.native({ command: 'click', target: 'button' }); assert.equal(r.status, 'dialog');
  await new Promise(resolve => setTimeout(resolve, 1100));
  await core.native({ command: 'handle_dialog', accept: false }).catch(() => undefined);
