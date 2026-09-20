@@ -138,12 +138,12 @@
 - MCP `browser_resume`.
 - Persistent CLI session required for continuation.
 
-- [ ] Write failing CLI/MCP adapter tests against one shared core.
-- [ ] Confirm one-shot/fresh-core resume returns `CONTINUATION_NOT_FOUND`.
-- [ ] Add command schema/dispatch and read/write annotations (resume is not read-only).
-- [ ] Extend installed tarball check to prove SDK/persistent CLI/MCP continuation path.
-- [ ] Run adapter and package checks; confirm GREEN.
-- [ ] Commit: `feat: expose goal resume through CLI and MCP`.
+- [x] Write failing CLI/MCP adapter tests against one shared core.
+- [x] Confirm one-shot/fresh-core resume returns `CONTINUATION_NOT_FOUND`.
+- [x] Add command schema/dispatch and read/write annotations (resume is not read-only).
+- [x] Extend installed tarball check to prove SDK/persistent CLI/MCP continuation path.
+- [x] Run adapter and package checks; confirm GREEN.
+- [x] Commit: `feat: expose goal resume through CLI and MCP`.
 
 ### Task 7: Neutral docs, real-Jev matrix, and release gate
 

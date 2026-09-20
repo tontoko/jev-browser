@@ -51,6 +51,7 @@ export function commandFromCLI(name: string, words: string[], values: ReturnType
   } else {
     if (['goto', 'navigate'].includes(name)) args.url = words[0] ?? values.url;
     else if (['act', 'observe', 'extract', 'run'].includes(name) && words.length) args.instruction = words.join(' ');
+    else if (name === 'resume') args.continuationId = words[0];
     else if (['click', 'hover', 'check'].includes(name)) { args.target = words[0]; if (alias === 'uncheck') args.checked = false; }
     else if (name === 'type') { args.target = words[0]; args.text = words.slice(1).join(' '); }
     else if (name === 'press_key') { args.key = words[0]; if (words[1]) args.target = words[1]; }

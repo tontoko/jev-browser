@@ -17,6 +17,7 @@ const help = `jev-browser — grounded Jev decisions and native Playwright, one 
   jev-browser act 'Click Save' --session work
   jev-browser extract 'Read title' --fields '{"title":"string"}' --session work
   jev-browser semantic_locate --args '{\"description\":\"The current plan control\"}' --session work\n  jev-browser semantic_compare --args '{\"actual\":{\"description\":\"Current plan\"},\"expected\":\"Professional annual plan\",\"minConfidence\":0.8}' --session work\n  jev-browser semantic_assert --args '{\"actual\":{\"description\":\"Billing status\"},\"expected\":\"Paid\",\"minConfidence\":0.9}' --session work\n  jev-browser assert --args '{"target":"h1","property":"text","expected":"Saved"}' --session work
+  jev-browser resume CONTINUATION_ID --values '{"membershipCode":"MEM-42"}' --session work
   jev-browser close --session work
   jev-browser sessions                  List sessions for this working directory
   jev-browser session                   JSONL stdin commands, one browser
@@ -43,8 +44,9 @@ Options:
   --allow-evaluate           Enable trusted page JS; never Node code execution
   --model NAME  --idle-timeout-ms N  --help  --version
 
-Native operations, snapshots and assertions need no API key. AI operations require
-JEV_API_KEY (or TYPESAFE_API_KEY). Sessions are local to the current directory.
+Native operations, snapshots and assertions need no API key. AI operations use
+JEV_API_KEY (or TYPESAFE_API_KEY), or a compatible JEV_BASE_URL. Sessions and
+continuation IDs are local to the current directory and running browser core.
 Exit codes: 0 succeeded, 1 error, 2 stopped/unverified run or pending dialog.
 Mutation failures are never automatically retried. Input values may appear on the page.
 `;

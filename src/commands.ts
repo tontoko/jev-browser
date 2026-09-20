@@ -6,6 +6,7 @@ import { nativeSchemas, nativeReadOnly, type NativeCommand, type NativeName } fr
 const scope = z.string().min(1).optional();
 const instruction = z.string().trim().min(1);
 const values = z.record(z.string().min(1), z.string()).optional();
+const runValues = z.record(z.string(),z.json()).optional();
 const fieldType = z.enum(['string', 'number', 'boolean']);
 const field = z.union([fieldType, z.object({ type: fieldType, description: z.string().optional(), nullable: z.boolean().optional() }).strict()]);
 const confidence = z.number().min(0).max(1).optional();
@@ -22,7 +23,8 @@ export const commandSchemas = {
   semantic_locate: z.object({ description: instruction, minConfidence: confidence, scope }).strict(),
   semantic_compare: z.object({ actual: semanticActual, expected: z.string().min(1), minConfidence: confidence, minSourceConfidence: confidence, scope }).strict(),
   semantic_assert: z.object({ actual: semanticActual, expected: z.string().min(1), minConfidence: confidence, minSourceConfidence: confidence, scope }).strict(),
-  run: z.object({ instruction, values: z.record(z.string(),z.json()).optional(), scope, maxSteps: z.number().int().positive().optional(), maxDecisions:z.number().int().positive().optional(),decisionRetries:z.number().int().min(0).max(2).optional(),settleTimeoutMs:z.number().int().positive().optional(),timeoutMs:z.number().int().positive().optional(),expect:z.union([nativeSchemas.assert,z.array(nativeSchemas.assert).min(1)]).optional() }).strict(),
+  run: z.object({ instruction, values: runValues, scope, maxSteps: z.number().int().positive().optional(), maxDecisions:z.number().int().positive().optional(),decisionRetries:z.number().int().min(0).max(2).optional(),settleTimeoutMs:z.number().int().positive().optional(),timeoutMs:z.number().int().positive().optional(),expect:z.union([nativeSchemas.assert,z.array(nativeSchemas.assert).min(1)]).optional() }).strict(),
+  resume: z.object({ continuationId: z.string().min(1), values: runValues, scope, timeoutMs:z.number().int().positive().optional() }).strict(),
   screenshot: z.object({}).strict(),
   close: z.object({}).strict(),
 };
@@ -39,6 +41,7 @@ const descriptions: Partial<Record<CommandName, string>> = {
   semantic_compare: 'Compare grounded actual evidence with caller expected meaning. Exact local equality avoids Jev; semantic outcomes include confidence, threshold and evidence.',
   semantic_assert: 'Read-only semantic assertion. Passed requires equivalent at/above threshold; different or inconclusive results are errors. Deterministic assertions remain available separately.',
   run: 'Complete a goal with supplied nested JSON inputs. Independent field judgments are batched; browser writes are serial. Saved results require readback or explicit expect assertions. Returns input coverage, effect state, usage and partial progress on errors.',
+  resume: 'Resume an opaque continuation in the same browser session. New nested values may be added; existing values cannot change. Unknown commits reconcile read-only before any mutation.',
   assert: 'Deterministically assert a page/element fact with Playwright polling. Failure is an error, never a model opinion.',
   click: 'Click a snapshot ref or caller-authored Playwright selector. element is a human-readable description, not a selector. No model call.',
   type: 'Fill or type literal text into a snapshot ref or selector. submit presses Enter.',
@@ -76,6 +79,7 @@ export async function executeCommand(browser: JevBrowser, request: Command, sign
     case 'observe': return { plan: await browser.observe(request.instruction, options) };
     case 'act': return browser.act(request.planId ? { id: request.planId } : request.instruction!, options);
     case 'run': { const {command,instruction,...runOptions}=request;return browser.run(instruction,{...runOptions,signal}); }
+    case 'resume': return browser.resume(request.continuationId,{values:request.values,scope:request.scope,timeoutMs:request.timeoutMs,signal});
     case 'semantic_locate': return browser.locateSemantic(request.description, { ...options, minConfidence: request.minConfidence });
     case 'semantic_compare': return browser.compareSemantic({ actual: request.actual, expected: request.expected, minConfidence: request.minConfidence, minSourceConfidence: request.minSourceConfidence }, options);
     case 'semantic_assert': return browser.assertSemantic({ actual: request.actual, expected: request.expected, minConfidence: request.minConfidence, minSourceConfidence: request.minSourceConfidence }, options);
