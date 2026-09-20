@@ -119,7 +119,7 @@ test('continuation integrity: input objects are captured before awaiting provide
   const initial={email:values.email},decider=stagedDecider(2),decide=decider.decide.bind(decider);let changed=false;
   decider.decide=async(...args)=>{if(!changed){initial.email='changed@example.invalid';changed=true;}return decide(...args);};
   const app=await continuationFixture(t,browser,{count:2,decider});
-  const first=await app.core.run(goal,{values:initial,settleTimeoutMs:100});
+  const first=await app.core.run(goal,{values:initial});
   assert.ok(first.continuation?.id);
   const second=await app.core.resume(first.continuation.id,{values:{membershipCode:values.membershipCode}});
   assert.equal(second.status,'complete',JSON.stringify(second));assert.equal(app.submissions[0].data.a7,values.email);
