@@ -1,4 +1,4 @@
-import { runGoal, type PendingCommitState, type RunSeed } from './runner.js';
+import { runGoal, type PendingCommitState, type RunSeed, type ResolvedInput } from './runner.js';
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { chromium, firefox, webkit, type Page, type ElementHandle } from 'playwright';
@@ -19,8 +19,8 @@ interface Operation { signal: AbortSignal; deadline: number }
 const pageLeases = new WeakMap<Page, JevBrowser>();
 interface Pending { plan: ActionPlan; captured: Captured; values: Record<string, string> }
 interface CarriedState { inputPaths: string[]; context: string }
-interface ContinuationState { carried?: CarriedState; page: Page; origin: string; instruction: string; options: RunOptions; checkpoints: GoalCheckpoint[]; checkpointedInputs: string[]; pendingUnknown?: PendingCommitState; verifiedActionKeys?: string[] }
-interface GoalExecution { carried?: CarriedState; result: RunResult; error?: BrowserError; pendingUnknown?: PendingCommitState; verifiedActionKeys?: string[] }
+interface ContinuationState { resolutions?: ResolvedInput[]; carried?: CarriedState; page: Page; origin: string; instruction: string; options: RunOptions; checkpoints: GoalCheckpoint[]; checkpointedInputs: string[]; pendingUnknown?: PendingCommitState; verifiedActionKeys?: string[] }
+interface GoalExecution { resolutions?: ResolvedInput[]; carried?: CarriedState; result: RunResult; error?: BrowserError; pendingUnknown?: PendingCommitState; verifiedActionKeys?: string[] }
 const json = (value: unknown): EntryType => JSON.parse(JSON.stringify(value)) as EntryType;
 function positiveInteger(value: number, name: string): number {
   if (!Number.isSafeInteger(value) || value < 1) throw new BrowserError('CONFIG', `${name} must be a positive integer.`);
@@ -344,6 +344,11 @@ export class JevBrowser {
     } };
   }
   private validateRunOptions(options: RunOptions): void {
+    if(options.semanticInputs!==undefined){
+      const policy=options.semanticInputs;
+      if(!policy||typeof policy!=='object'||Array.isArray(policy)||![Object.prototype,null].includes(Object.getPrototypeOf(policy))||Object.entries(policy).some(([path,threshold])=>!path.startsWith('/')||/~(?:[^01]|$)/.test(path)||typeof threshold!=='number'||!Number.isFinite(threshold)||threshold<0||threshold>1))
+        throw new BrowserError('INVALID_ARGUMENT','semanticInputs maps explicit JSON Pointer input paths to confidence thresholds within [0,1].');
+    }
     if(options.expect!==undefined){
       const conditions=Array.isArray(options.expect)?options.expect:[options.expect];
       if(!conditions.length||conditions.some(condition=>!nativeSchemas.assert.safeParse(condition).success))
@@ -352,13 +357,14 @@ export class JevBrowser {
   }
   private storedRunOptions(options: RunOptions): RunOptions {
     const {signal: _signal,...stored}=options;
-    return {...stored,...(options.values?{values:structuredClone(options.values)}:{}),...(options.expect?{expect:structuredClone(options.expect)}:{})};
+    return {...stored,...(options.semanticInputs?{semanticInputs:structuredClone(options.semanticInputs)}:{}),...(options.values?{values:structuredClone(options.values)}:{}),...(options.expect?{expect:structuredClone(options.expect)}:{})};
   }
   private async executeGoal(operation: Operation, instruction: string, options: RunOptions, seed: RunSeed = {}): Promise<GoalExecution> {
     await this.invalidate();
     let pendingUnknown:PendingCommitState|undefined=seed.pendingUnknown;
     const verifiedActionKeys=new Set(seed.verifiedActionKeys??[]);
     let carriedInputs:string[]=[];
+    let resolutions=structuredClone(seed.resolutions??[]);
     let result:RunResult, failure:BrowserError|undefined;
     try {result=await runGoal({
       page: () => this.page, capture: () => capture(this.page,{...this.limits,scope:options.scope}),
@@ -375,6 +381,7 @@ export class JevBrowser {
       },
       rememberPendingCommit: state => { pendingUnknown=state; },
       rememberCarriedInputs: paths => { carriedInputs=paths; },
+      rememberResolutions: resolved => { resolutions=resolved; },
       rememberCheckpointAction: key => { verifiedActionKeys.add(key);pendingUnknown=undefined; },
       candidateLimit:this.limits.maxCandidates,
     },instruction,options,seed);
@@ -390,10 +397,10 @@ export class JevBrowser {
       try{carried={inputPaths:carriedInputs,context:JSON.stringify([observed.rawURL,observed.changeKeys])};}
       finally{await observed.dispose();}
     }
-    return {result,...(failure?{error:failure}:{}),...(pendingUnknown?{pendingUnknown}:{}),...(carried?{carried}:{}),...(verifiedActionKeys.size?{verifiedActionKeys:[...verifiedActionKeys]}:{})};
+    return {result,...(resolutions.length?{resolutions}:{}),...(failure?{error:failure}:{}),...(pendingUnknown?{pendingUnknown}:{}),...(carried?{carried}:{}),...(verifiedActionKeys.size?{verifiedActionKeys:[...verifiedActionKeys]}:{})};
   }
   private attachContinuation(execution: GoalExecution, instruction: string, options: RunOptions, existingId?: string): RunResult {
-    const {result,error,pendingUnknown,verifiedActionKeys,carried}=execution;
+    const {result,error,pendingUnknown,verifiedActionKeys,carried,resolutions}=execution;
     const finish=(value:RunResult):RunResult=>{if(error){error.partial=value;throw error;}return value;};
     if(result.status==='complete'){if(existingId)this.continuations.delete(existingId);return finish(result);}
     const checkpoints=result.checkpoints??[];
@@ -401,7 +408,7 @@ export class JevBrowser {
     const resumableUnknown=!!pendingUnknown;
     if(!resumableMissing&&!resumableUnknown){if(existingId)this.continuations.delete(existingId);return finish(result);}
     const id=existingId??randomUUID();
-    this.continuations.set(id,{...(carried?{carried:structuredClone(carried)}:{}),page:this.page,origin:pageOrigin(this.page),instruction,options:this.storedRunOptions(options),checkpoints:structuredClone(checkpoints),checkpointedInputs:[...new Set(checkpoints.flatMap(checkpoint=>checkpoint.inputPaths))],...(pendingUnknown?{pendingUnknown:structuredClone(pendingUnknown)}:{}),...(verifiedActionKeys?{verifiedActionKeys:[...verifiedActionKeys]}:{})});
+    this.continuations.set(id,{...(resolutions?{resolutions:structuredClone(resolutions)}:{}),...(carried?{carried:structuredClone(carried)}:{}),page:this.page,origin:pageOrigin(this.page),instruction,options:this.storedRunOptions(options),checkpoints:structuredClone(checkpoints),checkpointedInputs:[...new Set(checkpoints.flatMap(checkpoint=>checkpoint.inputPaths))],...(pendingUnknown?{pendingUnknown:structuredClone(pendingUnknown)}:{}),...(verifiedActionKeys?{verifiedActionKeys:[...verifiedActionKeys]}:{})});
     return finish({...result,continuation:{id,reason:result.reason,...(pendingUnknown?{pendingEffect:'commit' as const}:{})}});
   }
   async run(instruction: string, options: RunOptions = {}): Promise<RunResult> {
@@ -427,7 +434,7 @@ export class JevBrowser {
           throw new BrowserError('CONTINUATION_CONTEXT_CHANGED','The paused wizard view changed; carried input cannot be reused.');}
         finally{await observed.dispose();}
       }
-      return this.attachContinuation(await this.executeGoal(operation,state.instruction,runOptions,{checkpoints:state.checkpoints,checkpointedInputs:state.checkpointedInputs,carriedInputs:state.carried?.inputPaths,pendingUnknown:state.pendingUnknown,verifiedActionKeys:state.verifiedActionKeys}),state.instruction,runOptions,continuationId);
+      return this.attachContinuation(await this.executeGoal(operation,state.instruction,runOptions,{resolutions:state.resolutions,checkpoints:state.checkpoints,checkpointedInputs:state.checkpointedInputs,carriedInputs:state.carried?.inputPaths,pendingUnknown:state.pendingUnknown,verifiedActionKeys:state.verifiedActionKeys}),state.instruction,runOptions,continuationId);
     });
   }
   private async chooseAction(instruction: string, options: ActOptions, operation: Operation, history: unknown[], allowDone: boolean): Promise<ActionPlan | null | 'done'> {

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { applyCombobox } from './widgets.js';
+import {resolveInputSelections,selectionTarget} from './selection.js';
 import type { Page } from 'playwright';
 import type { DecisionEngine, DecisionRequest, DecisionResult } from './decision.js';
 import { BrowserError } from './errors.js';
@@ -8,10 +9,11 @@ import { decideFrontier, type DecisionUsage } from './frontier.js';
 import { bindingQuestions, flattenInputs, inputAction, inputMetadata, matchesControl, privateFilter, publicInputs, readControl, bindingAuthority, nativeFormValid, nativeFormBusy, reuseQuestions, needsBinding, sameNativeForm, type InputBinding } from './bindings.js';
 import { recordCounts, verifyReadback, waitForRelevantChange } from './completion.js';
 import type { Captured, ElementRef, RegionIndex } from './observation.js';
-import type { ActionPlan, ActResult, GoalCheckpoint, GroundedAction, OperationContext, RunEffect, RunOptions, RunResult, RunVerification, RunAssertion } from './types.js';
+import type { ActionPlan, ActResult, GoalCheckpoint, GroundedAction, OperationContext, RunEffect, RunOptions, RunResult, RunVerification, RunAssertion, RunBlocker, SelectionResolution } from './types.js';
 
 export interface PendingCommitState { effectId: string; before?: [string,number][]; inputPaths: string[]; actionKey: string }
-export interface RunSeed { carriedInputs?: string[]; checkpoints?: GoalCheckpoint[]; checkpointedInputs?: string[]; pendingUnknown?: PendingCommitState; verifiedActionKeys?: string[] }
+export interface ResolvedInput {path:string;resolution:SelectionResolution}
+export interface RunSeed { resolutions?: ResolvedInput[]; carriedInputs?: string[]; checkpoints?: GoalCheckpoint[]; checkpointedInputs?: string[]; pendingUnknown?: PendingCommitState; verifiedActionKeys?: string[] }
 
 export interface RunHost {
   page(): Page;
@@ -24,6 +26,7 @@ export interface RunHost {
   perform(plan: ActionPlan, captured: Captured, values: Record<string,string>, started: () => void): Promise<ActResult>;
   assert(condition: RunAssertion): Promise<void>;
   rememberCarriedInputs?(paths: string[]): void;
+  rememberResolutions?(inputs: ResolvedInput[]): void;
   rememberPendingCommit?(state: PendingCommitState): void;
   rememberCheckpointAction?(key: string): void;
   candidateLimit: number;
@@ -45,6 +48,7 @@ export async function runGoal(host: RunHost, instruction: string, options: RunOp
   const inputs = flattenInputs(options.values), checkpointed=new Set(seed.checkpointedInputs??[]), priorReadback=new Set((seed.checkpoints??[]).flatMap(checkpoint=>checkpoint.verification.readback));
   for(const input of inputs)if(checkpointed.has(input.path)){input.checkpointed=true;input.applied=true;input.readback=priorReadback.has(input.path);}
   for(const input of inputs)if(seed.carriedInputs?.includes(input.path))input.applied=true;
+  for(const input of inputs){const resolved=seed.resolutions?.find(resolved=>resolved.path===input.path);if(resolved)input.resolution=structuredClone(resolved.resolution);}
   const filter = privateFilter(inputs), runSignal = host.operation().signal;
   const maxSteps = positive(options.maxSteps ?? 100, 'maxSteps');
   const maxDecisions = positive(options.maxDecisions ?? 32, 'maxDecisions');
@@ -56,16 +60,20 @@ export async function runGoal(host: RunHost, instruction: string, options: RunOp
   const regionIndexes:RegionIndex[]=[],regionHistory:NonNullable<RunResult['regions']>=[];
   const activeRegions=new Map<string,{ref:ElementRef;url:string}>();
   let verification: RunVerification | undefined;
+  let blockers:RunBlocker[]=[];
   let callerRejectedDone=false;
   const verifiedActionKeys=new Set(seed.verifiedActionKeys??[]);
   let transitioning=new Set<InputBinding>();
   let lastDecision: Omit<DecisionResult,'answers'> = {}, commit: RunEffect | undefined;
   const finish = (status: RunResult['status'], reason: RunResult['reason']): RunResult => {
+    host.rememberResolutions?.(inputs.flatMap(input=>input.resolution?[{path:input.path,resolution:structuredClone(input.resolution)}]:[]));
     host.rememberCarriedInputs?.(inputs.filter(input=>input.applied&&!input.checkpointed&&(!input.ref||transitioning.has(input))).map(input=>input.path));
-    return filter({status, reason, steps, ...(regionHistory.length?{regions:regionHistory}:{}), inputs: publicInputs(inputs), effects, ...(checkpoints.length?{checkpoints}:{}), usage, ...(verification ? { verification } : {})});
+    return filter({status, reason, steps, ...(blockers.length?{blockers}:{}), ...(regionHistory.length?{regions:regionHistory}:{}), inputs: publicInputs(inputs), effects, ...(checkpoints.length?{checkpoints}:{}), usage, ...(verification ? { verification } : {})});
   };
-  async function decide(request: DecisionRequest): Promise<DecisionResult> {
+  async function decide(request: DecisionRequest, disclosed?: Record<string,string|string[]>): Promise<DecisionResult> {
     const filtered = filter(request) as DecisionRequest;
+    // Only the explicit selection comparison receives its opted-in literal values.
+    if(disclosed)filtered.state={...(filtered.state as Record<string,never>),suppliedSelections:structuredClone(disclosed)};
     const { signal } = host.operation(); signal.throwIfAborted();
     let result: DecisionResult;
     try {
@@ -276,6 +284,16 @@ Input bindings listed in state.inputs are available locally, not missing. Their 
         if(await wait(observed)){lastRequest='';continue;}
         return finish('stopped','validation');
       }
+      const unresolvedSelections=planned.filter(entry=>entry.target.tag==='select'&&!entry.operation);
+      const knownBindings=planned.some(entry=>!!entry.operation);
+      let selectionBlockers:RunBlocker[]=[];
+      if(unresolvedSelections.length&&!knownBindings){
+        selectionBlockers=await resolveInputSelections(unresolvedSelections,options.semanticInputs??{},decide);
+        for(const entry of unresolvedSelections){
+          entry.operation=inputAction(entry.input,entry.target);
+          if(entry.input.resolution)confidences.set(entry.input,Math.min(confidences.get(entry.input)!,entry.input.resolution.confidence));
+        }
+      }
       const beforeInputs=steps.length;
       let stale=false;
       for(const {input,target,operation,ref}of planned){
@@ -300,6 +318,12 @@ Input bindings listed in state.inputs are available locally, not missing. Their 
         input.applied=true;input.ref=ref;input.target=target.id;
       }
       if(stale)continue;
+      // Apply ready bindings before resolving options that they may change.
+      if(unresolvedSelections.length&&knownBindings){lastRequest='';continue;}
+      if(selectionBlockers.length){
+        if(steps.length>beforeInputs)continue;
+        blockers=selectionBlockers;return finish('stopped','unresolved-input');
+      }
       if(choice==='__inputs__')continue;
       if(!action){
         if(await callerCondition()||!options.until&&await callerAssertions())return finish('complete','verified');

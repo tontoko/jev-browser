@@ -20,6 +20,7 @@ export async function resolveInputSelections(
     const desired=Array.isArray(input.value)?input.value:[input.value];
     if(!desired.length||desired.some(value=>typeof value!=='string'||!value.trim())||!target.multiple&&desired.length!==1){blocker('unsupported-selection');continue;}
     const options=(target.options??[]).filter(option=>!option.disabled);
+    if(target.multiple&&target.options?.some(option=>option.selected&&option.disabled)){blocker('unsupported-selection');continue;}
     if(!options.length){blocker('no-match');continue;}
     suppliedSelections[input.path]=Array.isArray(input.value)?desired as string[]:desired[0] as string;
     const groups:string[][]=[];
