@@ -132,7 +132,7 @@ export function observe(options: { maxElements: number; maxTexts: number }, scop
     const parent = recordNodes.findIndex(other => other !== el && other.contains(el) && !recordNodes.some(between => between !== other && between !== el && other.contains(between) && between.contains(el)));
     return { index, parent: parent < 0 ? undefined : parent, readOnly: !el.matches('form,input,textarea,select,[contenteditable="true"]') && !el.querySelector('input,textarea,select,[contenteditable="true"]'), context: normalize((el as HTMLElement).innerText).slice(0, 1000), texts: textNodes.flatMap((node, i) => el === node || el.contains(node) ? [i] : []) };
   });
-  return { nodes, elements, texts, records, recordInventoryComplete:scanned<=6000, truncatedElements, truncatedTexts, changeKey: String(progressChanged()), busy: !!document.querySelector('[aria-busy="true"]') };
+  return { nodes, textNodes, elements, texts, records, recordInventoryComplete:scanned<=6000, truncatedElements, truncatedTexts, changeKey: String(progressChanged()), busy: !!document.querySelector('[aria-busy="true"]') };
 }
 
 /** No global text search: options must belong to the popup declared by this control. */
@@ -163,4 +163,19 @@ export function regionNodes(): Element[] {
 export function regionDescription(element:Element){
   const d=describe(element);
   return {...d,info:{...d.info,role:d.info.role||element.tagName.toLowerCase(),name:d.info.name||normalize(element.querySelector('h1,h2,h3,legend')?.textContent)}};
+}
+
+/** Re-read only a selected semantic source. No selectors or code from the model. */
+export function readSemanticText(el: Element, attribute?: string) {
+  if (!el.isConnected || !visible(el)) return null;
+  const role = getRole(el) ?? '';
+  if (attribute === 'href') {
+    if (!(el instanceof HTMLAnchorElement) || !el.hasAttribute('href')) return null;
+    return {text:el.href,context:`${computeAccessibleName(el)} ${context(el)}`,role:'link',attribute:'href'};
+  }
+  if (['checkbox','radio','switch'].includes(role)) {
+    const d=describe(el);
+    return {text:d.info.name,context:d.info.context,role,...(typeof d.info.checked==='boolean'?{value:d.info.checked}:{})};
+  }
+  return {text:normalize((el as HTMLElement).innerText ?? el.textContent),context:context(el),role};
 }

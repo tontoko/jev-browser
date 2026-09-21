@@ -6,7 +6,7 @@ import { z } from 'zod';
 import type { EntryType } from '@typesafe-ai/sdk';
 import { JevDecisionEngine, type DecisionEngine, type DecisionRequest } from './decision.js';
 import { BrowserError } from './errors.js';
-import { capture, publicURL, verifyTarget, captureComboboxChoice, captureRegions, verifyOwnedOption, type Captured } from './observation.js';
+import { capture, publicURL, verifyTarget, currentSemanticEvidence, captureComboboxChoice, captureRegions, verifyOwnedOption, type Captured } from './observation.js';
 import { actionCandidates, actionDescription, modelElementId, inputBindings, modelElement, resolveSelectChoice } from './actions.js';
 import { flattenInputs } from './bindings.js';
 import { extractStructured } from './structured.js';
@@ -212,7 +212,7 @@ export class JevBrowser {
     if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1) throw new BrowserError('INVALID_ARGUMENT','Semantic target confidence must be between 0 and 1.');
     return { evidence: elementEvidence(ref.info), sourceSemantic: semantic, sourceConfidence: confidence };
   }
-  async compareSemanticBatch(requests: SemanticComparisonRequest[], options: SemanticCompareOptions = {}): Promise<SemanticComparisonResult[]> {
+  private async compareSemanticBatchMode(requests: SemanticComparisonRequest[], options: SemanticCompareOptions, live: boolean): Promise<SemanticComparisonResult[]> {
     if (!Array.isArray(requests)) throw new BrowserError('INVALID_ARGUMENT','Semantic comparison requests must be an array.');
     const thresholds = requests.map(request => semanticThreshold(request.minConfidence ?? options.minConfidence));
     const sourceThresholds = requests.map((request,index) => semanticThreshold(request.minSourceConfidence ?? options.minSourceConfidence, 'minSourceConfidence', thresholds[index]!));
@@ -227,24 +227,46 @@ export class JevBrowser {
       }
       const needsObservation = work.some(item => !item.evidence);
       const observationStarted = performance.now();
-      const observed = needsObservation ? await capture(this.page,{...this.limits,scope:options.scope}) : undefined;
+      const observed = needsObservation ? await capture(this.page,{...this.limits,scope:options.scope,semanticRefs:live}) : undefined;
       const observationMs = needsObservation ? performance.now()-observationStarted : 0;
       try {
         operation.signal.throwIfAborted();
-        const results = await compareSemanticWork(observed?.data,work,this.engine(),operation.signal,this.limits.maxCandidates);
-        for (const result of results) result.usage.observationMs += observationMs;
+        const results = await compareSemanticWork(observed?.data,work,{decide:(request,options)=>this.engine().decide(request,options)},operation.signal,this.limits.maxCandidates);
+        for (const result of results) { result.usage.observationMs += observationMs; result.freshness = 'snapshot'; }
+        if (live) {
+          const started = performance.now();
+          await Promise.all(results.map(async result => {
+            const source = observed?.textRefs?.has(result.evidence.sourceId) || observed?.refs.has(result.evidence.sourceId) ? observed : this.snapshotCapture;
+            const current = source ? await currentSemanticEvidence(this.page,source,result.evidence) : undefined;
+            result.freshness = current && isDeepStrictEqual(current,result.evidence) ? 'verified' : 'changed';
+            if (result.freshness === 'changed') { result.status='inconclusive'; if (current) result.currentEvidence=current; }
+          }));
+          operation.signal.throwIfAborted();
+          for (const result of results) result.usage.verificationMs += performance.now()-started;
+        }
         return results;
       } finally { await observed?.dispose(); }
     });
+  }
+  async compareSemanticBatch(requests: SemanticComparisonRequest[], options: SemanticCompareOptions = {}): Promise<SemanticComparisonResult[]> {
+    return this.compareSemanticBatchMode(requests,options,false);
   }
   async compareSemantic(request: SemanticComparisonRequest, options: SemanticCompareOptions = {}): Promise<SemanticComparisonResult> {
     return (await this.compareSemanticBatch([request],options))[0]!;
   }
   async assertSemantic(request: SemanticComparisonRequest, options: SemanticCompareOptions = {}): Promise<SemanticComparisonResult> {
-    const result = await this.compareSemantic(request,options);
-    if (result.status === 'failed') throw new BrowserError('SEMANTIC_ASSERTION_FAILED',`Semantic assertion differed at confidence ${result.confidence.toFixed(3)} (threshold ${result.threshold.toFixed(3)}).`);
-    if (result.status === 'inconclusive') throw new BrowserError('SEMANTIC_ASSERTION_INCONCLUSIVE',`Semantic assertion was inconclusive at confidence ${result.confidence.toFixed(3)} (threshold ${result.threshold.toFixed(3)}).`);
-    return result;
+    return (await this.assertSemanticBatch([request],options))[0]!;
+  }
+  async assertSemanticBatch(requests: SemanticComparisonRequest[], options: SemanticCompareOptions = {}): Promise<SemanticComparisonResult[]> {
+    const results = await this.compareSemanticBatchMode(requests,options,true);
+    const index = results.findIndex(result => result.status !== 'passed');
+    if (index < 0) return results;
+    const result = results[index]!;
+    const code = result.status === 'failed' ? 'SEMANTIC_ASSERTION_FAILED' : 'SEMANTIC_ASSERTION_INCONCLUSIVE';
+    const reason = result.freshness === 'changed' ? 'the evidence changed during verification' : `comparison ${result.confidence.toFixed(3)}/${result.threshold.toFixed(3)}, source ${result.sourceConfidence.toFixed(3)}/${result.sourceThreshold.toFixed(3)}`;
+    const error = new BrowserError(code,`Semantic assertion ${index} ${result.status}: ${reason}.`);
+    error.semantic = {results,expected:requests.map(request=>request.expected)};
+    throw error;
   }
   async screenshot(options: OperationOptions = {}): Promise<Buffer> {
     return this.exclusive(options, async operation => {

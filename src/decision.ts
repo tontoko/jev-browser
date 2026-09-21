@@ -9,6 +9,7 @@ export interface DecisionRequest {
 export interface DecisionResult {
   answers: Record<string, { choice: string; confidence: number }>;
   model?: string;
+  models?: string[];
   usage?: Usage;
   elapsedMs?: number;
 }

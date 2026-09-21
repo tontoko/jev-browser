@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import type { ElementHandle, JSHandle, Page, Frame } from 'playwright';
-import type { Snapshot, ElementInfo } from './types.js';
+import type { Snapshot, ElementInfo, SemanticEvidence } from './types.js';
 import { BrowserError } from './errors.js';
 import type * as DOM from './dom.js';
 
@@ -15,15 +15,17 @@ export interface ElementRef { frame: Frame; handle: ElementHandle<Element>; sign
 export interface Captured {
   data: Snapshot;
   refs: Map<string, ElementRef>;
+  textRefs?: Map<string, { frame: Frame; handle: ElementHandle<Element> }>;
   rawURL: string;
   changeKeys: Record<number, string>;
   dispose(): Promise<void>;
 }
-export async function capture(page: Page, options: { scope?: string; recordsScope?: string; maxElements: number; maxTexts: number; selection?: {frame:Frame;roots:ElementHandle<Element>[]} }): Promise<Captured> {
+export async function capture(page: Page, options: { semanticRefs?: boolean; scope?: string; recordsScope?: string; maxElements: number; maxTexts: number; selection?: {frame:Frame;roots:ElementHandle<Element>[]} }): Promise<Captured> {
   const refs = new Map<string, ElementRef>();
+  const textRefs = new Map<string, { frame: Frame; handle: ElementHandle<Element> }>();
   const changeKeys: Record<number,string> = {};
   const owned: JSHandle[] = [];
-  const dispose = async () => { await Promise.allSettled(owned.splice(0).map(handle => handle.dispose())); refs.clear(); };
+  const dispose = async () => { await Promise.allSettled(owned.splice(0).map(handle => handle.dispose())); refs.clear(); textRefs.clear(); };
   const rawURL = page.url();
   const data: Snapshot = {
     id: randomUUID(), url: publicURL(rawURL), title: await page.title(), elements: [], texts: [], records: [],
@@ -58,6 +60,15 @@ export async function capture(page: Page, options: { scope?: string; recordsScop
         data.elements.push(info);
         refs.set(id, { frame, handle: element as ElementHandle<Element>, signature: description.signature, info });
       }
+      if (options.semanticRefs) {
+        const textNodes = await result.getProperty('textNodes'); owned.push(textNodes);
+        const textProperties = await textNodes.getProperties();
+        for (const [index, handle] of textProperties) {
+          owned.push(handle);
+          const element = handle.asElement();
+          if (element && observed.texts[Number(index)]) textRefs.set(`t${frameIndex}_${index}`, {frame,handle:element as ElementHandle<Element>});
+        }
+      }
       data.texts.push(...observed.texts.map((text, i) => ({ ...text, id: `t${frameIndex}_${i}`, frame: frameIndex })));
       data.records!.push(...observed.records.map(r => ({ id: `record${frameIndex}_${r.index}`, frame: frameIndex, context: r.context, readOnly: r.readOnly, textIds: r.texts.map(i => `t${frameIndex}_${i}`), ...(r.parent !== undefined ? { parentId: `record${frameIndex}_${r.parent}` } : {}) })));
       data.recordInventoryComplete &&= observed.recordInventoryComplete;
@@ -66,7 +77,7 @@ export async function capture(page: Page, options: { scope?: string; recordsScop
     }
     data.truncated = data.truncatedElements || data.truncatedTexts;
     if (page.url() !== rawURL) throw new BrowserError('STALE_SNAPSHOT', 'Page navigated while it was being observed. Observe again.');
-    return { data, refs, rawURL, changeKeys, dispose };
+    return { data, refs, textRefs, rawURL, changeKeys, dispose };
   } catch (error) { await dispose(); throw error; }
 }
 export async function verifyTarget(ref: ElementRef): Promise<void> {
@@ -135,4 +146,22 @@ export async function verifyOwnedOption(control:ElementRef,option:ElementRef):Pr
   if(control.frame!==option.frame)throw new BrowserError('STALE_TARGET','Option and its owner belong to different frames.');
   const check=new Function('element','option',`${source()}; const matches=JevDOM.matchingComboboxOptions(element,${JSON.stringify(option.info.name)}); return matches.length===1&&matches[0]===option;`) as (element:Element,option:Element)=>boolean;
   if(!await control.handle.evaluate(check,option.handle))throw new BrowserError('STALE_TARGET','The option no longer uniquely belongs to the observed combobox.');
+}
+
+/** Re-read the same observed source rather than a same-position replacement. */
+export async function currentSemanticEvidence(page: Page, captured: Captured, evidence: SemanticEvidence): Promise<SemanticEvidence | undefined> {
+  if (page.url() !== captured.rawURL) return;
+  const element = captured.refs.get(evidence.sourceId);
+  const text = captured.textRefs?.get(evidence.sourceId);
+  const ref = element ?? text;
+  if (!ref || page.frames()[evidence.frame] !== ref.frame) return;
+  try {
+    if (element) {
+      await verifyTarget(element);
+      return {...evidence};
+    }
+    const read = new Function('element','attribute', `${source()}; return JevDOM.readSemanticText(element,attribute);`) as (element:Element,attribute?:string)=>ReturnType<typeof DOM.readSemanticText>;
+    const value = await ref.handle.evaluate(read,evidence.attribute);
+    return value ? {sourceId:evidence.sourceId,frame:evidence.frame,...value} : undefined;
+  } catch { return; }
 }
