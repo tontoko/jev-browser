@@ -57,7 +57,7 @@ export async function resolveInputSelections(
     }
     if(confidence<threshold)reason='low-confidence';
     if(reason){blocked.push({inputPath:input.path,target:selectionTarget(target),reason,confidence,threshold});continue;}
-    input.resolution={source:'semantic',confidence,threshold,options:[...new Map(chosen.map(option=>[option.index,option])).values()].sort((a,b)=>a.index-b.index)};
+    input.resolution={source:'semantic',...(result.model?{model:result.model}:{}),...(result.models?{models:result.models}:{}),confidence,threshold,options:[...new Map(chosen.map(option=>[option.index,option])).values()].sort((a,b)=>a.index-b.index)};
     input.resolutionTarget=target.id;
   }
   return blocked;

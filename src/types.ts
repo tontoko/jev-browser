@@ -109,7 +109,7 @@ export interface RunOptions extends OperationOptions {
   until?: (page: Page, operation: OperationContext) => Promise<boolean> | boolean;
 }
 export interface ResumeOptions extends OperationOptions { values?: Record<string, RunValue> }
-export interface SelectionResolution { source: 'semantic'; confidence: number; threshold: number; options: { index: number; label: string; value: string }[] }
+export interface SelectionResolution { source: 'semantic'; model?: string; models?: string[]; confidence: number; threshold: number; options: { index: number; label: string; value: string }[] }
 export interface RunBlocker { reason: 'semantic-permission-required' | 'no-match' | 'ambiguous' | 'low-confidence' | 'unsupported-selection' | 'missing-value'; inputPath?: string; target?: { ref: string; name: string; role: string; frame: number }; confidence?: number; threshold?: number }
 export interface RunInput { path: string; applied: boolean; readback: boolean; target?: string; resolution?: SelectionResolution }
 export interface RunEffect { id: string; kind: 'input' | 'advance' | 'commit'; status: 'attempted' | 'observed' | 'unknown'; input?: string }
