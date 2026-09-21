@@ -2,6 +2,7 @@
 
 ## 0.7.1
 
+- Jev can report missing caller data through the existing goal decision instead of falling back to generic no-match. The runtime no longer tells the model that all future-stage values necessarily exist; verified checkpoints remain resumable.
 - Preserve semantic evidence rather than compatibility-folding notation into deterministic truth. Literal equality remains local; notation/spacing differences reach Jev with the original captured text. Caller Locator text is no longer additionally whitespace-normalized.
 - Numeric extraction copies only supported numeric syntax, including its existing full-width digit/currency forms. Superscripts, subscripts and circled digits cannot silently become unrelated decimal values; no equation evaluator or synonym rules were added.
 - Structured extraction uses the shared parallel decision frontier. Independent transport chunks now overlap while preserving every question, per-record candidates/context, output order and per-request metadata.
