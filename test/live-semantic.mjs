@@ -81,13 +81,18 @@ test('LIVE semantic batch: independent sources and comparisons use two serial fr
     {actual:{description:'Renewal state'},expected:'Will renew automatically'},
   ],{minConfidence:0.8});
   console.log(JSON.stringify({case:'batch',results:results.map(result=>({status:result.status,choice:result.choice,confidence:result.confidence,sourceConfidence:result.sourceConfidence,evidence:result.evidence.text})),usage:results[0].usage,providerRequests:stats.requests}));
-  assert.ok(results.every(result=>result.choice==='equivalent'));
+  assert.deepEqual(results.map(result=>result.evidence.text),['Pro annual','Settled','Japan','Automatic renewal enabled']);
+  for(const result of results){
+    if(result.source==='semantic'&&result.sourceConfidence<result.sourceThreshold)assert.equal(result.choice,'insufficient_evidence');
+    else assert.equal(result.choice,'equivalent');
+  }
   assert.ok(results.every(result=>result.status===(result.confidence>=0.8&&result.sourceConfidence>=0.8?'passed':'inconclusive')));
-  assert.equal(results[0].usage.serialDecisionDepth,2);
-  assert.equal(stats.requests,2);
+  const expectedDepth=results.some(result=>result.source==='semantic'&&result.sourceConfidence>=result.sourceThreshold)?2:1;
+  assert.equal(results[0].usage.serialDecisionDepth,expectedDepth);
+  assert.equal(stats.requests,expectedDepth);
 });
 
-test('LIVE semantic: candidate order preserves the unique grounded source and semantic direction',async t=>{
+test('LIVE semantic: candidate order preserves the unique source and honors abstention',async t=>{
   const run=async html=>{
     const {core}=await semanticPage(t,html);
     return core.compareSemantic({actual:{description:'Current plan'},expected:'Professional annual subscription',minConfidence:0.8});
@@ -96,7 +101,11 @@ test('LIVE semantic: candidate order preserves the unique grounded source and se
   const second=await run('<dl><dt>Billing</dt><dd>Settled</dd><dt>Plan</dt><dd>Pro annual</dd></dl>');
   console.log(JSON.stringify({case:'candidate-order',first:{status:first.status,choice:first.choice,confidence:first.confidence,sourceConfidence:first.sourceConfidence,evidence:first.evidence.text},second:{status:second.status,choice:second.choice,confidence:second.confidence,sourceConfidence:second.sourceConfidence,evidence:second.evidence.text}}));
   assert.equal(first.evidence.text,'Pro annual');assert.equal(second.evidence.text,'Pro annual');
-  assert.equal(first.choice,'equivalent');assert.equal(second.choice,'equivalent');
+  for(const result of [first,second]){
+    if(result.sourceConfidence<result.sourceThreshold){
+      assert.equal(result.choice,'insufficient_evidence');assert.equal(result.usage.requests,1);
+    }else{assert.equal(result.choice,'equivalent');assert.equal(result.usage.requests,2);}
+  }
   assert.equal(first.status,first.confidence>=0.8&&first.sourceConfidence>=0.8?'passed':'inconclusive');
   assert.equal(second.status,second.confidence>=0.8&&second.sourceConfidence>=0.8?'passed':'inconclusive');
 });
