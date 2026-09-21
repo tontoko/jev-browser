@@ -78,7 +78,7 @@ export interface ActResult { status: 'executed' | 'dialog'; plan: ActionPlan; ur
 export interface OperationOptions { signal?: AbortSignal; scope?: string; timeoutMs?: number }
 export interface SemanticLocateOptions extends OperationOptions { minConfidence?: number }
 export interface SemanticEvidence { sourceId: string; frame: number; role: string; text: string; context: string; attribute?: string; value?: string | number | boolean }
-export interface SemanticTarget { ref: string; snapshotId: string; confidence: number; evidence: SemanticEvidence }
+export interface SemanticTarget { model?: string; models?: string[]; ref: string; snapshotId: string; confidence: number; evidence: SemanticEvidence }
 export type SemanticChoice = 'equivalent' | 'different' | 'insufficient_evidence';
 export type SemanticAssertionStatus = 'passed' | 'failed' | 'inconclusive';
 export type SemanticLocatorProperty = 'text' | 'value' | 'checked' | 'attribute';

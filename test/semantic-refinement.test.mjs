@@ -1,3 +1,4 @@
+import {semanticCandidates} from './helpers.mjs';
 import {test,before,after} from 'node:test';
 import assert from 'node:assert/strict';
 import {JevBrowser} from '../dist/index.js';
@@ -23,7 +24,7 @@ for(const models of [['A','B','A'],['A',undefined,'A']])test('frontier provenanc
 });
 
 for(const useAssertion of [false,true])test('semantic refinement: evidence change during discovery '+(useAssertion?'cannot pass live assertion':'retains explicit snapshot comparison'),async t=>{
-  let page,calls=0;const provider={async decide(r){calls++;const id=Object.entries(r.questions.source_0.criteria).find(([,v])=>v?.text==='Paid')?.[0];await page.locator('#status').evaluate(el=>el.textContent='Unpaid');return {answers:{source_0:{choice:id,confidence:0.99}},model:'fixture'};}};
+  let page,calls=0;const provider={async decide(r){calls++;const id=semanticCandidates(r.questions.source_0,r).find(([,v])=>v?.text==='Paid')?.[0];await page.locator('#status').evaluate(el=>el.textContent='Unpaid');return {answers:{source_0:{choice:id,confidence:0.99}},model:'fixture'};}};
   const fixture=await setup(t,'<dl><dt>Payment status</dt><dd id="status">Paid</dd></dl>',provider);page=fixture.page;
   const request={actual:{description:'Current payment status'},expected:'Paid'};
   if(useAssertion){await assert.rejects(fixture.core.assertSemantic(request),e=>e.code==='SEMANTIC_ASSERTION_INCONCLUSIVE'&&e.semantic?.results[0].freshness==='changed');}

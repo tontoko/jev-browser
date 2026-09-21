@@ -11,7 +11,7 @@ import { actionCandidates, actionDescription, modelElementId, inputBindings, mod
 import { flattenInputs } from './bindings.js';
 import { extractStructured } from './structured.js';
 import { NativeBrowser } from './native.js';
-import { compareSemanticWork, elementEvidence, locateSemanticTarget, semanticThreshold } from './semantic.js';
+import { compareSemanticWork, elementEvidence, locateSemanticTargets, semanticThreshold } from './semantic.js';
 import { parseNative, nativeSchemas, nativeReadOnly, type NativeCommand } from './native-schemas.js';
 import type { ActionPlan, ActOptions, ActResult, BrowserOptions, BrowserLaunchOptions, ExtractResult, ExtractOptions, GoalCheckpoint, OperationOptions, ResumeOptions, RunOptions, RunResult, RunValue, Snapshot, SemanticEvidence, SemanticLocateOptions, SemanticTarget, SemanticActual, SemanticCompareOptions, SemanticComparisonRequest, SemanticComparisonResult } from './types.js';
 
@@ -181,21 +181,26 @@ export class JevBrowser {
     });
   }
   async locateSemantic(description: string, options: SemanticLocateOptions = {}): Promise<SemanticTarget> {
-    const threshold = semanticThreshold(options.minConfidence);
-    if (!description.trim()) throw new BrowserError('INVALID_ARGUMENT','A semantic target description is required.');
-    return this.exclusive(options, async operation => {
-      await this.invalidate(); operation.signal.throwIfAborted();
-      const observed = await capture(this.page, { ...this.limits, scope: options.scope });
-      let retained = false;
-      try {
-        const { target } = await locateSemanticTarget(observed.data, description, this.engine(), operation.signal, threshold);
+    return (await this.locateSemanticBatch([description],options))[0]!;
+  }
+  async locateSemanticBatch(descriptions:string[], options:SemanticLocateOptions = {}):Promise<SemanticTarget[]> {
+    const threshold=semanticThreshold(options.minConfidence);
+    if(!Array.isArray(descriptions)||!descriptions.length||descriptions.some(description=>typeof description!=='string'||!description.trim()))
+      throw new BrowserError('INVALID_ARGUMENT','Nonempty semantic target descriptions are required.');
+    const tasks=[...descriptions];
+    return this.exclusive(options,async operation=>{
+      await this.invalidate();operation.signal.throwIfAborted();
+      const observed=await capture(this.page,{...this.limits,scope:options.scope});
+      let retained=false;
+      try{
+        const {targets}=await locateSemanticTargets(observed.data,tasks,this.engine(),operation.signal,threshold);
+        await Promise.all(targets.map(target=>verifyTarget(observed.refs.get(target.ref)!)));
         operation.signal.throwIfAborted();
-        this.snapshotCapture = observed; retained = true;
-        return target;
-      } finally { if (!retained) await observed.dispose(); }
+        this.snapshotCapture=observed;retained=true;return targets;
+      }finally{if(!retained)await observed.dispose();}
     });
   }
-  private async semanticActual(actual: SemanticActual, operation:Operation, scope?:string): Promise<{ description?: string; evidence?: SemanticEvidence; sourceSemantic?: boolean; sourceConfidence?: number; readCurrent?:()=>Promise<SemanticEvidence|undefined> }> {
+  private async semanticActual(actual: SemanticActual, operation:Operation, scope?:string): Promise<{ description?: string; evidence?: SemanticEvidence; sourceSemantic?: boolean; sourceConfidence?: number; sourceModel?: string; sourceModels?: string[]; readCurrent?:()=>Promise<SemanticEvidence|undefined> }> {
     if ('locator' in actual) {
       const locator=actual.locator,property=actual.property??'text',attribute=actual.attribute;
       const sourceId='locator_'+randomUUID();
@@ -222,16 +227,29 @@ export class JevBrowser {
     const semantic = 'snapshotId' in actual;
     const confidence = semantic ? actual.confidence : 1;
     if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1) throw new BrowserError('INVALID_ARGUMENT','Semantic target confidence must be between 0 and 1.');
-    return { evidence: elementEvidence(ref.info), sourceSemantic: semantic, sourceConfidence: confidence };
+    return { evidence: elementEvidence(ref.info), sourceSemantic: semantic, sourceConfidence: confidence, ...(semantic?{sourceModel:actual.model,sourceModels:actual.models}: {}) };
   }
   private async compareSemanticBatchMode(requests: SemanticComparisonRequest[], options: SemanticCompareOptions, live: boolean): Promise<SemanticComparisonResult[]> {
-    if (!Array.isArray(requests)) throw new BrowserError('INVALID_ARGUMENT','Semantic comparison requests must be an array.');
+    if (!Array.isArray(requests) || live && !requests.length) throw new BrowserError('INVALID_ARGUMENT','Semantic assertions require a nonempty request array.');
+    // Snapshot request primitives before any asynchronous read; keep real Locator identity.
+    requests=requests.map(request=>{
+      if(!request || typeof request!=='object' || !request.actual || typeof request.actual!=='object')
+        throw new BrowserError('INVALID_ARGUMENT','A semantic request needs an actual source and expected meaning.');
+      const actual=request.actual;
+      if(['description','ref','locator'].filter(key=>key in actual).length!==1)
+        throw new BrowserError('INVALID_ARGUMENT','Choose exactly one semantic description, captured ref, or caller Locator.');
+      if('description' in actual && (typeof actual.description!=='string'||!actual.description.trim()) || 'ref' in actual && (typeof actual.ref!=='string'||!actual.ref.trim()))
+        throw new BrowserError('INVALID_ARGUMENT','Semantic descriptions and refs must be nonempty strings.');
+      return {...request,actual:{...actual,...('models' in actual&&actual.models?{models:[...actual.models]}:{})}};
+    });
+    options={...options};
     const thresholds = requests.map(request => semanticThreshold(request.minConfidence ?? options.minConfidence));
     const sourceThresholds = requests.map((request,index) => semanticThreshold(request.minSourceConfidence ?? options.minSourceConfidence, 'minSourceConfidence', thresholds[index]!));
     for (const request of requests) if (typeof request.expected !== 'string' || !request.expected.trim())
       throw new BrowserError('INVALID_ARGUMENT','Semantic expected meaning must be a nonempty string.');
     if (!requests.length) return [];
     return this.exclusive(options, async operation => {
+      const observationStarted = performance.now();
       const work = [], currentReaders:Array<(()=>Promise<SemanticEvidence|undefined>)|undefined>=[];
       for (const [index, request] of requests.entries()) {
         const {readCurrent,...actual} = await this.semanticActual(request.actual,operation,options.scope);
@@ -239,9 +257,8 @@ export class JevBrowser {
         work.push({ ...actual, expected: request.expected, threshold: thresholds[index]!, sourceThreshold: sourceThresholds[index]! });
       }
       const needsObservation = work.some(item => !item.evidence);
-      const observationStarted = performance.now();
       const observed = needsObservation ? await capture(this.page,{...this.limits,scope:options.scope,semanticRefs:live}) : undefined;
-      const observationMs = needsObservation ? performance.now()-observationStarted : 0;
+      const observationMs = performance.now()-observationStarted;
       try {
         operation.signal.throwIfAborted();
         const results = await compareSemanticWork(observed?.data,work,{decide:(request,options)=>this.engine().decide(request,options)},operation.signal,this.limits.maxCandidates);
@@ -257,9 +274,20 @@ export class JevBrowser {
           operation.signal.throwIfAborted();
           for (const result of results) result.usage.verificationMs += performance.now()-started;
         }
+        if(live) return this.assertSemanticResults(results,requests.map(request=>request.expected));
         return results;
       } finally { await observed?.dispose(); }
     });
+  }
+  private assertSemanticResults(results:SemanticComparisonResult[],expected:string[]):SemanticComparisonResult[] {
+    const index = results.findIndex(result => result.status !== 'passed');
+    if (index < 0) return results;
+    const result = results[index]!;
+    const code = result.status === 'failed' ? 'SEMANTIC_ASSERTION_FAILED' : 'SEMANTIC_ASSERTION_INCONCLUSIVE';
+    const reason = result.freshness === 'changed' ? 'the evidence changed during verification' : `comparison ${result.confidence.toFixed(3)}/${result.threshold.toFixed(3)}, source ${result.sourceConfidence.toFixed(3)}/${result.sourceThreshold.toFixed(3)}`;
+    const error = new BrowserError(code,`Semantic assertion ${index} ${result.status}: ${reason}.`);
+    error.semantic = {results,expected};
+    throw error;
   }
   async compareSemanticBatch(requests: SemanticComparisonRequest[], options: SemanticCompareOptions = {}): Promise<SemanticComparisonResult[]> {
     return this.compareSemanticBatchMode(requests,options,false);
@@ -272,14 +300,7 @@ export class JevBrowser {
   }
   async assertSemanticBatch(requests: SemanticComparisonRequest[], options: SemanticCompareOptions = {}): Promise<SemanticComparisonResult[]> {
     const results = await this.compareSemanticBatchMode(requests,options,true);
-    const index = results.findIndex(result => result.status !== 'passed');
-    if (index < 0) return results;
-    const result = results[index]!;
-    const code = result.status === 'failed' ? 'SEMANTIC_ASSERTION_FAILED' : 'SEMANTIC_ASSERTION_INCONCLUSIVE';
-    const reason = result.freshness === 'changed' ? 'the evidence changed during verification' : `comparison ${result.confidence.toFixed(3)}/${result.threshold.toFixed(3)}, source ${result.sourceConfidence.toFixed(3)}/${result.sourceThreshold.toFixed(3)}`;
-    const error = new BrowserError(code,`Semantic assertion ${index} ${result.status}: ${reason}.`);
-    error.semantic = {results,expected:requests.map(request=>request.expected)};
-    throw error;
+    return results;
   }
   async screenshot(options: OperationOptions = {}): Promise<Buffer> {
     return this.exclusive(options, async operation => {

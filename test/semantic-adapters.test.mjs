@@ -1,3 +1,4 @@
+import {semanticCandidates} from './helpers.mjs';
 import {fileURLToPath} from 'node:url';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
@@ -16,8 +17,8 @@ async function setup(t,{comparison='equivalent',confidence=0.95}={}){
     let raw='';for await(const chunk of req)raw+=chunk;
     const request=JSON.parse(raw);
     const body=apiResult(request,(question,id)=>{
-      if(id==='target')return Object.entries(question.criteria).find(([,candidate])=>candidate?.name==='Manage plan')?.[0]??'__none__';
-      if(id.startsWith('source_'))return Object.entries(question.criteria).find(([,candidate])=>candidate?.text==='Pro annual')?.[0]??'__none__';
+      if(id==='target')return semanticCandidates(question,request).find(([,candidate])=>candidate?.name==='Manage plan')?.[0]??'__none__';
+      if(id.startsWith('source_'))return semanticCandidates(question,request).find(([,candidate])=>candidate?.text==='Pro annual')?.[0]??'__none__';
       if(id.startsWith('compare_'))return comparison;
       return Object.keys(question.criteria)[0];
     });
