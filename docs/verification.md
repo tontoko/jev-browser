@@ -37,3 +37,11 @@ A Gitleaks 8.30.1 scan of the commit history and runtime dependency audit report
 ## Checkpoint and resume regression suite
 
 `npm run test:live:resume` runs neutral multi-stage HTTP fixtures against the configured provider. It checks complete submitted data, three distinct saves, missing later input, repeated read-only reconciliation of an unknown second save, and cancellation during that save. Per-invocation usage is summed once per returned result when reporting the full task. Field binding and later-stage placement can share a frontier; the three-stage controlled fixture needs six serial frontiers rather than eight after that optimization. These are known regression cases, not claims about arbitrary sites or other agents.
+
+## Semantic refinement and search/update checks
+
+`npm run test:live:refinement` separately opts into six frozen synthetic search/edit/update cases (table/list/card layouts and neighboring order IDs) plus a direct-Locator semantic batch and multi-target discovery case. The HTTP app independently records writes, and the test compares the entire record collection against the expected single update. Layouts were frozen before the first provider run; the initial run exposed a replaced-form handling bug, so subsequent results are regression evidence, not held-out success claims. No fixture was made easier or wrong-target write accepted to make the run pass.
+
+Tests pin stale `Paid` to `Unpaid` changes during inference, source replacement/hiding/navigation, cancellation, snapshot/live separation, model attribution, exact no-key comparisons, caller request mutation, .not on inconclusive results, and cross-process error details. Installed-package verification covers the optional Playwright matcher and SDK Locator input, shared batch commands and error evidence.
+
+A fixed 12-source/12-question JSON request was measured before and after source metadata deduplication. Source-payload bytes are a transport measurement, not billed-token savings or end-to-end latency. Real-provider source confidence can change with prompt representation; low-source abstention is retained and reported, not relabeled as a semantic pass. Public release evidence contains final counts and the original failed-run limitations.

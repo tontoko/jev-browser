@@ -61,7 +61,7 @@ const result = await browser.compareSemantic({
 });
 ```
 
-`actual` is either `{description}`, a current `{ref}`, or a `SemanticTarget` returned by `locateSemantic`. Description-based actuals are first bound to one grounded observed source. A definition-list `term` is treated as a field label, not the field value. No semantic comparison can use a model-generated selector or an unobserved source.
+`actual` is either `{description}`, a current `{ref}`, a `SemanticTarget` returned by `locateSemantic`, or SDK-only `{locator, property?, attribute?}` using a real Playwright Locator. Description-based actuals are first bound to one grounded observed source. A definition-list `term` is treated as a field label, not the field value. No semantic comparison can use a model-generated selector or an unobserved source.
 
 Results contain `status` (`passed | failed | inconclusive`), model `choice` (`equivalent | different | insufficient_evidence`), final comparison `confidence`, separate `sourceConfidence`, comparison `threshold`, `sourceThreshold`, grounded `evidence`, provenance `source` (`deterministic | semantic`), and semantic usage metrics. `minConfidence` defaults to `0.8`; `minSourceConfidence` defaults to the effective comparison threshold. Both must be within `[0,1]`. A semantic assertion passes only when every model-dependent link needed for the assertion clears its own threshold: grounded-source selection and, when required, the semantic comparison. If source selection is already below `sourceThreshold`, comparison is skipped and the result is `insufficient_evidence` / `inconclusive`. Exact comparison itself is reported as deterministic and makes no second model call, while `sourceConfidence` still exposes source-selection uncertainty.
 
@@ -114,3 +114,15 @@ Downloads are reported after the browser emits a download event. A click returni
 ## Goal continuation
 
 See [goal-continuation.md](goal-continuation.md) for checkpoint evidence, final assertions, immutable inputs, same-Page/origin/scope ownership and unknown-effect reconciliation. SDK, persistent CLI `resume` and MCP `browser_resume` share one runner. A thrown `BrowserError.partial` may contain the continuation; inspect it rather than re-running the original task.
+
+## v0.7 semantic refinements
+
+- `locateSemanticBatch(descriptions, options)` returns reusable targets from one retained observation.
+- `assertSemanticBatch(requests, options)` applies the same confidence policy as compare, then re-reads sources before returning. It rejects an empty assertion batch.
+- `compareSemantic*` returns snapshot evidence; `assertSemantic*` returns only after a live re-read or throws with changed/inconclusive evidence. `freshness` is `snapshot`, `verified` or `changed`.
+- SDK Locator properties are `text` (default), `value`, `checked`, `attribute` (explicit attribute name). The source must be uniquely visible within the current Page and optional scope.
+- `@tontoko/jev-browser/playwright` exports `semanticMatchers(core)` for the caller's existing `expect.extend`.
+- CLI/MCP batch commands are read-only. `semantic_compare_batch` / `semantic_assert_batch` return `{results,usage}` and support global or per-item thresholds. `semantic_locate_batch` returns `{targets}`.
+- `BrowserError.semantic` preserves `{results,expected}` through process boundaries; provider bodies and credentials are never attached. Result `models` retains named inference provenance; `model` is omitted for incomplete/mixed attribution.
+
+See [semantic-verification.md](semantic-verification.md) for precise property, freshness, negation and data disclosure semantics.

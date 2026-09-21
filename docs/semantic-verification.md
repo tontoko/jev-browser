@@ -121,6 +121,56 @@ await browser.assertSemantic({
 
 An inconclusive semantic result never silently passes.
 
+## Snapshot comparisons and current assertions
+
+`compareSemantic()` and `compareSemanticBatch()` return `freshness: "snapshot"`: their verdict is about the evidence captured for that operation. They do not claim it remains current after inference.
+
+`assertSemantic()` and `assertSemanticBatch()` re-read every bound source before returning while retaining the same core operation lease. Unchanged evidence is `freshness: "verified"`. Changed, hidden, detached or replaced captured sources are `freshness: "changed"` and `status: "inconclusive"`; `currentEvidence` is included when the current source can still be read. This is verification at a bounded instant, not a promise that a page cannot change immediately afterward. No database durability guarantee follows from DOM text.
+
+There is no favorable-answer retry loop. Unchanged low-confidence evidence remains inconclusive. When evidence changes, inspect the current evidence or wait for a caller-known application state before explicitly starting a new assertion. Do not wrap semantic assertions in blind `expect.poll` / `toPass` loops to turn repeated model sampling into confidence.
+
+## Caller Playwright Locators
+
+```ts
+const results = await browser.assertSemanticBatch([
+  { actual: { locator: page.getByTestId('plan'), property: 'text' }, expected: 'Professional annual subscription' },
+  { actual: { locator: page.getByLabel('Opt in'), property: 'checked' }, expected: 'false' },
+]);
+```
+
+Locator inputs are SDK-only and belong to the core's real `Page`. Locator resolution must be unique and visible; caller `scope` bounds the result, including frames/shadow roots. A missing attached element may wait through Playwright within the operation budget. `text` is the default, normalized visible text. `value` reads native input/textarea/single-select values. `checked` reads native or ARIA state (expected meaning remains a string such as `"true"`). `attribute` requires an explicit attribute name and reads its literal DOM value. Unsupported properties and ambiguous matches fail explicitly.
+
+An explicit Locator supplies source authority, so no source-discovery model call is needed. Exact normalized equality uses zero model calls and does not initialize the provider. A semantic comparison still sends the selected actual value/context and expected meaning to the configured endpoint. Sensitive input values are not read this way unless the caller explicitly chooses that property.
+
+For a caller-authored Locator, identical rerendering is allowed when the Locator resolves to the same current meaning on the same Page/frame/URL. Captured semantic refs are stricter: replacing their observed node invalidates that identity. This does not synthesize a CSS selector, cache an old outcome, or claim identity across login/tenant changes.
+
+## Native Playwright Test integration
+
+```ts
+import { expect as baseExpect } from '@playwright/test';
+import { semanticMatchers } from '@tontoko/jev-browser/playwright';
+const expect = baseExpect.extend(semanticMatchers(browser));
+await expect(page.getByTestId('plan')).toSemanticallyMatch('Professional annual subscription', {
+  minConfidence: 0.8,
+});
+```
+
+This optional export imports no Playwright Test runtime and defines only the semantic matcher. A confidently different, freshly checked value may satisfy `.not`; insufficient evidence, stale evidence or low confidence still throws rather than passing through negation. Normal Playwright assertions remain unchanged. `examples/semantic.spec.ts` demonstrates existing report attachments; evidence attachments can contain private UI data.
+
+## Batch APIs and reuse
+
+`locateSemanticBatch(descriptions, options)` discovers independent targets against one observation. Its refs stay usable through normal native operations while the captured node/semantic authority remains valid; a new snapshot, new semantic target discovery or invalidation may expire them. This is partial reuse of grounded targets, not an automatic persistent cross-page cache.
+
+The CLI and MCP have `semantic_locate_batch`, `semantic_compare_batch`, `semantic_assert_batch` (MCP prefix `browser_`). For comparison/assertion, send `{requests: [{actual: {description: "Plan"}, expected: "Professional annual"}, ...], minConfidence?, minSourceConfidence?, scope?, timeoutMs?}`. Locator objects cannot cross JSON boundaries; use descriptions or current refs there. The wire result is `{results, usage}`; usage is aggregate for the entire batch and should be counted once. Per-item SDK usage remains repeated for shape compatibility.
+
+Source selection criteria refer to complete evidence in shared `state.page.sources`; candidate metadata is not copied N times. Transport chunks retain the same dependency depth. `models` lists reported model IDs from applicable source/comparison frontiers; `model` is present only when model attribution is complete and uniform. A missing model ID is not invented, and multiple models are not collapsed to the last one.
+
+## Failure evidence
+
+A resolved assertion failure throws `BrowserError` with `semantic: {results, expected}`. Results retain the actual evidence, verdict, source/comparison confidence and thresholds, freshness and any current evidence. Batch failures include independent successful items too. CLI, MCP and named sessions preserve this data without provider response bodies. Source-discovery no-match/ambiguity and structural errors may occur before there is any comparable result.
+
+Error messages distinguish source uncertainty from comparison uncertainty. Caller request primitives are copied before asynchronous work, so mutating an expected value during inference cannot rewrite the diagnostic. Treat error/attachment payloads as sensitive application data, not public telemetry.
+
 ## 3. Caller / application oracle
 
 When the application has a stronger source of truth, use it.

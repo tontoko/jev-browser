@@ -59,3 +59,11 @@ For large pages, explicit `scope` remains authoritative. Without one, a truncate
 - [Stagehand extract](https://docs.stagehand.dev/v4/basics/extract)
 
 Compare against the versions you actually deploy; upstream interfaces change independently of this project.
+
+## Upgrading to v0.7
+
+`compareSemantic` remains a snapshot comparison. `assertSemantic` now re-reads the actual sources before returning and may fail inconclusive when the page changes while the model is running. Treat this as a stricter assertion, not a flaky outcome to retry blindly. Prefer known Playwright Locators for stable explicit target retrieval; otherwise keep the returned evidence and fresh/changed status in diagnostics.
+
+SDK users can pass `{actual:{locator:page.getByTestId('plan')},expected:'Professional annual plan'}` or extend their existing Playwright `expect` with `semanticMatchers(core)` from `@tontoko/jev-browser/playwright`. No model key is required for an exact comparison. For CLI/MCP, the new `semantic_compare_batch`, `semantic_assert_batch` and `semantic_locate_batch` accept JSON descriptions/refs; Locator objects stay SDK-only.
+
+Mixed model provenance is now reported in `models`; do not require a singular `model` when it is unknown or multiple models participated. Semantic failures now include `error.semantic` expected/results; treat logs as potentially sensitive UI data. Existing `run`, `resume`, native actions and deterministic assertions remain available without a new planner or backend service.

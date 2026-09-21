@@ -1,6 +1,6 @@
 {
   "name": "@tontoko/jev-browser",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Grounded Jev browser automation: a shared Playwright SDK, persistent CLI, and MCP server",
   "type": "module",
   "license": "Apache-2.0",
@@ -49,7 +49,8 @@
     "test:live:matrix": "node --test --test-timeout=300000 test/live-goal-matrix.mjs",
     "example:goal": "node examples/goal.mjs",
     "test:live:semantic": "node --test --test-concurrency=1 --test-timeout=120000 test/live-semantic.mjs",
-    "test:live:resume": "node --test --test-concurrency=1 --test-timeout=90000 test/live-resume.mjs"
+    "test:live:resume": "node --test --test-concurrency=1 --test-timeout=90000 test/live-resume.mjs",
+    "test:live:refinement": "node --test --test-concurrency=1 --test-timeout=90000 test/live-refinement.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "2.0.0",
