@@ -13,7 +13,7 @@ Native operations and assertions run **without an AI key**. Natural-language ope
 Node.js **22.15 or newer**. Download the package from [GitHub Releases](https://github.com/tontoko/jev-browser/releases), then install it into your project:
 
 ```sh
-npm install --save-dev ./tontoko-jev-browser-0.7.1.tgz
+npm install --save-dev ./tontoko-jev-browser-0.8.0.tgz
 npx playwright install chromium
 ```
 
@@ -244,3 +244,7 @@ npm run test:live:semantic
 ```
 
 Default tests use real browsers, deterministic injected choices, and local HTTP fixtures. Live tests are opt-in and never run against production accounts. See [CONTRIBUTING.md](CONTRIBUTING.md) and [the verification record](docs/verification.md).
+
+## Supplied values with different option wording
+
+For native selects, `run(..., {values:{country:"Japan"}, semanticInputs:{"/country":0.8}})` permits Jev to map that value to an observed option such as `日本` / `JP`. The JSON Pointer is both an explicit disclosure grant and a confidence policy. Ordinary named values remain local; there is no synonym dictionary. Unresolved supplied values return `unresolved-input` with grounded blockers rather than pretending the caller supplied nothing. See [progress and input resolution](docs/observed-input-resolution.md).

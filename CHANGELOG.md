@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.8.0
+
+- Progress waiting and observation share visible text eligibility; plain paragraphs, spans, definitions and output text do not require a status role. Native checked state and link destinations are observed too.
+- Caller completion conditions are rechecked before terminal quiet-wait failures. A missed observation never causes a save retry.
+- Supplied native select values that cannot be mapped now return `unresolved-input` with grounded blockers, separately from genuinely missing caller data.
+- Optional `semanticInputs` grants explicit per-path disclosure and confidence policy for native select/multiselect meaning resolution. Exact matching stays local; no synonym/country rules or inference runtime are added.
+- Option identity, semantic provenance and readback resolution survive pending-save reconciliation. Stale proposals cannot override fresh literal bindings.
+- SDK, CLI and MCP share the same run contract and installed-package checks.
+
 ## 0.7.1
 
 - A speculative no-action answer is reconsidered after new input effects, using the resulting observation. It does not prevent a requested save merely because the earlier decision saw empty fields; unchanged evidence is not repeatedly sampled.

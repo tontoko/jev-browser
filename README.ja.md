@@ -11,7 +11,7 @@ Playwright MCP／CLIのブラウザー操作と、Stagehand型の自然言語操
 Node.js 22.15以上。[GitHub Releases](https://github.com/tontoko/jev-browser/releases)のtarballをプロジェクトへインストールします。
 
 ```sh
-npm install --save-dev ./tontoko-jev-browser-0.7.1.tgz
+npm install --save-dev ./tontoko-jev-browser-0.8.0.tgz
 npx playwright install chromium
 npx jev-browser open https://example.com --session work
 npx jev-browser snapshot --session work
@@ -112,3 +112,7 @@ Jevは観測済みの候補から操作を選び、Playwrightが実行します�
 ページ本文・リンク・表示された入力値などは機密情報を含む可能性があります。認証済みブラウザーの接続やファイルアクセスを無制限に第三者へ公開しないでください。[SECURITY.md](SECURITY.md)に権限とデータ送信範囲を記載しています。
 
 詳しいAPI、MCP設定、CLI操作例、対応範囲と検証方法は[英語README](README.md)、[APIリファレンス](docs/api.md)、[移行ガイド](docs/migration.md)を参照してください。
+
+## 入力値と選択肢の表記が異なる場合
+
+native selectでは、`run(..., {values:{country:"Japan"}, semanticInputs:{"/country":0.8}})`と指定すると、その値だけをJevへ渡して実際の選択肢（例：`日本` / `JP`）との意味対応を判断します。JSON Pointerでの明示許可が必要で、他の入力値は通常のローカル入力のままです。対応できない値は「未提供」と混同せず、`unresolved-input`と観測した対象を返します。正規化・辞書による意味の代用はしません。[仕様](docs/observed-input-resolution.md)。
