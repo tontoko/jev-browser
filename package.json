@@ -1,6 +1,6 @@
 {
   "name": "@tontoko/jev-browser",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Grounded Jev browser automation: a shared Playwright SDK, persistent CLI, and MCP server",
   "type": "module",
   "license": "Apache-2.0",
@@ -15,6 +15,10 @@
     "./mcp": {
       "types": "./dist/mcp.d.ts",
       "import": "./dist/mcp.js"
+    },
+    "./playwright": {
+      "types": "./dist/playwright.d.ts",
+      "import": "./dist/playwright.js"
     }
   },
   "bin": {
@@ -39,13 +43,14 @@
     "check": "npm run build && npm test",
     "test:live": "node --test --test-concurrency=1 --test-timeout=90000 test/live.mjs test/live-adapters.mjs test/live-extended.mjs test/live-release.mjs test/live-goal.mjs test/live-goal-adapters.mjs",
     "prepack": "npm run build",
-    "check:examples": "tsc --ignoreConfig --noEmit --module NodeNext --moduleResolution NodeNext --target ES2022 --lib ES2022,DOM,ESNext.Disposable --types node --skipLibCheck --strict --noUncheckedIndexedAccess examples/playwright.spec.ts examples/playwright.config.ts",
+    "check:examples": "tsc --ignoreConfig --noEmit --module NodeNext --moduleResolution NodeNext --target ES2022 --lib ES2022,DOM,ESNext.Disposable --types node --skipLibCheck --strict --noUncheckedIndexedAccess examples/playwright.spec.ts examples/playwright.config.ts examples/semantic.spec.ts",
     "check:package": "node scripts/check-package.mjs",
     "typecheck": "tsc --noEmit",
     "test:live:matrix": "node --test --test-timeout=300000 test/live-goal-matrix.mjs",
     "example:goal": "node examples/goal.mjs",
     "test:live:semantic": "node --test --test-concurrency=1 --test-timeout=120000 test/live-semantic.mjs",
-    "test:live:resume": "node --test --test-concurrency=1 --test-timeout=90000 test/live-resume.mjs"
+    "test:live:resume": "node --test --test-concurrency=1 --test-timeout=90000 test/live-resume.mjs",
+    "test:live:refinement": "node --test --test-concurrency=1 --test-timeout=90000 test/live-refinement.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "2.0.0",

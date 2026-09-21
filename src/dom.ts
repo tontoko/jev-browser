@@ -82,11 +82,13 @@ export function progressChanged(previous?: string): string | boolean {
   const key=JSON.stringify(parts);return previous===undefined?key:key!==previous;
 }
 const actionableRoles = new Set(['button','link','textbox','searchbox','checkbox','radio','switch','combobox','listbox','menuitem','menuitemcheckbox','menuitemradio','tab','option']);
+export type SemanticTextKind = 'text' | 'href' | 'checked';
 export function observe(options: { maxElements: number; maxTexts: number }, scopedRoots?: Element[], explicitRecords?: Element[]) {
   const nodes: Element[] = [];
   const elements: ReturnType<typeof describe>[] = [];
   const texts: { text: string; context: string; role: string; value?: boolean; attribute?: string }[] = [];
   const textNodes: Element[] = [];
+  const textKinds: SemanticTextKind[] = [];
   let truncatedElements = false, truncatedTexts = false, scanned = 0;
   const roots: (Element | Document | ShadowRoot)[] = scopedRoots ? [...scopedRoots] : [document];
   const visited = new Set<Element>();
@@ -112,17 +114,17 @@ export function observe(options: { maxElements: number; maxTexts: number }, scop
         const text = normalize((el as HTMLElement).innerText ?? el.textContent);
         if ((hasOwnText || semanticText) && text && text.length <= 700 && !el.querySelector('input,textarea,select,[contenteditable="true"]')) {
           if (texts.length >= options.maxTexts) truncatedTexts = true;
-          else { textNodes.push(el); texts.push({ text, context: context(el), role }); }
+          else { textKinds.push('text'); textNodes.push(el); texts.push({ text, context: context(el), role }); }
         }
       }
       if (el instanceof HTMLAnchorElement && el.hasAttribute('href')) {
         if (texts.length >= options.maxTexts) truncatedTexts = true;
-        else { textNodes.push(el); texts.push({ text: el.href, context: `${computeAccessibleName(el)} ${context(el)}`, role: 'link', attribute: 'href' }); }
+        else { textKinds.push('href'); textNodes.push(el); texts.push({ text: el.href, context: `${computeAccessibleName(el)} ${context(el)}`, role: 'link', attribute: 'href' }); }
       }
       if (['checkbox','radio','switch'].includes(role)) {
         const d = describe(el);
         if (texts.length >= options.maxTexts) truncatedTexts = true;
-        else { textNodes.push(el); texts.push({ text: d.info.name, context: d.info.context, role, ...(typeof d.info.checked === 'boolean' ? { value: d.info.checked } : {}) }); }
+        else { textKinds.push('checked'); textNodes.push(el); texts.push({ text: d.info.name, context: d.info.context, role, ...(typeof d.info.checked === 'boolean' ? { value: d.info.checked } : {}) }); }
       }
     }
     if (scanned > 6000) break;
@@ -132,7 +134,7 @@ export function observe(options: { maxElements: number; maxTexts: number }, scop
     const parent = recordNodes.findIndex(other => other !== el && other.contains(el) && !recordNodes.some(between => between !== other && between !== el && other.contains(between) && between.contains(el)));
     return { index, parent: parent < 0 ? undefined : parent, readOnly: !el.matches('form,input,textarea,select,[contenteditable="true"]') && !el.querySelector('input,textarea,select,[contenteditable="true"]'), context: normalize((el as HTMLElement).innerText).slice(0, 1000), texts: textNodes.flatMap((node, i) => el === node || el.contains(node) ? [i] : []) };
   });
-  return { nodes, elements, texts, records, recordInventoryComplete:scanned<=6000, truncatedElements, truncatedTexts, changeKey: String(progressChanged()), busy: !!document.querySelector('[aria-busy="true"]') };
+  return { nodes, textNodes, textKinds, elements, texts, records, recordInventoryComplete:scanned<=6000, truncatedElements, truncatedTexts, changeKey: String(progressChanged()), busy: !!document.querySelector('[aria-busy="true"]') };
 }
 
 /** No global text search: options must belong to the popup declared by this control. */
@@ -163,4 +165,50 @@ export function regionNodes(): Element[] {
 export function regionDescription(element:Element){
   const d=describe(element);
   return {...d,info:{...d.info,role:d.info.role||element.tagName.toLowerCase(),name:d.info.name||normalize(element.querySelector('h1,h2,h3,legend')?.textContent)}};
+}
+
+/** Re-read only a selected semantic source. No selectors or code from the model. */
+export function readSemanticText(el: Element, kind: SemanticTextKind) {
+  if (!el.isConnected || !visible(el)) return null;
+  const role = getRole(el) ?? '';
+  if (kind === 'href') {
+    if (!(el instanceof HTMLAnchorElement) || !el.hasAttribute('href')) return null;
+    return {text:el.href,context:`${computeAccessibleName(el)} ${context(el)}`,role:'link',attribute:'href'};
+  }
+  if (kind === 'checked') {
+    if(!['checkbox','radio','switch'].includes(role))return null;
+    const d=describe(el);
+    return {text:d.info.name,context:d.info.context,role,...(typeof d.info.checked==='boolean'?{value:d.info.checked}:{})};
+  }
+  return {text:normalize((el as HTMLElement).innerText ?? el.textContent),context:context(el),role};
+}
+
+/** Read a caller-selected property without changing the element. */
+export function readLocatorValue(el: Element, args: {property:string;attribute?:string;roots?:Element[]}) {
+  if (!el.isConnected || !visible(el)) return {error:'SEMANTIC_NO_MATCH'};
+  if (args.roots && !withinSemanticRoots(el,args.roots))return {error:'SEMANTIC_NO_MATCH'};
+  const role=getRole(el)??el.tagName.toLowerCase(),group=context(el);
+  if(args.property==='text')return {text:normalize((el as HTMLElement).innerText??el.textContent),context:group,role};
+  if(args.property==='value'){
+    if(!(el instanceof HTMLInputElement||el instanceof HTMLTextAreaElement||el instanceof HTMLSelectElement)||el instanceof HTMLSelectElement&&el.multiple)return {error:'INVALID_ARGUMENT'};
+    return {text:el.value,value:el.value,context:group,role,attribute:'value'};
+  }
+  if(args.property==='checked'){
+    const checked=checkedState(el);if(checked===undefined)return {error:'INVALID_ARGUMENT'};
+    return {text:String(checked),value:checked,context:group,role,attribute:'checked'};
+  }
+  if(args.property==='attribute'){
+    const value=el.getAttribute(args.attribute!);if(value===null)return {error:'SEMANTIC_NO_MATCH'};
+    return {text:value,value,context:group,role,attribute:args.attribute};
+  }
+  return {error:'INVALID_ARGUMENT'};
+}
+
+export function withinSemanticRoots(el:Element,roots:Element[]):boolean {
+  let node:Element|null=el;
+  while(node){
+    if(roots.some(root=>root===node||root.contains(node)))return true;
+    const root=node.getRootNode();node=root instanceof ShadowRoot?root.host:null;
+  }
+  return false;
 }

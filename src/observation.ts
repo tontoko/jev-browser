@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
-import type { ElementHandle, JSHandle, Page, Frame } from 'playwright';
-import type { Snapshot, ElementInfo } from './types.js';
+import type { ElementHandle, JSHandle, Page, Frame, Locator } from 'playwright';
+import type { Snapshot, ElementInfo, SemanticEvidence, SemanticLocatorProperty } from './types.js';
 import { BrowserError } from './errors.js';
 import type * as DOM from './dom.js';
 
@@ -15,15 +15,17 @@ export interface ElementRef { frame: Frame; handle: ElementHandle<Element>; sign
 export interface Captured {
   data: Snapshot;
   refs: Map<string, ElementRef>;
+  textRefs?: Map<string, { frame: Frame; handle: ElementHandle<Element>; kind: DOM.SemanticTextKind }>;
   rawURL: string;
   changeKeys: Record<number, string>;
   dispose(): Promise<void>;
 }
-export async function capture(page: Page, options: { scope?: string; recordsScope?: string; maxElements: number; maxTexts: number; selection?: {frame:Frame;roots:ElementHandle<Element>[]} }): Promise<Captured> {
+export async function capture(page: Page, options: { semanticRefs?: boolean; scope?: string; recordsScope?: string; maxElements: number; maxTexts: number; selection?: {frame:Frame;roots:ElementHandle<Element>[]} }): Promise<Captured> {
   const refs = new Map<string, ElementRef>();
+  const textRefs = new Map<string, { frame: Frame; handle: ElementHandle<Element>; kind: DOM.SemanticTextKind }>();
   const changeKeys: Record<number,string> = {};
   const owned: JSHandle[] = [];
-  const dispose = async () => { await Promise.allSettled(owned.splice(0).map(handle => handle.dispose())); refs.clear(); };
+  const dispose = async () => { await Promise.allSettled(owned.splice(0).map(handle => handle.dispose())); refs.clear(); textRefs.clear(); };
   const rawURL = page.url();
   const data: Snapshot = {
     id: randomUUID(), url: publicURL(rawURL), title: await page.title(), elements: [], texts: [], records: [],
@@ -43,7 +45,7 @@ export async function capture(page: Page, options: { scope?: string; recordsScop
       const observe = new Function('args', `${source()}; return JevDOM.observe(${JSON.stringify(frameOptions)}, args.roots, args.recordRoots);`) as (args: { roots?: Element[]; recordRoots?: Element[] }) => ReturnType<typeof DOM.observe>;
       const result = await frame.evaluateHandle(observe, { roots, recordRoots });
       owned.push(result);
-      const observed = await result.evaluate(r => ({ elements: r.elements, texts: r.texts, records: r.records, recordInventoryComplete:r.recordInventoryComplete, busy: r.busy, changeKey: r.changeKey, truncatedElements: r.truncatedElements, truncatedTexts: r.truncatedTexts }));
+      const observed = await result.evaluate(r => ({ elements: r.elements, texts: r.texts, textKinds:r.textKinds, records: r.records, recordInventoryComplete:r.recordInventoryComplete, busy: r.busy, changeKey: r.changeKey, truncatedElements: r.truncatedElements, truncatedTexts: r.truncatedTexts }));
       changeKeys[frameIndex] = observed.changeKey;
       data.busy ||= observed.busy;
       const nodes = await result.getProperty('nodes'); owned.push(nodes);
@@ -58,6 +60,15 @@ export async function capture(page: Page, options: { scope?: string; recordsScop
         data.elements.push(info);
         refs.set(id, { frame, handle: element as ElementHandle<Element>, signature: description.signature, info });
       }
+      if (options.semanticRefs) {
+        const textNodes = await result.getProperty('textNodes'); owned.push(textNodes);
+        const textProperties = await textNodes.getProperties();
+        for (const [index, handle] of textProperties) {
+          owned.push(handle);
+          const element = handle.asElement();
+          if (element && observed.texts[Number(index)]) textRefs.set(`t${frameIndex}_${index}`, {frame,handle:element as ElementHandle<Element>,kind:observed.textKinds[Number(index)]!});
+        }
+      }
       data.texts.push(...observed.texts.map((text, i) => ({ ...text, id: `t${frameIndex}_${i}`, frame: frameIndex })));
       data.records!.push(...observed.records.map(r => ({ id: `record${frameIndex}_${r.index}`, frame: frameIndex, context: r.context, readOnly: r.readOnly, textIds: r.texts.map(i => `t${frameIndex}_${i}`), ...(r.parent !== undefined ? { parentId: `record${frameIndex}_${r.parent}` } : {}) })));
       data.recordInventoryComplete &&= observed.recordInventoryComplete;
@@ -66,7 +77,7 @@ export async function capture(page: Page, options: { scope?: string; recordsScop
     }
     data.truncated = data.truncatedElements || data.truncatedTexts;
     if (page.url() !== rawURL) throw new BrowserError('STALE_SNAPSHOT', 'Page navigated while it was being observed. Observe again.');
-    return { data, refs, rawURL, changeKeys, dispose };
+    return { data, refs, textRefs, rawURL, changeKeys, dispose };
   } catch (error) { await dispose(); throw error; }
 }
 export async function verifyTarget(ref: ElementRef): Promise<void> {
@@ -135,4 +146,63 @@ export async function verifyOwnedOption(control:ElementRef,option:ElementRef):Pr
   if(control.frame!==option.frame)throw new BrowserError('STALE_TARGET','Option and its owner belong to different frames.');
   const check=new Function('element','option',`${source()}; const matches=JevDOM.matchingComboboxOptions(element,${JSON.stringify(option.info.name)}); return matches.length===1&&matches[0]===option;`) as (element:Element,option:Element)=>boolean;
   if(!await control.handle.evaluate(check,option.handle))throw new BrowserError('STALE_TARGET','The option no longer uniquely belongs to the observed combobox.');
+}
+
+/** Re-read the same observed source rather than a same-position replacement. */
+export async function currentSemanticEvidence(page: Page, captured: Captured, evidence: SemanticEvidence, scope?:string): Promise<SemanticEvidence | undefined> {
+  if (page.url() !== captured.rawURL) return;
+  const element = captured.refs.get(evidence.sourceId);
+  const text = captured.textRefs?.get(evidence.sourceId);
+  const ref = element ?? text;
+  if (!ref || page.frames()[evidence.frame] !== ref.frame) return;
+  try {
+    if(!await semanticWithinScope(ref,scope))return;
+    if (element) {
+      await verifyTarget(element);
+      return {...evidence};
+    }
+    if(!text)return;
+    const read = new Function('element','kind', `${source()}; return JevDOM.readSemanticText(element,kind);`) as (element:Element,kind:DOM.SemanticTextKind)=>ReturnType<typeof DOM.readSemanticText>;
+    const value = await ref.handle.evaluate(read,text.kind);
+    return value ? {sourceId:evidence.sourceId,frame:evidence.frame,...value} : undefined;
+  } catch { return; }
+}
+
+export interface LocatorEvidence { evidence: SemanticEvidence; frame: Frame; frameURL: string; rawURL: string }
+export async function readLocatorEvidence(page:Page,locator:Locator,property:SemanticLocatorProperty,attribute:string|undefined,sourceId:string,
+  options:{scope?:string;signal:AbortSignal;timeoutMs:number;current?:boolean}):Promise<LocatorEvidence> {
+  options.signal.throwIfAborted();
+  if(!locator || typeof locator.page!=='function' || typeof locator.elementHandle!=='function' || locator.page()!==page)
+    throw new BrowserError('INVALID_ARGUMENT','The semantic Locator must belong to this Page.');
+  if(!['text','value','checked','attribute'].includes(property)||property==='attribute'&&(!attribute||!attribute.trim()))
+    throw new BrowserError('INVALID_ARGUMENT','Choose text, value, checked, or an explicitly named attribute.');
+  const rawURL=page.url();
+  if(!options.current && await locator.count()===0)await locator.waitFor({state:'attached',timeout:options.timeoutMs,signal:options.signal});
+  const count=await locator.count();
+  if(count!==1)throw new BrowserError(count?'SEMANTIC_AMBIGUOUS':'SEMANTIC_NO_MATCH','A semantic Locator must resolve to exactly one observed element.');
+  const handle=await locator.elementHandle({timeout:options.timeoutMs});
+  const roots:ElementHandle<Element>[]=[];
+  try{
+    if(!handle)throw new BrowserError('SEMANTIC_NO_MATCH','The semantic Locator target is absent.');
+    const frame=await handle.ownerFrame();
+    if(!frame||page.url()!==rawURL)throw new BrowserError('STALE_TARGET','The semantic Locator page changed during observation.');
+    const frameURL=frame.url();
+    if(options.scope)roots.push(...await frame.locator(`css=${options.scope}`).elementHandles() as ElementHandle<Element>[]);
+    const read=new Function('element','args',`${source()}; return JevDOM.readLocatorValue(element,args);`) as (element:Element,args:{property:string;attribute?:string;roots?:Element[]})=>ReturnType<typeof DOM.readLocatorValue>;
+    const value=await handle.evaluate(read,{property,attribute,...(options.scope?{roots}:{})});
+    options.signal.throwIfAborted();
+    if(value.error)throw new BrowserError(value.error,value.error==='INVALID_ARGUMENT'?'The Locator does not support the requested property.':'No visible semantic evidence is available within the caller scope.');
+    const {error:_error,...evidence}=value;
+    if(page.url()!==rawURL||frame.url()!==frameURL)throw new BrowserError('STALE_TARGET','The semantic Locator document changed during observation.');
+    return {evidence:{sourceId,frame:page.frames().indexOf(frame),...evidence} as SemanticEvidence,frame,frameURL,rawURL};
+  }finally{await Promise.allSettled([...(handle?[handle]:[]),...roots].map(node=>node.dispose()));}
+}
+
+export async function semanticWithinScope(ref:{frame:Frame;handle:ElementHandle<Element>},scope?:string):Promise<boolean> {
+  if(!scope)return true;
+  const roots=await ref.frame.locator(`css=${scope}`).elementHandles() as ElementHandle<Element>[];
+  try{
+    const check=new Function('element','roots',`${source()}; return element.isConnected && JevDOM.withinSemanticRoots(element,roots);`) as (element:Element,roots:Element[])=>boolean;
+    return await ref.handle.evaluate(check,roots);
+  }finally{await Promise.allSettled(roots.map(root=>root.dispose()));}
 }

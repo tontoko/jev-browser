@@ -1,3 +1,4 @@
+import {semanticCandidates} from './helpers.mjs';
 import {test,before,after} from 'node:test';
 import assert from 'node:assert/strict';
 import {JevBrowser} from '../dist/index.js';
@@ -20,7 +21,7 @@ async function makeCore(t,reverse=false,abortAfterSource){
     for(const [id,question] of Object.entries(request.questions)){
       if(id.startsWith('source_')){
         const index=Number(id.slice('source_'.length));
-        const choice=Object.entries(question.criteria).find(([,candidate])=>candidate?.text===`Actual ${index}`)?.[0]??'__none__';
+        const choice=semanticCandidates(question,request).find(([,candidate])=>candidate?.text===`Actual ${index}`)?.[0]??'__none__';
         answers[id]={choice,confidence:0.96};
       }else if(id.startsWith('compare_')){
         const index=Number(id.slice('compare_'.length));
@@ -112,9 +113,9 @@ test('semantic source discovery: definition-list terms are labels, not actual va
   const engine={async decide(request){
     if(request.questions.source_0){
       const question=request.questions.source_0;
-      const candidates=Object.entries(question.criteria).filter(([id])=>!id.startsWith('__')).map(([,candidate])=>candidate);
+      const candidates=semanticCandidates(question,request).filter(([id])=>!id.startsWith('__')).map(([,candidate])=>candidate);
       assert.equal(candidates.some(candidate=>candidate.role==='term'),false);
-      const actual=Object.entries(question.criteria).find(([,candidate])=>candidate?.role==='definition'&&candidate.text==='Pro annual')?.[0];
+      const actual=semanticCandidates(question,request).find(([,candidate])=>candidate?.role==='definition'&&candidate.text==='Pro annual')?.[0];
       return {answers:{source_0:{choice:actual,confidence:0.9}}};
     }
     return {answers:{compare_0:{choice:'equivalent',confidence:0.95}}};

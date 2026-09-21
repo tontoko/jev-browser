@@ -65,12 +65,11 @@ export async function decideFrontier(
   options.signal.throwIfAborted();
 
   const answers: DecisionResult['answers'] = {};
-  let model: string | undefined;
+  const models = [...new Set(results.flatMap(result => result.models ?? (result.model ? [result.model] : [])))];
+  const model = models.length === 1 && results.every(result => result.model === models[0]) ? models[0] : undefined;
   let inputTokens = 0, outputTokens = 0;
   for (const [partIndex, part] of parts.entries()) {
     const result = results[partIndex]!;
-    if (model === undefined) model = result.model;
-    else if (result.model !== model) model = undefined;
     inputTokens += result.usage?.input_tokens ?? 0;
     outputTokens += result.usage?.output_tokens ?? 0;
     for (const [id, question] of Object.entries(part.questions)) {
@@ -85,6 +84,7 @@ export async function decideFrontier(
   return {
     answers,
     ...(model ? { model } : {}),
+    ...(models.length ? { models } : {}),
     usage: { input_tokens: inputTokens, output_tokens: outputTokens },
     elapsedMs: performance.now() - started,
   };

@@ -269,6 +269,7 @@ Input literals are available locally, not missing. Choose __none__ only if no ob
       const kind=action&&action.kind!=='scroll'?decision.answers[`effect_${choice}`]!.choice:'advance';
       if(kind==='forbidden')return finish('stopped','permission-required');
       const authority=await bindingAuthority([...planned.map(({input,ref})=>({input,ref})),...inputs.filter(input=>input.applied&&input.ref).map(input=>({input,ref:input.ref!}))],kind==='commit'&&action?.target?observed.refs.get(action.target.id):undefined);
+      if(authority.stale){lastRequest='';continue;} // A replaced form needs a new observation, not a false ambiguity verdict.
       if(!authority.valid)return finish('stopped','ambiguous');
       if(authority.form && await nativeFormBusy(authority.form)){
         if(await wait(observed)){lastRequest='';continue;}

@@ -11,6 +11,8 @@ const fieldType = z.enum(['string', 'number', 'boolean']);
 const field = z.union([fieldType, z.object({ type: fieldType, description: z.string().optional(), nullable: z.boolean().optional() }).strict()]);
 const confidence = z.number().min(0).max(1).optional();
 const semanticActual = z.union([z.object({ description: instruction }).strict(), z.object({ ref: z.string().min(1) }).strict()]);
+const semanticRequest = z.object({ actual: semanticActual, expected: z.string().min(1), minConfidence: confidence, minSourceConfidence: confidence }).strict();
+const semanticBatch = z.object({ requests: z.array(semanticRequest).min(1), minConfidence: confidence, minSourceConfidence: confidence, scope, timeoutMs: z.number().int().positive().optional() }).strict();
 export const commandSchemas = {
   ...nativeSchemas,
   goto: z.object({ url: z.url() }).strict(),
@@ -21,8 +23,11 @@ export const commandSchemas = {
   extract: z.object({ instruction, fields: z.record(z.string().min(1), field).optional(), schema: z.record(z.string(), z.unknown()).optional(), scope, recordsScope: scope }).strict()
     .refine(v => Number(v.fields !== undefined) + Number(v.schema !== undefined) === 1, { message: 'Provide exactly one of fields or schema (JSON Schema).' }),
   semantic_locate: z.object({ description: instruction, minConfidence: confidence, scope }).strict(),
+  semantic_locate_batch: z.object({ descriptions: z.array(instruction).min(1), minConfidence: confidence, scope }).strict(),
   semantic_compare: z.object({ actual: semanticActual, expected: z.string().min(1), minConfidence: confidence, minSourceConfidence: confidence, scope }).strict(),
   semantic_assert: z.object({ actual: semanticActual, expected: z.string().min(1), minConfidence: confidence, minSourceConfidence: confidence, scope }).strict(),
+  semantic_compare_batch: semanticBatch,
+  semantic_assert_batch: semanticBatch,
   run: z.object({ instruction, values: runValues, scope, maxSteps: z.number().int().positive().optional(), maxDecisions:z.number().int().positive().optional(),decisionRetries:z.number().int().min(0).max(2).optional(),settleTimeoutMs:z.number().int().positive().optional(),timeoutMs:z.number().int().positive().optional(),expect:z.union([nativeSchemas.assert,z.array(nativeSchemas.assert).min(1)]).optional() }).strict(),
   resume: z.object({ continuationId: z.string().min(1), values: runValues, scope, timeoutMs:z.number().int().positive().optional() }).strict(),
   screenshot: z.object({}).strict(),
@@ -38,8 +43,11 @@ const descriptions: Partial<Record<CommandName, string>> = {
   act: 'Use Jev to execute one instruction, or execute a previous planId. Literal input text belongs in named values. No automatic mutation retries.',
   extract: 'Copy source-grounded data. Use fields for scalar fields or JSON Schema for nested objects and arrays. recordsScope selects repeated DOM rows/cards. Returns data and source evidence.',
   semantic_locate: 'Use Jev to bind one caller description to a grounded current element. Returns a short-lived real ref, confidence and evidence; never a model-generated selector.',
+  semantic_locate_batch: 'Locate independent targets in one shared observation and decision frontier. Refs remain usable in this same observation until invalidated.',
   semantic_compare: 'Compare grounded actual evidence with caller expected meaning. Exact local equality avoids Jev; semantic outcomes include confidence, threshold and evidence.',
   semantic_assert: 'Read-only semantic assertion. Passed requires equivalent at/above threshold; different or inconclusive results are errors. Deterministic assertions remain available separately.',
+  semantic_compare_batch: 'Compare independent grounded actual/expected pairs in shared decision frontiers. Returns all results and aggregate usage counted once; snapshot comparison is not a live assertion.',
+  semantic_assert_batch: 'Read-only live batch assertion. Re-read each bound source before return; changed or inconclusive evidence cannot pass. Errors retain the complete per-item results.',
   run: 'Complete a goal with supplied nested JSON inputs. Independent field judgments are batched; browser writes are serial. Saved results require readback or explicit expect assertions. Returns input coverage, effect state, usage and partial progress on errors.',
   resume: 'Resume an opaque continuation in the same browser session. New nested values may be added; existing values cannot change. Unknown commits reconcile read-only before any mutation.',
   assert: 'Deterministically assert a page/element fact with Playwright polling. Failure is an error, never a model opinion.',
@@ -60,7 +68,7 @@ const descriptions: Partial<Record<CommandName, string>> = {
 };
 export const commandDescriptions = Object.fromEntries(Object.keys(commandSchemas).map(name => [name, descriptions[name as CommandName] ?? `Execute native Playwright ${name.replaceAll('_', ' ')} on the selected browser session. No model call.`])) as Record<CommandName, string>;
 export function commandReadOnly(name: CommandName): boolean {
-  return ['snapshot', 'observe', 'extract', 'semantic_locate', 'semantic_compare', 'semantic_assert', 'screenshot'].includes(name) || nativeReadOnly.has(name as NativeName);
+  return ['snapshot', 'observe', 'extract', 'semantic_locate', 'semantic_locate_batch', 'semantic_compare', 'semantic_assert', 'semantic_compare_batch', 'semantic_assert_batch', 'screenshot'].includes(name) || nativeReadOnly.has(name as NativeName);
 }
 export function parseCommand(input: unknown): Command {
   if (typeof input !== 'object' || input === null || !('command' in input) || typeof input.command !== 'string' || !Object.hasOwn(commandSchemas, input.command))
@@ -81,8 +89,15 @@ export async function executeCommand(browser: JevBrowser, request: Command, sign
     case 'run': { const {command,instruction,...runOptions}=request;return browser.run(instruction,{...runOptions,signal}); }
     case 'resume': return browser.resume(request.continuationId,{values:request.values,scope:request.scope,timeoutMs:request.timeoutMs,signal});
     case 'semantic_locate': return browser.locateSemantic(request.description, { ...options, minConfidence: request.minConfidence });
+    case 'semantic_locate_batch': return {targets:await browser.locateSemanticBatch(request.descriptions,{...options,minConfidence:request.minConfidence})};
     case 'semantic_compare': return browser.compareSemantic({ actual: request.actual, expected: request.expected, minConfidence: request.minConfidence, minSourceConfidence: request.minSourceConfidence }, options);
     case 'semantic_assert': return browser.assertSemantic({ actual: request.actual, expected: request.expected, minConfidence: request.minConfidence, minSourceConfidence: request.minSourceConfidence }, options);
+    case 'semantic_compare_batch':
+    case 'semantic_assert_batch': {
+      const method=request.command==='semantic_assert_batch'?'assertSemanticBatch':'compareSemanticBatch';
+      const results=await browser[method](request.requests,{...options,minConfidence:request.minConfidence,minSourceConfidence:request.minSourceConfidence,timeoutMs:request.timeoutMs});
+      return {results,usage:results[0]!.usage};
+    }
     case 'extract': {
       let schema: z.ZodType;
       if (request.schema) {

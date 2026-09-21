@@ -49,7 +49,10 @@ test('LIVE semantic threshold: plausible equivalence below threshold remains inc
   const {core}=await semanticPage(t,'<dl><dt>Renewal</dt><dd>Renews automatically on October 1</dd></dl>');
   const result=await core.compareSemantic({actual:{description:'The subscription renewal state'},expected:'The subscription is active and set to renew',minConfidence:0.8});
   console.log(JSON.stringify({case:'indirect-renewal',status:result.status,choice:result.choice,confidence:result.confidence,sourceConfidence:result.sourceConfidence,evidence:result.evidence.text,usage:result.usage}));
-  assert.equal(result.choice,'equivalent');
+  assert.equal(result.evidence.text,'Renews automatically on October 1');
+  if(result.sourceConfidence<result.sourceThreshold){
+    assert.equal(result.choice,'insufficient_evidence');assert.equal(result.usage.requests,1);
+  }else assert.equal(result.choice,'equivalent');
   assert.equal(result.status,result.confidence>=0.8&&result.sourceConfidence>=0.8?'passed':'inconclusive');
   if(result.confidence<0.8||result.sourceConfidence<0.8)assert.equal(result.status,'inconclusive');
 });

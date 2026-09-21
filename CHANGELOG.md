@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.7.0
+
+- Live semantic assertions re-read bound evidence before returning. A changed/hidden/replaced source is inconclusive rather than a stale pass; snapshot comparison remains available separately.
+- Accept real SDK Playwright Locators for visible text, explicit value, checked state and named attributes. Exact comparisons no longer require provider configuration. Added optional `semanticMatchers(core)` for native `expect.extend`, including non-passing inconclusive negation.
+- Added shared SDK/CLI/MCP semantic target/compare/assert batch APIs. Candidate metadata is shared once per frontier; multiple target refs remain available within one observation.
+- Preserve mixed-model provenance and structured assertion failure evidence, both thresholds, and expected values across inference, CLI/MCP and persistent session boundaries.
+- Reobserve detached form bindings instead of mistaking asynchronous navigation/search updates for ambiguous live form ownership. No stale browser mutation is replayed.
+- Expanded neutral search/edit/update/readback, freshness, cancellation, adapter and installed-package regression coverage. No new runtime dependency or browser selector engine.
+
+Freshness is an instant of observation, not a durability guarantee. Semantic confidence remains an uncalibrated decision score. The batch target reuse is not persistent automatic plan caching; same-core continuation from v0.6 remains available.
+
 ## 0.6.0
 
 - Multi-stage goals accumulate verified checkpoints and continue to explicitly requested later saves. Current-field binding and later-stage placement share a parallel decision frontier.

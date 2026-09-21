@@ -1,4 +1,4 @@
-import type { Page, LaunchOptions, BrowserContextOptions } from 'playwright';
+import type { Page, Locator, LaunchOptions, BrowserContextOptions } from 'playwright';
 import type { NativeCommand } from './native-schemas.js';
 import type { DecisionEngine, DecisionResult, JevOptions } from './decision.js';
 
@@ -78,14 +78,17 @@ export interface ActResult { status: 'executed' | 'dialog'; plan: ActionPlan; ur
 export interface OperationOptions { signal?: AbortSignal; scope?: string; timeoutMs?: number }
 export interface SemanticLocateOptions extends OperationOptions { minConfidence?: number }
 export interface SemanticEvidence { sourceId: string; frame: number; role: string; text: string; context: string; attribute?: string; value?: string | number | boolean }
-export interface SemanticTarget { ref: string; snapshotId: string; confidence: number; evidence: SemanticEvidence }
+export interface SemanticTarget { model?: string; models?: string[]; ref: string; snapshotId: string; confidence: number; evidence: SemanticEvidence }
 export type SemanticChoice = 'equivalent' | 'different' | 'insufficient_evidence';
 export type SemanticAssertionStatus = 'passed' | 'failed' | 'inconclusive';
-export type SemanticActual = SemanticTarget | { description: string } | { ref: string };
+export type SemanticLocatorProperty = 'text' | 'value' | 'checked' | 'attribute';
+export interface SemanticLocatorActual { locator: Locator; property?: SemanticLocatorProperty; attribute?: string }
+export type SemanticActual = SemanticTarget | { description: string } | { ref: string } | SemanticLocatorActual;
 export interface SemanticComparisonRequest { actual: SemanticActual; expected: string; minConfidence?: number; minSourceConfidence?: number }
 export interface SemanticCompareOptions extends OperationOptions { minConfidence?: number; minSourceConfidence?: number }
 export interface SemanticUsage { requests: number; questions: number; serialDecisionDepth: number; inputTokens: number; outputTokens: number; providerMs: number; observationMs: number; verificationMs: number }
-export interface SemanticComparisonResult { status: SemanticAssertionStatus; choice: SemanticChoice; confidence: number; sourceConfidence: number; threshold: number; sourceThreshold: number; source: 'deterministic' | 'semantic'; evidence: SemanticEvidence; model?: string; usage: SemanticUsage }
+export interface SemanticFailure { results: SemanticComparisonResult[]; expected: string[] }
+export interface SemanticComparisonResult { freshness?: 'snapshot' | 'verified' | 'changed'; currentEvidence?: SemanticEvidence; models?: string[]; status: SemanticAssertionStatus; choice: SemanticChoice; confidence: number; sourceConfidence: number; threshold: number; sourceThreshold: number; source: 'deterministic' | 'semantic'; evidence: SemanticEvidence; model?: string; usage: SemanticUsage }
 export interface ExtractOptions extends OperationOptions { recordsScope?: string }
 /** Remaining operation budget at callback entry. Awaited callbacks must honor signal. */
 export interface OperationContext { readonly signal: AbortSignal; readonly timeoutMs: number }

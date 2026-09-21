@@ -34,3 +34,9 @@ export async function httpServer(handler) {
 export async function fixtureBrowser() {
   return ({chromium,firefox,webkit}[process.env.JEV_BROWSER ?? 'chromium']).launch({headless:true});
 }
+
+// Follow the actual wire reference; fixtures do not fabricate omitted source data.
+export function semanticCandidates(question, request) {
+  const sources=new Map((request.state?.page?.sources??[]).map(source=>[source.id,source]));
+  return Object.entries(question.criteria).map(([id,candidate])=>[id,sources.get(candidate?.sourceId)??candidate]);
+}

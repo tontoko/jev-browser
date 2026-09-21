@@ -11,7 +11,7 @@ Playwright MCP／CLIのブラウザー操作と、Stagehand型の自然言語操
 Node.js 22.15以上。[GitHub Releases](https://github.com/tontoko/jev-browser/releases)のtarballをプロジェクトへインストールします。
 
 ```sh
-npm install --save-dev ./tontoko-jev-browser-0.6.0.tgz
+npm install --save-dev ./tontoko-jev-browser-0.7.0.tgz
 npx playwright install chromium
 npx jev-browser open https://example.com --session work
 npx jev-browser snapshot --session work
@@ -19,6 +19,24 @@ npx jev-browser close --session work
 ```
 
 `open`で作成した名前付きセッションは、別々のCLI呼び出しでもブラウザー状態を維持します。全コマンドは`--args JSON`で呼び出せます。MCPでは同じ操作を`browser_click`、`browser_type`、`browser_assert`などのツールとして公開します。
+
+## 既存のPlaywright Locatorをそのまま使う
+
+```ts
+import { expect as baseExpect } from '@playwright/test';
+import { semanticMatchers } from '@tontoko/jev-browser/playwright';
+
+const expect = baseExpect.extend(semanticMatchers(browser));
+await expect(page.getByTestId('plan')).toSemanticallyMatch(
+  'Professional annual subscription', { minConfidence: 0.8 },
+);
+```
+
+SDKの`assertSemantic`には`actual: { locator, property: 'text' }`を直接渡せます。`value`、`checked`、明示した`attribute`も対応します。完全一致ならモデル設定もAPIキーも不要です。`.not`で不確定な結果を成功へ反転させません。
+
+`compareSemantic`は取得した証拠の比較、`assertSemantic`は返却前に証拠を読み直す現在状態の検証です。推論中に対象が変わった場合は、古い証拠でpassせず`inconclusive`にします。同じ証拠で都合のよい回答が出るまで再判定はしません。例外の`error.semantic`には期待値、全結果、sourceと比較の各閾値が残り、CLI・MCP・名前付きセッションでも保持されます。
+
+SDKの`locateSemanticBatch`／`compareSemanticBatch`／`assertSemanticBatch`、CLIの`semantic_*_batch`、対応するMCPツールは同じコアです。独立した質問をまとめ、候補説明の重複を減らします。複数対象を一回で発見し、有効なrefを追加の推論なしでネイティブ操作へ使えます。詳細は[semantic verification](docs/semantic-verification.md)に記載しています。
 
 ## 一度の依頼で、入力から保存・結果確認まで
 
@@ -44,7 +62,7 @@ hosted Jevを使う場合は`JEV_API_KEY`を設定します。Jev互換のSystem
 
 ```ts
 const browser = new JevBrowser({ page });
-await browser.act('氏名欄にnameを入力', { values: { name: '検証用の受講者' } });
+await browser.act('氏名欄にnameを入力', { values: { name: '検証用の顧客' } });
 await browser.act('保存ボタンを押す');
 await expect(page.getByText('保存済み', { exact: true })).toBeVisible();
 ```

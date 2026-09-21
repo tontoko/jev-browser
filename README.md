@@ -13,7 +13,7 @@ Native operations and assertions run **without an AI key**. Natural-language ope
 Node.js **22.15 or newer**. Download the package from [GitHub Releases](https://github.com/tontoko/jev-browser/releases), then install it into your project:
 
 ```sh
-npm install --save-dev ./tontoko-jev-browser-0.6.0.tgz
+npm install --save-dev ./tontoko-jev-browser-0.7.0.tgz
 npx playwright install chromium
 ```
 
@@ -29,6 +29,26 @@ node dist/cli.js --help
 ```
 
 The release tarball includes compiled JavaScript, declarations, the DOM bundle, documentation, and examples. There is no postinstall browser download and no requirement for a global browser daemon. The package is distributed on GitHub Releases; a registry publication is not implied.
+
+## Use existing Playwright Locators, not another selector engine
+
+```ts
+import { JevBrowser } from '@tontoko/jev-browser';
+import { semanticMatchers } from '@tontoko/jev-browser/playwright';
+import { expect as baseExpect } from '@playwright/test';
+
+const browser = new JevBrowser({ page });
+const expect = baseExpect.extend(semanticMatchers(browser));
+await expect(page.getByTestId('plan')).toSemanticallyMatch(
+  'Professional annual subscription', { minConfidence: 0.8 },
+);
+```
+
+`actual: { locator, property: 'text' | 'value' | 'checked' | 'attribute' }` also works directly in `assertSemantic` / `assertSemanticBatch`. Exact values need no model configuration. Ambiguous targets, other Pages and caller-scope escapes are rejected. The optional matcher uses Playwright's existing `expect.extend`; `.not` does not turn uncertain evidence into a pass.
+
+`compareSemantic` compares the observed snapshot. `assertSemantic` also re-reads its actual sources before returning: changed or disappeared evidence is **inconclusive**, not a stale success. It does not repeatedly sample the same evidence until a model agrees. Failures preserve `error.semantic` with expected meanings, all results, both confidence thresholds and current evidence when available; CLI/MCP and named sessions keep that structure.
+
+Independent work shares a frontier across every interface: SDK `locateSemanticBatch` / `compareSemanticBatch` / `assertSemanticBatch`, CLI `semantic_locate_batch` / `semantic_compare_batch` / `semantic_assert_batch`, and matching `browser_…` MCP tools. A target batch returns usable refs from one retained observation; later native actions need no additional model call while those refs remain valid. Source descriptions are sent once per frontier rather than repeated in every question. See [semantic verification](docs/semantic-verification.md) for freshness and exact trust boundaries.
 
 ## One request, a complete creation task
 
