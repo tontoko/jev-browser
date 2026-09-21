@@ -48,3 +48,22 @@ test('LIVE semantic-first: large extraction overlaps independent provider chunks
   assert.deepEqual(result.data,Array.from({length:count},(_,i)=>({name:`Account ${i}`,credits:i+10})));
   assert.equal(peak,2);assert.deepEqual(timeline.map(x=>x.questions),[40,64,16]);
 });
+
+for(const [instruction,reason] of [
+  ['Enter the shipping reference and create the shipment.','missing-input'],
+  ['Open the invoice export tool.','no-match'],
+])test(`LIVE semantic-first: blocked task distinguishes ${reason}`,async t=>{
+  const page=await browser.newPage();
+  await page.setContent('<h1>Shipping details</h1><label>Shipping reference<input required></label><button disabled>Create shipment</button>');
+  const provider=new JevDecisionEngine();let diagnoses=0;
+  const core=new JevBrowser({page,engine:{async decide(request,options){
+    if(request.questions.blocker)diagnoses++;
+    return provider.decide(request,options);
+  }}});
+  t.after(async()=>{await core.close();await page.close();});
+  const result=await core.run(instruction,{settleTimeoutMs:30,timeoutMs:15000,maxSteps:3});
+  console.log(JSON.stringify({case:'blocked-task',instruction,reason:result.reason,status:result.status,diagnoses,usage:result.usage}));
+  assert.equal(result.status,'stopped');assert.equal(result.reason,reason);assert.equal(diagnoses,1);
+  assert.equal(await page.locator('input').inputValue(),'');
+  assert.equal(result.effects.filter(effect=>effect.kind==='commit').length,0);
+});

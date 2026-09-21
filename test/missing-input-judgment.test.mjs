@@ -10,11 +10,11 @@ after(async()=>{await browser?.close();});
 test('goal judgment: Jev can identify a missing later-stage value without attempting a save',async t=>{
   const base=stagedDecider();let missingQuestions=0;
   const decider={async decide(request,options){
+    if(request.questions.blocker){missingQuestions++;assert.deepEqual(request.state.inputs.map(input=>input.path),['/email']);return {answers:{blocker:{choice:'missing',confidence:0.99}}};}
     const result=await base.decide(request,options);
     if(request.questions.action&&request.state.page.elements.some(e=>e.name==='Membership code')&&!request.state.inputs.some(input=>input.path==='/membershipCode')){
-      missingQuestions++;
       assert.deepEqual(request.state.inputs.map(input=>input.path),['/email']);
-      result.answers.action={choice:Object.hasOwn(request.questions.action.criteria,'__missing__')?'__missing__':'__none__',confidence:0.99};
+      result.answers.action={choice:'__none__',confidence:0.99};
     }
     return result;
   }};
@@ -31,18 +31,29 @@ test('goal judgment: Jev can identify a missing later-stage value without attemp
 test('goal judgment: a missing-data judgment cannot override a satisfied caller oracle',async t=>{
   const page=await browser.newPage();await page.setContent('<p>Pending</p><button>Save</button>');
   const decider={async decide(request){
-    await page.locator('p').evaluate(node=>{node.textContent='Done';});
-    return {answers:Object.fromEntries(Object.keys(request.questions).map(id=>[id,{choice:id==='action'?'__missing__':'commit',confidence:1}]))};
+    if(request.questions.blocker){await page.locator('p').evaluate(node=>{node.textContent='Done';});return {answers:{blocker:{choice:'missing',confidence:1}}};}
+    return {answers:Object.fromEntries(Object.keys(request.questions).map(id=>[id,{choice:id==='action'?'__none__':'commit',confidence:1}]))};
   }};
   const core=new JevBrowser({page,engine:decider});t.after(async()=>{await core.close();await page.close();});
-  const result=await core.run('Save when needed',{until:async page=>(await page.locator('p').textContent())==='Done'});
+  const result=await core.run('Save when needed',{settleTimeoutMs:20,until:async page=>(await page.locator('p').textContent())==='Done'});
   assert.equal(result.status,'complete');assert.equal(result.reason,'verified');assert.deepEqual(result.steps,[]);
 });
 
 test('goal judgment: unavailable action is not relabeled as missing data by form heuristics',async t=>{
   const page=await browser.newPage();await page.setContent('<form><label>Code<input required></label><button>Save</button></form>');
-  const core=new JevBrowser({page,engine:{async decide(request){return {answers:Object.fromEntries(Object.keys(request.questions).map(id=>[id,{choice:id==='action'?'__none__':'commit',confidence:1}]))};}}});
+  const core=new JevBrowser({page,engine:{async decide(request){if(request.questions.blocker)return {answers:{blocker:{choice:'__none__',confidence:1}}};return {answers:Object.fromEntries(Object.keys(request.questions).map(id=>[id,{choice:id==='action'?'__none__':'commit',confidence:1}]))};}}});
   t.after(async()=>{await core.close();await page.close();});
   const result=await core.run('Open the unrelated inventory screen',{settleTimeoutMs:20});
   assert.equal(result.reason,'no-match');assert.deepEqual(result.steps,[]);
+});
+
+test('goal judgment: available actions do not compete with a missing-data diagnosis',async t=>{
+  const base=stagedDecider();const decider={async decide(request,options){
+    assert.equal(request.questions.blocker,undefined);
+    if(request.questions.action)assert.equal(Object.hasOwn(request.questions.action.criteria,'__missing__'),false);
+    return base.decide(request,options);
+  }};
+  const app=await continuationFixture(t,browser,{decider});
+  const result=await app.core.run(goal,{values});
+  assert.equal(result.status,'complete');assert.deepEqual(app.submissions.map(x=>x.stage),['account','membership','reservation']);
 });
