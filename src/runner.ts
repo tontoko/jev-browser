@@ -275,6 +275,7 @@ Input bindings listed in state.inputs are available locally, not missing. Their 
         if(await wait(observed)){lastRequest='';continue;}
         return finish('stopped','validation');
       }
+      const beforeInputs=steps.length;
       let stale=false;
       for(const {input,target,operation,ref}of planned){
         if(!operation)continue;
@@ -301,6 +302,9 @@ Input bindings listed in state.inputs are available locally, not missing. Their 
       if(choice==='__inputs__')continue;
       if(!action){
         if(await callerCondition()||!options.until&&await callerAssertions())return finish('complete','verified');
+        // The speculative no-action answer predates these actual input effects.
+        // Ask on their new state; do not guess a Save or resample unchanged evidence.
+        if(steps.length>beforeInputs)continue;
         if(await wait(observed))continue;
         if(choice==='__done__'&&options.until){
           if(callerRejectedDone)return finish('unverified','condition-unmet');

@@ -2,6 +2,7 @@
 
 ## 0.7.1
 
+- A speculative no-action answer is reconsidered after new input effects, using the resulting observation. It does not prevent a requested save merely because the earlier decision saw empty fields; unchanged evidence is not repeatedly sampled.
 - A blocked goal can ask Jev to distinguish missing caller data from an unavailable action, preserving resumable checkpoints. This diagnostic runs only after no action/progress; it does not compete with executable actions or replace semantic judgment with required-field heuristics.
 - Preserve semantic evidence rather than compatibility-folding notation into deterministic truth. Literal equality remains local; notation/spacing differences reach Jev with the original captured text. Caller Locator text is no longer additionally whitespace-normalized.
 - Numeric extraction copies only supported numeric syntax, including its existing full-width digit/currency forms. Superscripts, subscripts and circled digits cannot silently become unrelated decimal values; no equation evaluator or synonym rules were added.

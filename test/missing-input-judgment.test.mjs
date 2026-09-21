@@ -2,6 +2,8 @@ import {test,before,after} from 'node:test';
 import assert from 'node:assert/strict';
 import {fixtureBrowser} from './helpers.mjs';
 import {JevBrowser} from '../dist/index.js';
+import {wizardFixture} from './wizard-fixture.mjs';
+import {formEngine} from './goal-fixture.mjs';
 import {continuationFixture,stagedDecider,goal,values} from './continuation-fixture.mjs';
 let browser;
 before(async()=>{browser=await fixtureBrowser();});
@@ -56,4 +58,21 @@ test('goal judgment: available actions do not compete with a missing-data diagno
   const app=await continuationFixture(t,browser,{decider});
   const result=await app.core.run(goal,{values});
   assert.equal(result.status,'complete');assert.deepEqual(app.submissions.map(x=>x.stage),['account','membership','reservation']);
+});
+
+test('goal judgment: a no-action verdict made before new input effects is reconsidered on their resulting state',async t=>{
+  const app=await wizardFixture(t,browser);await app.core.close();
+  const base=formEngine();let preliminaryStops=0;
+  const core=new JevBrowser({page:app.page,engine:{async decide(request,options){
+    const result=await base.decide(request,options);
+    if(request.questions.action&&request.state.page.elements.some(element=>element.name==='Contact email')&&request.state.inputs.some(input=>input.path==='/email'&&!input.applied)){
+      result.answers.action={choice:'__none__',confidence:0.9};preliminaryStops++;
+    }
+    return result;
+  }}});
+  t.after(()=>core.close());
+  const result=await core.run('Create the contact with name, Next, email, then Save.',{values:{name:'New contact',email:'progress@example.invalid'}});
+  assert.equal(result.status,'complete',JSON.stringify(result));assert.equal(preliminaryStops,1);
+  assert.equal(app.attempts.length,1);
+  assert.deepEqual(app.records,[{'/name':'New contact','/email':'progress@example.invalid'}]);
 });
