@@ -179,3 +179,31 @@ export function readSemanticText(el: Element, attribute?: string) {
   }
   return {text:normalize((el as HTMLElement).innerText ?? el.textContent),context:context(el),role};
 }
+
+/** Read a caller-selected property without changing the element. */
+export function readLocatorValue(el: Element, args: {property:string;attribute?:string;roots?:Element[]}) {
+  if (!el.isConnected || !visible(el)) return {error:'SEMANTIC_NO_MATCH'};
+  if (args.roots) {
+    let node:Element|null=el,contained=false;
+    while(node){
+      if(args.roots.some(root=>root===node||root.contains(node))){contained=true;break;}
+      const root=node.getRootNode();node=root instanceof ShadowRoot?root.host:null;
+    }
+    if(!contained)return {error:'SEMANTIC_NO_MATCH'};
+  }
+  const role=getRole(el)??el.tagName.toLowerCase(),group=context(el);
+  if(args.property==='text')return {text:normalize((el as HTMLElement).innerText??el.textContent),context:group,role};
+  if(args.property==='value'){
+    if(!(el instanceof HTMLInputElement||el instanceof HTMLTextAreaElement||el instanceof HTMLSelectElement)||el instanceof HTMLSelectElement&&el.multiple)return {error:'INVALID_ARGUMENT'};
+    return {text:el.value,value:el.value,context:group,role,attribute:'value'};
+  }
+  if(args.property==='checked'){
+    const checked=checkedState(el);if(checked===undefined)return {error:'INVALID_ARGUMENT'};
+    return {text:String(checked),value:checked,context:group,role,attribute:'checked'};
+  }
+  if(args.property==='attribute'){
+    const value=el.getAttribute(args.attribute!);if(value===null)return {error:'SEMANTIC_NO_MATCH'};
+    return {text:value,value,context:group,role,attribute:args.attribute};
+  }
+  return {error:'INVALID_ARGUMENT'};
+}

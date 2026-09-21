@@ -6,14 +6,14 @@ import { z } from 'zod';
 import type { EntryType } from '@typesafe-ai/sdk';
 import { JevDecisionEngine, type DecisionEngine, type DecisionRequest } from './decision.js';
 import { BrowserError } from './errors.js';
-import { capture, publicURL, verifyTarget, currentSemanticEvidence, captureComboboxChoice, captureRegions, verifyOwnedOption, type Captured } from './observation.js';
+import { capture, publicURL, verifyTarget, currentSemanticEvidence, readLocatorEvidence, captureComboboxChoice, captureRegions, verifyOwnedOption, type Captured } from './observation.js';
 import { actionCandidates, actionDescription, modelElementId, inputBindings, modelElement, resolveSelectChoice } from './actions.js';
 import { flattenInputs } from './bindings.js';
 import { extractStructured } from './structured.js';
 import { NativeBrowser } from './native.js';
 import { compareSemanticWork, elementEvidence, locateSemanticTarget, semanticThreshold } from './semantic.js';
 import { parseNative, nativeSchemas, nativeReadOnly, type NativeCommand } from './native-schemas.js';
-import type { ActionPlan, ActOptions, ActResult, BrowserOptions, BrowserLaunchOptions, ExtractResult, ExtractOptions, GoalCheckpoint, OperationOptions, ResumeOptions, RunOptions, RunResult, RunValue, Snapshot, SemanticLocateOptions, SemanticTarget, SemanticActual, SemanticCompareOptions, SemanticComparisonRequest, SemanticComparisonResult } from './types.js';
+import type { ActionPlan, ActOptions, ActResult, BrowserOptions, BrowserLaunchOptions, ExtractResult, ExtractOptions, GoalCheckpoint, OperationOptions, ResumeOptions, RunOptions, RunResult, RunValue, Snapshot, SemanticEvidence, SemanticLocateOptions, SemanticTarget, SemanticActual, SemanticCompareOptions, SemanticComparisonRequest, SemanticComparisonResult } from './types.js';
 
 interface Operation { signal: AbortSignal; deadline: number }
 const pageLeases = new WeakMap<Page, JevBrowser>();
@@ -195,7 +195,19 @@ export class JevBrowser {
       } finally { if (!retained) await observed.dispose(); }
     });
   }
-  private async semanticActual(actual: SemanticActual): Promise<{ description?: string; evidence?: ReturnType<typeof elementEvidence>; sourceSemantic?: boolean; sourceConfidence?: number }> {
+  private async semanticActual(actual: SemanticActual, operation:Operation, scope?:string): Promise<{ description?: string; evidence?: SemanticEvidence; sourceSemantic?: boolean; sourceConfidence?: number; readCurrent?:()=>Promise<SemanticEvidence|undefined> }> {
+    if ('locator' in actual) {
+      const locator=actual.locator,property=actual.property??'text',attribute=actual.attribute;
+      const sourceId='locator_'+randomUUID();
+      const observed=await readLocatorEvidence(this.page,locator,property,attribute,sourceId,{scope,signal:operation.signal,timeoutMs:this.remaining(operation)});
+      return {evidence:observed.evidence,sourceSemantic:false,sourceConfidence:1,readCurrent:async()=>{
+        if(this.page.url()!==observed.rawURL||observed.frame.url()!==observed.frameURL)return;
+        try{
+          const current=await readLocatorEvidence(this.page,locator,property,attribute,sourceId,{scope,signal:operation.signal,timeoutMs:this.remaining(operation),current:true});
+          return current.frame===observed.frame&&current.frameURL===observed.frameURL&&current.rawURL===observed.rawURL?current.evidence:undefined;
+        }catch{operation.signal.throwIfAborted();return;}
+      }};
+    }
     if ('description' in actual) {
       if (!actual.description.trim()) throw new BrowserError('INVALID_ARGUMENT','A semantic actual description is required.');
       return { description: actual.description };
@@ -220,9 +232,10 @@ export class JevBrowser {
       throw new BrowserError('INVALID_ARGUMENT','Semantic expected meaning must be a nonempty string.');
     if (!requests.length) return [];
     return this.exclusive(options, async operation => {
-      const work = [];
+      const work = [], currentReaders:Array<(()=>Promise<SemanticEvidence|undefined>)|undefined>=[];
       for (const [index, request] of requests.entries()) {
-        const actual = await this.semanticActual(request.actual);
+        const {readCurrent,...actual} = await this.semanticActual(request.actual,operation,options.scope);
+        currentReaders[index]=readCurrent;
         work.push({ ...actual, expected: request.expected, threshold: thresholds[index]!, sourceThreshold: sourceThresholds[index]! });
       }
       const needsObservation = work.some(item => !item.evidence);
@@ -235,9 +248,9 @@ export class JevBrowser {
         for (const result of results) { result.usage.observationMs += observationMs; result.freshness = 'snapshot'; }
         if (live) {
           const started = performance.now();
-          await Promise.all(results.map(async result => {
+          await Promise.all(results.map(async (result,index) => {
             const source = observed?.textRefs?.has(result.evidence.sourceId) || observed?.refs.has(result.evidence.sourceId) ? observed : this.snapshotCapture;
-            const current = source ? await currentSemanticEvidence(this.page,source,result.evidence) : undefined;
+            const current = currentReaders[index] ? await currentReaders[index]!() : source ? await currentSemanticEvidence(this.page,source,result.evidence) : undefined;
             result.freshness = current && isDeepStrictEqual(current,result.evidence) ? 'verified' : 'changed';
             if (result.freshness === 'changed') { result.status='inconclusive'; if (current) result.currentEvidence=current; }
           }));

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
-import type { ElementHandle, JSHandle, Page, Frame } from 'playwright';
-import type { Snapshot, ElementInfo, SemanticEvidence } from './types.js';
+import type { ElementHandle, JSHandle, Page, Frame, Locator } from 'playwright';
+import type { Snapshot, ElementInfo, SemanticEvidence, SemanticLocatorProperty } from './types.js';
 import { BrowserError } from './errors.js';
 import type * as DOM from './dom.js';
 
@@ -164,4 +164,34 @@ export async function currentSemanticEvidence(page: Page, captured: Captured, ev
     const value = await ref.handle.evaluate(read,evidence.attribute);
     return value ? {sourceId:evidence.sourceId,frame:evidence.frame,...value} : undefined;
   } catch { return; }
+}
+
+export interface LocatorEvidence { evidence: SemanticEvidence; frame: Frame; frameURL: string; rawURL: string }
+export async function readLocatorEvidence(page:Page,locator:Locator,property:SemanticLocatorProperty,attribute:string|undefined,sourceId:string,
+  options:{scope?:string;signal:AbortSignal;timeoutMs:number;current?:boolean}):Promise<LocatorEvidence> {
+  options.signal.throwIfAborted();
+  if(!locator || typeof locator.page!=='function' || typeof locator.elementHandle!=='function' || locator.page()!==page)
+    throw new BrowserError('INVALID_ARGUMENT','The semantic Locator must belong to this Page.');
+  if(!['text','value','checked','attribute'].includes(property)||property==='attribute'&&(!attribute||!attribute.trim()))
+    throw new BrowserError('INVALID_ARGUMENT','Choose text, value, checked, or an explicitly named attribute.');
+  const rawURL=page.url();
+  if(!options.current && await locator.count()===0)await locator.waitFor({state:'attached',timeout:options.timeoutMs,signal:options.signal});
+  const count=await locator.count();
+  if(count!==1)throw new BrowserError(count?'SEMANTIC_AMBIGUOUS':'SEMANTIC_NO_MATCH','A semantic Locator must resolve to exactly one observed element.');
+  const handle=await locator.elementHandle({timeout:options.timeoutMs});
+  const roots:ElementHandle<Element>[]=[];
+  try{
+    if(!handle)throw new BrowserError('SEMANTIC_NO_MATCH','The semantic Locator target is absent.');
+    const frame=await handle.ownerFrame();
+    if(!frame||page.url()!==rawURL)throw new BrowserError('STALE_TARGET','The semantic Locator page changed during observation.');
+    const frameURL=frame.url();
+    if(options.scope)roots.push(...await frame.locator(`css=${options.scope}`).elementHandles() as ElementHandle<Element>[]);
+    const read=new Function('element','args',`${source()}; return JevDOM.readLocatorValue(element,args);`) as (element:Element,args:{property:string;attribute?:string;roots?:Element[]})=>ReturnType<typeof DOM.readLocatorValue>;
+    const value=await handle.evaluate(read,{property,attribute,...(options.scope?{roots}:{})});
+    options.signal.throwIfAborted();
+    if(value.error)throw new BrowserError(value.error,value.error==='INVALID_ARGUMENT'?'The Locator does not support the requested property.':'No visible semantic evidence is available within the caller scope.');
+    const {error:_error,...evidence}=value;
+    if(page.url()!==rawURL||frame.url()!==frameURL)throw new BrowserError('STALE_TARGET','The semantic Locator document changed during observation.');
+    return {evidence:{sourceId,frame:page.frames().indexOf(frame),...evidence} as SemanticEvidence,frame,frameURL,rawURL};
+  }finally{await Promise.allSettled([...(handle?[handle]:[]),...roots].map(node=>node.dispose()));}
 }
