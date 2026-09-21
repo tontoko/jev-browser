@@ -24,6 +24,7 @@ test('selection: opt-in delegates representation to Jev and preserves a verified
   assert.equal(r.status,'complete',JSON.stringify(r));assert.equal(f.submissions.length,1);
   assert.equal(f.submissions[0].a9,'JP');assert.equal(f.submissions[0].b4,values.note);
   assert.equal(r.inputs.find(i=>i.path==='/country').resolution.confidence,0.95);
+  assert.equal(r.inputs.find(i=>i.path==='/country').resolution.model,'deterministic-test-engine');
   assert.deepEqual(r.verification.semanticInputs,['/country']);
   const calls=f.decider.requests.filter(r=>Object.keys(r.questions).some(id=>id.startsWith('selection_')));
   assert.equal(calls.length,1);assert.deepEqual(calls[0].state.suppliedSelections,{'/country':'Japan'});

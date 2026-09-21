@@ -29,3 +29,14 @@ for(const [value,options,country] of [
   assert.ok(requests.some(r=>r.state.suppliedSelections?.['/country']===value));
   assert.ok(requests.every(r=>!JSON.stringify(r).includes('synthetic-private-note')));
 });
+
+test('LIVE semantic selection: distant option in a thousand-option list',async t=>{
+  const options=[{label:'Choose',value:''},...Array.from({length:998},(_,i)=>({label:`Synthetic destination ${i}`,value:`d${i}`})),{label:'日本',value:'JP'}];
+  const engine=new JevDecisionEngine(),requests=[];const wrapped={decide(r,o){requests.push(structuredClone(r));return engine.decide(r,o);}};
+  const app=await selectionFixture(t,browser,{engine:wrapped,options});
+  const start=performance.now();const r=await app.core.run('Set the country and private note, Save once, and verify the address.',{values:{country:'Japan',note:'synthetic-large-list-note'},semanticInputs:{'/country':0.8}});
+  const optionCalls=requests.filter(r=>Object.keys(r.questions).some(id=>id.startsWith('selection_')));
+  console.log(JSON.stringify({case:'semantic-1000-options',status:r.status,reason:r.reason,ms:Math.round(performance.now()-start),submissions:app.submissions.length,usage:r.usage,optionRequests:optionCalls.length,optionQuestions:optionCalls.reduce((n,r)=>n+Object.keys(r.questions).length,0)}));
+  assert.equal(r.status,'complete',JSON.stringify(r));assert.equal(app.submissions.length,1);assert.equal(app.submissions[0].a9,'JP');
+  assert.ok(optionCalls.some(r=>Object.values(r.questions).some(q=>Object.hasOwn(q.criteria,'option_999'))));
+});
