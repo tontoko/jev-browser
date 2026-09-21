@@ -46,3 +46,16 @@ test('caller oracle is rechecked after a quiet wait before condition-unmet',asyn
   const result=await core.run('Save once.',{settleTimeoutMs:650,timeoutMs:6000,until:page=>page.evaluate(()=>window.saved===true)});
   assert.equal(result.status,'complete',JSON.stringify(result));assert.equal(await page.evaluate(()=>window.saves),1);
 });
+
+test('progress includes observed native checked state',async t=>{
+  const page=await browser.newPage();t.after(()=>page.close());await page.setContent('<label>Enabled<input type="checkbox"></label>');
+  const observed=await capture(page,limits);t.after(()=>observed.dispose());
+  await page.locator('input').evaluate(node=>node.checked=true);
+  assert.equal(await waitForRelevantChange(page,observed,250,new AbortController().signal),true);
+});
+test('progress includes observed link destinations',async t=>{
+  const page=await browser.newPage();t.after(()=>page.close());await page.setContent('<a href="https://example.invalid/pending">Result</a>');
+  const observed=await capture(page,limits);t.after(()=>observed.dispose());
+  await page.locator('a').evaluate(node=>node.href='https://example.invalid/saved');
+  assert.equal(await waitForRelevantChange(page,observed,250,new AbortController().signal),true);
+});
