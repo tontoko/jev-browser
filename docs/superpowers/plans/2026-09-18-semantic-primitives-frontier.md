@@ -245,7 +245,7 @@ Expected: FAIL because compare/assert methods do not exist.
 
 - [ ] **Step 5: Implement result classification and deterministic normalization**
 
-Use a conservative local normalization (Unicode NFKC, collapsed whitespace, trim) for exact textual equality only. Do not add fuzzy string matching. If equal, return deterministic pass without Jev.
+Superseded by v0.7.1: use literal equality only. NFKC and whitespace folding can change meaning; those comparisons belong to Jev using the original captured evidence. Do not add fuzzy matching, expression evaluation or site-specific equivalence rules.
 
 Define:
 

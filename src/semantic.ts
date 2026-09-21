@@ -46,7 +46,6 @@ const publicEvidence = (evidence: SemanticEvidence) => ({
   ...(evidence.value !== undefined ? { value: evidence.value } : {}),
 });
 
-const normalizeExact = (value: string) => value.normalize('NFKC').replace(/\s+/g,' ').trim();
 const evidenceText = (evidence: SemanticEvidence) => evidence.value !== undefined ? String(evidence.value) : evidence.text;
 
 export async function locateSemanticTargets(
@@ -184,7 +183,8 @@ Each candidate references its complete evidence by id in state.page.sources. A f
   for (const item of prepared) {
     const evidence = item.evidence!;
     const sourceConfidence = item.sourceConfidence ?? 1;
-    if (normalizeExact(evidenceText(evidence)) === normalizeExact(item.expected)) {
+    // Only literal equality is local; notation, formatting, and meaning belong to Jev.
+    if (evidenceText(evidence) === item.expected) {
       const semanticSource = item.sourceSemantic === true;
       partial[item.index]={
         status:semanticSource && sourceConfidence < item.sourceThreshold ? 'inconclusive' : 'passed',

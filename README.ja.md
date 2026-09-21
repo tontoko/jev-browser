@@ -11,7 +11,7 @@ Playwright MCP／CLIのブラウザー操作と、Stagehand型の自然言語操
 Node.js 22.15以上。[GitHub Releases](https://github.com/tontoko/jev-browser/releases)のtarballをプロジェクトへインストールします。
 
 ```sh
-npm install --save-dev ./tontoko-jev-browser-0.7.0.tgz
+npm install --save-dev ./tontoko-jev-browser-0.7.1.tgz
 npx playwright install chromium
 npx jev-browser open https://example.com --session work
 npx jev-browser snapshot --session work

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { BrowserError } from './errors.js';
 import { extractGrounded } from './extract.js';
+import { decideFrontier, emptyDecisionUsage } from './frontier.js';
 import type { DecisionEngine, DecisionRequest, DecisionResult } from './decision.js';
 import type { ExtractResult, Snapshot } from './types.js';
 
@@ -40,34 +41,31 @@ export async function extractStructured<S extends z.ZodType>(snapshot: Snapshot,
     const reads = pending.splice(0); scheduled = false;
     try {
       const work = reads.flatMap((read,index) => Object.entries(read.request.questions).map(([id,question]) => ({index,id,question})));
-      const answers: DecisionResult['answers'][] = reads.map(() => ({}));
-      for (let offset = 0; offset < work.length;) {
-        let count = Math.min(64, work.length-offset), request: DecisionRequest;
-        const wireId = (entry: typeof work[number]) => reads.length === 1 ? entry.id : `g${entry.index}_${entry.id}`;
-        while (true) {
-          const chunk = work.slice(offset,offset+count);
-          request = {
-            state: reads.length === 1 ? reads[0]!.request.state : { contexts: Object.fromEntries([...new Set(chunk.map(entry=>entry.index))].map(index=>[`g${index}`,reads[index]!.request.state])) },
-            questions: Object.fromEntries(chunk.map(entry => [wireId(entry), { ...entry.question,
-              instructions: (reads.length === 1 ? '' : `Use only state.contexts.g${entry.index} for this question; other contexts belong to different records/fields.\n`) + entry.question.instructions,
-            }])),
-          };
-          if (Buffer.byteLength(JSON.stringify(request)) <= 128*1024) break;
-          if (count === 1) throw new BrowserError('OBSERVATION_LIMIT','An extraction question exceeds the request budget. Narrow the extraction scope.');
-          count = Math.max(1,Math.floor(count/2));
-        }
-        signal.throwIfAborted();
-        const result = await engine().decide(request!,{signal});
-        signal.throwIfAborted();
-        for (const entry of work.slice(offset,offset+count)) {
-          const answer = result.answers[wireId(entry)];
-          if (!answer || !Object.hasOwn(entry.question.criteria,answer.choice)) throw new BrowserError('INVALID_DECISION','The batched extraction omitted a question or selected an unknown source.');
-          answers[entry.index]![entry.id] = answer;
-        }
-        const {answers: _answers,...metadata} = result; decisions.push(metadata);
-        offset += count;
-      }
-      for (const [index,read] of reads.entries()) read.resolve({answers:answers[index]!});
+      const wireId = (entry: typeof work[number]) => reads.length === 1 ? entry.id : `g${entry.index}_${entry.id}`;
+      const owners = new Map(work.map(entry => [wireId(entry),entry.index]));
+      const questions = Object.fromEntries(work.map(entry => [wireId(entry), { ...entry.question,
+        instructions: (reads.length === 1 ? '' : `Use only state.contexts.g${entry.index} for this question; other contexts belong to different records/fields.\n`) + entry.question.instructions,
+      }]));
+      const received: typeof decisions = [];
+      let dispatched = 0;
+      const result = await decideFrontier({ async decide(request,options) {
+        const index = dispatched++;
+        const response = await engine().decide(request,options);
+        const {answers: _answers,...metadata} = response;
+        received[index] = metadata;
+        return response;
+      } }, {state:{},questions}, {
+        signal, usage:emptyDecisionUsage(),
+        // Keep only the contexts belonging to this transport chunk. The common
+        // frontier owns byte/question limits, cancellation and response checks.
+        stateForQuestions: chunk => reads.length === 1 ? reads[0]!.request.state : {
+          contexts:Object.fromEntries([...new Set(Object.keys(chunk).map(id=>owners.get(id)!))].map(index=>[`g${index}`,reads[index]!.request.state])),
+        },
+      });
+      decisions.push(...received);
+      for (const [index,read] of reads.entries()) read.resolve({
+        answers:Object.fromEntries(Object.keys(read.request.questions).map(id => [id,result.answers[reads.length===1?id:`g${index}_${id}`]!])),
+      });
     } catch (error) { for (const read of reads) read.reject(error); }
   }
   const prefix = (path: string, key: string) => path ? `${path}.${key}` : key;

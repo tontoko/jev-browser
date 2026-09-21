@@ -5,7 +5,7 @@ import type { ExtractResult, Snapshot, TextEvidence } from './types.js';
 import { BrowserError } from './errors.js';
 
 function numberFromText(text: string): number | undefined {
-  const normalized = text.normalize('NFKC').replaceAll('−', '-').trim().replace(/^[¥$€£]\s*/, '').replace(/\s*(?:JPY|USD|EUR|GBP|円)$/, '');
+  const normalized = text.replace(/[０-９，．＋－￥＄]/g, char => char.normalize('NFKC')).replaceAll('−', '-').trim().replace(/^[¥$€£]\s*/, '').replace(/\s*(?:JPY|USD|EUR|GBP|円)$/, '');
   if (!/^[+-]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?$/.test(normalized)) return undefined;
   const value = Number(normalized.replaceAll(',', ''));
   return Number.isFinite(value) && (!Number.isInteger(value) || Number.isSafeInteger(value)) ? value : undefined;
