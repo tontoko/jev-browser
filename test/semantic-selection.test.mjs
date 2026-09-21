@@ -113,3 +113,14 @@ test('selection: permission is copied before asynchronous decisions',async t=>{
   const r=await f.core.run(instruction,{values,semanticInputs:policy});
   assert.equal(r.status,'complete');assert.equal(f.submissions.length,1);
 });
+
+test('selection: a stale semantic proposal cannot override a fresh literal binding',async t=>{
+  let changed=false;
+  const f=await selectionFixture(t,browser,{resultCountry:'Japan',afterSelection:async page=>{
+    if(changed)return;changed=true;
+    await page.locator('select').evaluate(select=>{select.options[1].label='Japan';select.options[1].value='JPX';});
+  }});
+  const r=await f.core.run(instruction,{values,semanticInputs:{'/country':0.8}});
+  assert.equal(r.status,'complete',JSON.stringify(r));assert.equal(f.submissions.length,1);
+  assert.equal(f.submissions[0].a9,'JPX');assert.equal(r.inputs.find(i=>i.path==='/country').resolution,undefined);
+});
