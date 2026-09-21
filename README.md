@@ -13,7 +13,7 @@ Native operations and assertions run **without an AI key**. Natural-language ope
 Node.js **22.15 or newer**. Download the package from [GitHub Releases](https://github.com/tontoko/jev-browser/releases), then install it into your project:
 
 ```sh
-npm install --save-dev ./tontoko-jev-browser-0.7.0.tgz
+npm install --save-dev ./tontoko-jev-browser-0.7.1.tgz
 npx playwright install chromium
 ```
 

@@ -138,9 +138,9 @@ const results = await browser.assertSemanticBatch([
 ]);
 ```
 
-Locator inputs are SDK-only and belong to the core's real `Page`. Locator resolution must be unique and visible; caller `scope` bounds the result, including frames/shadow roots. A missing attached element may wait through Playwright within the operation budget. `text` is the default, normalized visible text. `value` reads native input/textarea/single-select values. `checked` reads native or ARIA state (expected meaning remains a string such as `"true"`). `attribute` requires an explicit attribute name and reads its literal DOM value. Unsupported properties and ambiguous matches fail explicitly.
+Locator inputs are SDK-only and belong to the core's real `Page`. Locator resolution must be unique and visible; caller `scope` bounds the result, including frames/shadow roots. A missing attached element may wait through Playwright within the operation budget. `text` is the default and reads the caller Locator's visible text without additional whitespace folding. `value` reads native input/textarea/single-select values. `checked` reads native or ARIA state (expected meaning remains a string such as `"true"`). `attribute` requires an explicit attribute name and reads its literal DOM value. Unsupported properties and ambiguous matches fail explicitly.
 
-An explicit Locator supplies source authority, so no source-discovery model call is needed. Exact normalized equality uses zero model calls and does not initialize the provider. A semantic comparison still sends the selected actual value/context and expected meaning to the configured endpoint. Sensitive input values are not read this way unless the caller explicitly chooses that property.
+An explicit Locator supplies source authority, so no source-discovery model call is needed. Literal equality of the grounded value uses zero model calls and does not initialize the provider. A semantic comparison still sends the selected actual value/context and expected meaning to the configured endpoint. Sensitive input values are not read this way unless the caller explicitly chooses that property.
 
 For a caller-authored Locator, identical rerendering is allowed when the Locator resolves to the same current meaning on the same Page/frame/URL. Captured semantic refs are stricter: replacing their observed node invalidates that identity. This does not synthesize a CSS selector, cache an old outcome, or claim identity across login/tenant changes.
 
@@ -200,7 +200,7 @@ The ref is short-lived authority over the current observed node. Existing stalen
 
 ## Deterministic short-circuit
 
-If a grounded actual value equals the expected value after conservative NFKC/whitespace normalization, semantic comparison is skipped.
+Only literal equality of the grounded actual value and the expected value skips semantic comparison. Compatibility glyphs, superscripts/subscripts, and whitespace differences are not rewritten into an automatic pass. Jev receives the original captured evidence to judge their meaning in context. For example, `10²` versus `102` requires a semantic decision, as does `H₂O` versus `H2O`; no equation or synonym rules are introduced.
 
 ```ts
 const target = await browser.locateSemantic('The Manage plan control');
@@ -213,12 +213,9 @@ const result = await browser.compareSemantic({
 // No additional semantic comparison request is needed.
 ```
 
-This is the general optimization rule:
+The goal is reliable end-to-end work, not the fewest Jev calls. Jev owns semantic interpretation; local code owns observed identities, literal copying, caller thresholds and browser effects. Independent questions are dispatched together without ranking away candidates or replacing them with site-specific rules. An additional clear semantic question is preferable to a growing dictionary of UI guesses.
 
-1. settle exact/local work without Jev;
-2. use Jev only for unresolved semantics;
-3. execute browser effects with Playwright;
-4. verify the outcome with the strongest available oracle.
+Structured extraction and semantic verification share the same bounded parallel transport. Extraction retains each record's own candidates and complete context; independent chunks at the same dependency level overlap. A failed or invalid response aborts its siblings and drains their completion before returning. This cancels cooperative client work, not already performed server inference or billing. Custom decision engines must honor their `AbortSignal`. Received token usage is retained even when another chunk fails.
 
 ## Batch comparison and decision frontiers
 

@@ -188,7 +188,7 @@ export function readLocatorValue(el: Element, args: {property:string;attribute?:
   if (!el.isConnected || !visible(el)) return {error:'SEMANTIC_NO_MATCH'};
   if (args.roots && !withinSemanticRoots(el,args.roots))return {error:'SEMANTIC_NO_MATCH'};
   const role=getRole(el)??el.tagName.toLowerCase(),group=context(el);
-  if(args.property==='text')return {text:normalize((el as HTMLElement).innerText??el.textContent),context:group,role};
+  if(args.property==='text')return {text:(el as HTMLElement).innerText??el.textContent??'',context:group,role};
   if(args.property==='value'){
     if(!(el instanceof HTMLInputElement||el instanceof HTMLTextAreaElement||el instanceof HTMLSelectElement)||el instanceof HTMLSelectElement&&el.multiple)return {error:'INVALID_ARGUMENT'};
     return {text:el.value,value:el.value,context:group,role,attribute:'value'};

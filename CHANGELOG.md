@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.1
+
+- Preserve semantic evidence rather than compatibility-folding notation into deterministic truth. Literal equality remains local; notation/spacing differences reach Jev with the original captured text. Caller Locator text is no longer additionally whitespace-normalized.
+- Numeric extraction copies only supported numeric syntax, including its existing full-width digit/currency forms. Superscripts, subscripts and circled digits cannot silently become unrelated decimal values; no equation evaluator or synonym rules were added.
+- Structured extraction uses the shared parallel decision frontier. Independent transport chunks now overlap while preserving every question, per-record candidates/context, output order and per-request metadata.
+- A failed/invalid frontier response cancels sibling requests without cancelling the caller's parent signal. Cooperative requests settle before the operation returns; received usage remains counted on failure.
+- Public SDK/CLI/MCP methods, assertion thresholds, native execution and continuation contracts are unchanged. No persistent decision cache, provider ranking or site-specific rules were added.
+
 ## 0.7.0
 
 - Live semantic assertions re-read bound evidence before returning. A changed/hidden/replaced source is inconclusive rather than a stale pass; snapshot comparison remains available separately.
