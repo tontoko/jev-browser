@@ -184,6 +184,7 @@ export async function runGoal(host: RunHost, instruction: string, options: RunOp
       if(!await wait(observed))break;
       observed=await capture('readback');
     }
+    if(await callerCondition()){checkpoint(verification!,actionKey);return finish('complete','verified');}
     if(options.expect&&!options.until&&await callerAssertions()){checkpoint(verification!,actionKey);return finish('complete','verified');}
     return finish('unverified',options.until?'condition-unmet':'effect-unknown');
   }
@@ -232,7 +233,7 @@ Input bindings listed in state.inputs are available locally, not missing. Their 
       }
       const request: DecisionRequest={state:encode({task:instruction,phase,...(options.until&&callerRejectedDone?{callerCompletion:false}:{}),...(checkpoints.length?{checkpoints:checkpoints.map(checkpoint=>({inputPaths:checkpoint.inputPaths,resultRecordId:checkpoint.resultRecordId}))}:{}),actions:Object.fromEntries([...actions].map(([id,action])=>[id,actionDescription(action)])),page:{url:observed.data.url,title:observed.data.title,texts:observed.data.texts,elements:observed.data.elements.map(modelElement)},inputs:inputMetadata(inputs),history:steps.map(step=>actionDescription(step.plan.action))}),questions};
       const key=JSON.stringify(filter(request));
-      if(key===lastRequest){if(await wait(observed))continue;return finish('stopped',inputs.some(i=>!i.applied)?'missing-input':'no-match');}
+      if(key===lastRequest){if(await wait(observed))continue;if(await callerCondition())return finish('complete','verified');return finish('stopped',inputs.some(i=>!i.applied)?'missing-input':'no-match');}
       lastRequest=key;
       const decision=await decide(request);
       const assignments=new Map<InputBinding,string>(),confidences=new Map<InputBinding,number>(),laterInputs=new Set<InputBinding>();let ambiguous=false;
@@ -306,6 +307,7 @@ Input bindings listed in state.inputs are available locally, not missing. Their 
         // Ask on their new state; do not guess a Save or resample unchanged evidence.
         if(steps.length>beforeInputs)continue;
         if(await wait(observed))continue;
+        if(await callerCondition())return finish('complete','verified');
         if(choice==='__done__'&&options.until){
           if(callerRejectedDone)return finish('unverified','condition-unmet');
           callerRejectedDone=true;lastRequest='';continue;

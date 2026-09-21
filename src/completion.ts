@@ -1,7 +1,7 @@
 import type { Page } from 'playwright';
 import type { DecisionRequest, DecisionResult } from './decision.js';
 import type { Captured } from './observation.js';
-import { progressChanged } from './dom.js';
+import { waitForFrameProgress } from './observation.js';
 import type { RunVerification, Snapshot, TextEvidence } from './types.js';
 export interface CommitReadback { verification: RunVerification; stage: 'final' | 'continue' }
 import type { InputBinding } from './bindings.js';
@@ -67,15 +67,14 @@ export async function verifyReadback(
   return {verification:{source:'inferred',basis:'ui-readback',recordId:record.id,readback,unobserved},stage};
 }
 
-/** Native read-only progress waits; no dynamic code construction and no provider polling. */
+/** Read-only progress waits use the same shipped observation predicate; no provider polling. */
 export async function waitForRelevantChange(page: Page, captured: Captured, timeoutMs: number, signal: AbortSignal): Promise<boolean> {
   if(timeoutMs<=0)return false;
   const abort=new AbortController(),combined=AbortSignal.any([signal,abort.signal]);
   const tasks=page.frames().map(async(frame,index)=>{
     const baseline=captured.changeKeys[index];
     if(baseline===undefined)return;
-    const handle=await frame.waitForFunction(progressChanged,baseline,{polling:Math.min(100,Math.max(1,Math.floor(timeoutMs/4))),timeout:timeoutMs,signal:combined});
-    await handle.dispose();
+    await waitForFrameProgress(frame,baseline,timeoutMs,combined);
   });
   if(!tasks.length)return false;
   try {await Promise.any(tasks);signal.throwIfAborted();return true;}

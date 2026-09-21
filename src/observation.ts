@@ -80,6 +80,13 @@ export async function capture(page: Page, options: { semanticRefs?: boolean; sco
     return { data, refs, textRefs, rawURL, changeKeys, dispose };
   } catch (error) { await dispose(); throw error; }
 }
+/** Execute the shipped shared observation predicate, never caller/model-generated code. */
+export async function waitForFrameProgress(frame: Frame, baseline: string, timeoutMs: number, signal: AbortSignal): Promise<void> {
+  const changed = new Function('previous', `${source()}; return JevDOM.progressChanged(previous);`) as (previous: string) => boolean;
+  const handle = await frame.waitForFunction(changed,baseline,{polling:Math.min(100,Math.max(1,Math.floor(timeoutMs/4))),timeout:timeoutMs,signal});
+  await handle.dispose();
+}
+
 export async function verifyTarget(ref: ElementRef): Promise<void> {
   let current: ReturnType<typeof DOM.describe>;
   try {
