@@ -87,7 +87,7 @@ export function progressChanged(previous?: string): string | boolean {
     const evidence = observedText(el,getRole(el) ?? '');
     if (evidence !== undefined) parts.push(['evidence',evidence]);
     if (el.matches('input,textarea,select,button,a,[role="button"],[role="combobox"],[role="option"],[role="checkbox"],[role="switch"],[contenteditable="true"]'))
-      parts.push([el.tagName,el.getAttribute('name'),el.getAttribute('aria-label'),el.matches(':disabled'),el.getAttribute('aria-checked'),el instanceof HTMLSelectElement ? Array.from(el.options,o=>[o.value,o.label,o.disabled]) : (el as HTMLElement).innerText]);
+      parts.push([el.tagName,el.getAttribute('name'),el.getAttribute('aria-label'),el.matches(':disabled'),checkedState(el),el instanceof HTMLAnchorElement?el.href:null,el instanceof HTMLSelectElement ? Array.from(el.options,o=>[o.value,o.label,o.disabled,o.selected]) : (el as HTMLElement).innerText]);
     else if (el.matches('h1,h2,h3,[role="status"],[role="alert"],[aria-busy],article,tbody tr,[role="row"]'))
       parts.push([el.tagName,el.getAttribute('role'),el.getAttribute('aria-busy'),(el as HTMLElement).innerText?.slice(0,1000)]);
   }

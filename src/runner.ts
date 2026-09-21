@@ -271,7 +271,9 @@ Input bindings listed in state.inputs are available locally, not missing. Their 
       if(ambiguous)return finish('stopped','ambiguous');
       const planned=[...assignments].map(([input,id])=>{
         const target=observed.data.elements.find(e=>modelElementId(e.id)===id)!;
-        return {input,target,operation:inputAction(input,target),ref:observed.refs.get(target.id)!};
+        const operation=inputAction(input,target);
+        if(operation&&input.resolutionTarget!==target.id){delete input.resolution;delete input.resolutionTarget;}
+        return {input,target,operation,ref:observed.refs.get(target.id)!};
       });
       const choice=decision.answers.action!.choice;
       let action=actions.get(choice);
