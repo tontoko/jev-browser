@@ -128,7 +128,7 @@ export function inputAction(input: InputBinding, target: ElementInfo): { action:
   }
 }
 /** Compare actual DOM identities, not transient snapshot IDs or form positions. */
-export async function bindingAuthority(bindings: { input: InputBinding; ref: ElementRef }[], commit?: ElementRef): Promise<{ valid: boolean; form?: ElementRef }> {
+export async function bindingAuthority(bindings: { input: InputBinding; ref: ElementRef }[], commit?: ElementRef): Promise<{ valid: boolean; stale?: boolean; form?: ElementRef }> {
   const groups=new Map<Frame, { ref: ElementRef; binding: boolean }[]>();
   for(const entry of [...bindings.map(({ref})=>({ref,binding:true})),...(commit?[{ref:commit,binding:false}]:[])]){
     const group=groups.get(entry.ref.frame)??[];group.push(entry);groups.set(entry.ref.frame,group);
@@ -136,13 +136,14 @@ export async function bindingAuthority(bindings: { input: InputBinding; ref: Ele
   let form: ElementRef | undefined;
   for(const entries of groups.values()){
     const state=await entries[0]!.ref.handle.evaluate((_root,entries)=>{
-      if(entries.some(entry=>!entry.node.isConnected))return {valid:false,index:-1};
+      if(entries.some(entry=>!entry.node.isConnected))return {valid:false,stale:true,index:-1};
       const targets=entries.filter(entry=>entry.binding).map(entry=>entry.node);
       if(new Set(targets).size!==targets.length)return {valid:false,index:-1};
       const owners=entries.map(entry=>(entry.node as HTMLInputElement).form??entry.node.closest('form'));
       const index=owners.findIndex(Boolean),owner=owners[index];
       return {valid:owners.every(form=>!form||form===owner),index};
     },entries.map(({ref,binding})=>({node:ref.handle,binding})));
+    if(state.stale)return {valid:false,stale:true};
     if(!state.valid||state.index>=0&&form)return {valid:false};
     if(state.index>=0)form=entries[state.index]!.ref;
   }
