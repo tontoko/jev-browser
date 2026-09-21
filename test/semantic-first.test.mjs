@@ -51,3 +51,21 @@ for(const text of ['10²','2₃','Ⅳ','①']) test(`numeric copy: ${text} canno
   const raw=await extractGrounded(snapshot,'Copy the displayed notation',z.object({value:z.string()}),()=>engine,new AbortController().signal,250);
   assert.equal(raw.data.value,text);
 });
+
+test('semantic meaning: description-based evidence also preserves preformatted text',async t=>{
+  const page=await browser.newPage();await page.setContent('<pre>line  one</pre>');
+  const calls=[];
+  const engine={async decide(request){
+    calls.push(request);
+    if(request.questions.source_0){
+      const id=Object.keys(request.questions.source_0.criteria).find(id=>!id.startsWith('__'));
+      return {answers:{source_0:{choice:id,confidence:1}}};
+    }
+    assert.ok(request.questions.compare_0.instructions.includes(JSON.stringify('line  one')));
+    return {answers:{compare_0:{choice:'different',confidence:0.93}}};
+  }};
+  const core=new JevBrowser({page,engine});t.after(async()=>{await core.close();await page.close();});
+  const result=await core.compareSemantic({actual:{description:'Preformatted line'},expected:'line one'});
+  assert.equal(result.evidence.text,'line  one');assert.equal(calls.length,2);
+  assert.equal(result.source,'semantic');assert.equal(result.status,'failed');
+});

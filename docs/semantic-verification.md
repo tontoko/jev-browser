@@ -200,7 +200,7 @@ The ref is short-lived authority over the current observed node. Existing stalen
 
 ## Deterministic short-circuit
 
-Only literal equality of the grounded actual value and the expected value skips semantic comparison. Compatibility glyphs, superscripts/subscripts, and whitespace differences are not rewritten into an automatic pass. Jev receives the original captured evidence to judge their meaning in context. For example, `10²` versus `102` requires a semantic decision, as does `H₂O` versus `H2O`; no equation or synonym rules are introduced.
+Only literal equality of the grounded actual value and the expected value skips semantic comparison. Displayed text evidence preserves its visible spacing; accessible names and context summaries remain compact descriptions, not rewritten actual values. Compatibility glyphs, superscripts/subscripts, and whitespace differences are not rewritten into an automatic pass. Jev receives the original captured evidence to judge their meaning in context. For example, `10²` versus `102` requires a semantic decision, as does `H₂O` versus `H2O`; no equation or synonym rules are introduced.
 
 ```ts
 const target = await browser.locateSemantic('The Manage plan control');

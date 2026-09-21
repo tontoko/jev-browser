@@ -111,8 +111,8 @@ export function observe(options: { maxElements: number; maxTexts: number }, scop
       if (!['INPUT','TEXTAREA','SELECT','OPTION'].includes(el.tagName) && !editable) {
         const hasOwnText = Array.from(el.childNodes).some(n => n.nodeType === Node.TEXT_NODE && normalize(n.textContent));
         const semanticText = ['heading','cell','rowheader','columnheader','definition','term','status','alert'].includes(role) || ['P','DD','DT','TD','TH','OUTPUT'].includes(el.tagName);
-        const text = normalize((el as HTMLElement).innerText ?? el.textContent);
-        if ((hasOwnText || semanticText) && text && text.length <= 700 && !el.querySelector('input,textarea,select,[contenteditable="true"]')) {
+        const text = (el as HTMLElement).innerText ?? el.textContent ?? '';
+        if ((hasOwnText || semanticText) && text.trim() && text.length <= 700 && !el.querySelector('input,textarea,select,[contenteditable="true"]')) {
           if (texts.length >= options.maxTexts) truncatedTexts = true;
           else { textKinds.push('text'); textNodes.push(el); texts.push({ text, context: context(el), role }); }
         }
@@ -180,7 +180,7 @@ export function readSemanticText(el: Element, kind: SemanticTextKind) {
     const d=describe(el);
     return {text:d.info.name,context:d.info.context,role,...(typeof d.info.checked==='boolean'?{value:d.info.checked}:{})};
   }
-  return {text:normalize((el as HTMLElement).innerText ?? el.textContent),context:context(el),role};
+  return {text:(el as HTMLElement).innerText ?? el.textContent ?? '',context:context(el),role};
 }
 
 /** Read a caller-selected property without changing the element. */
