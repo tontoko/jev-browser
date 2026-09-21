@@ -194,7 +194,11 @@ export class JevBrowser {
       let retained=false;
       try{
         const {targets}=await locateSemanticTargets(observed.data,tasks,this.engine(),operation.signal,threshold);
-        await Promise.all(targets.map(target=>verifyTarget(observed.refs.get(target.ref)!)));
+        await Promise.all(targets.map(async target=>{
+          const ref=observed.refs.get(target.ref)!;
+          await verifyTarget(ref);
+          if(!await semanticWithinScope(ref,options.scope))throw new BrowserError('SEMANTIC_NO_MATCH','The discovered semantic target left the caller scope during inference.');
+        }));
         operation.signal.throwIfAborted();
         this.snapshotCapture=observed;retained=true;return targets;
       }finally{if(!retained)await observed.dispose();}

@@ -15,14 +15,14 @@ export interface ElementRef { frame: Frame; handle: ElementHandle<Element>; sign
 export interface Captured {
   data: Snapshot;
   refs: Map<string, ElementRef>;
-  textRefs?: Map<string, { frame: Frame; handle: ElementHandle<Element> }>;
+  textRefs?: Map<string, { frame: Frame; handle: ElementHandle<Element>; kind: DOM.SemanticTextKind }>;
   rawURL: string;
   changeKeys: Record<number, string>;
   dispose(): Promise<void>;
 }
 export async function capture(page: Page, options: { semanticRefs?: boolean; scope?: string; recordsScope?: string; maxElements: number; maxTexts: number; selection?: {frame:Frame;roots:ElementHandle<Element>[]} }): Promise<Captured> {
   const refs = new Map<string, ElementRef>();
-  const textRefs = new Map<string, { frame: Frame; handle: ElementHandle<Element> }>();
+  const textRefs = new Map<string, { frame: Frame; handle: ElementHandle<Element>; kind: DOM.SemanticTextKind }>();
   const changeKeys: Record<number,string> = {};
   const owned: JSHandle[] = [];
   const dispose = async () => { await Promise.allSettled(owned.splice(0).map(handle => handle.dispose())); refs.clear(); textRefs.clear(); };
@@ -45,7 +45,7 @@ export async function capture(page: Page, options: { semanticRefs?: boolean; sco
       const observe = new Function('args', `${source()}; return JevDOM.observe(${JSON.stringify(frameOptions)}, args.roots, args.recordRoots);`) as (args: { roots?: Element[]; recordRoots?: Element[] }) => ReturnType<typeof DOM.observe>;
       const result = await frame.evaluateHandle(observe, { roots, recordRoots });
       owned.push(result);
-      const observed = await result.evaluate(r => ({ elements: r.elements, texts: r.texts, records: r.records, recordInventoryComplete:r.recordInventoryComplete, busy: r.busy, changeKey: r.changeKey, truncatedElements: r.truncatedElements, truncatedTexts: r.truncatedTexts }));
+      const observed = await result.evaluate(r => ({ elements: r.elements, texts: r.texts, textKinds:r.textKinds, records: r.records, recordInventoryComplete:r.recordInventoryComplete, busy: r.busy, changeKey: r.changeKey, truncatedElements: r.truncatedElements, truncatedTexts: r.truncatedTexts }));
       changeKeys[frameIndex] = observed.changeKey;
       data.busy ||= observed.busy;
       const nodes = await result.getProperty('nodes'); owned.push(nodes);
@@ -66,7 +66,7 @@ export async function capture(page: Page, options: { semanticRefs?: boolean; sco
         for (const [index, handle] of textProperties) {
           owned.push(handle);
           const element = handle.asElement();
-          if (element && observed.texts[Number(index)]) textRefs.set(`t${frameIndex}_${index}`, {frame,handle:element as ElementHandle<Element>});
+          if (element && observed.texts[Number(index)]) textRefs.set(`t${frameIndex}_${index}`, {frame,handle:element as ElementHandle<Element>,kind:observed.textKinds[Number(index)]!});
         }
       }
       data.texts.push(...observed.texts.map((text, i) => ({ ...text, id: `t${frameIndex}_${i}`, frame: frameIndex })));
@@ -161,8 +161,9 @@ export async function currentSemanticEvidence(page: Page, captured: Captured, ev
       await verifyTarget(element);
       return {...evidence};
     }
-    const read = new Function('element','attribute', `${source()}; return JevDOM.readSemanticText(element,attribute);`) as (element:Element,attribute?:string)=>ReturnType<typeof DOM.readSemanticText>;
-    const value = await ref.handle.evaluate(read,evidence.attribute);
+    if(!text)return;
+    const read = new Function('element','kind', `${source()}; return JevDOM.readSemanticText(element,kind);`) as (element:Element,kind:DOM.SemanticTextKind)=>ReturnType<typeof DOM.readSemanticText>;
+    const value = await ref.handle.evaluate(read,text.kind);
     return value ? {sourceId:evidence.sourceId,frame:evidence.frame,...value} : undefined;
   } catch { return; }
 }
