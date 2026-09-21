@@ -149,13 +149,14 @@ export async function verifyOwnedOption(control:ElementRef,option:ElementRef):Pr
 }
 
 /** Re-read the same observed source rather than a same-position replacement. */
-export async function currentSemanticEvidence(page: Page, captured: Captured, evidence: SemanticEvidence): Promise<SemanticEvidence | undefined> {
+export async function currentSemanticEvidence(page: Page, captured: Captured, evidence: SemanticEvidence, scope?:string): Promise<SemanticEvidence | undefined> {
   if (page.url() !== captured.rawURL) return;
   const element = captured.refs.get(evidence.sourceId);
   const text = captured.textRefs?.get(evidence.sourceId);
   const ref = element ?? text;
   if (!ref || page.frames()[evidence.frame] !== ref.frame) return;
   try {
+    if(!await semanticWithinScope(ref,scope))return;
     if (element) {
       await verifyTarget(element);
       return {...evidence};
@@ -194,4 +195,13 @@ export async function readLocatorEvidence(page:Page,locator:Locator,property:Sem
     if(page.url()!==rawURL||frame.url()!==frameURL)throw new BrowserError('STALE_TARGET','The semantic Locator document changed during observation.');
     return {evidence:{sourceId,frame:page.frames().indexOf(frame),...evidence} as SemanticEvidence,frame,frameURL,rawURL};
   }finally{await Promise.allSettled([...(handle?[handle]:[]),...roots].map(node=>node.dispose()));}
+}
+
+export async function semanticWithinScope(ref:{frame:Frame;handle:ElementHandle<Element>},scope?:string):Promise<boolean> {
+  if(!scope)return true;
+  const roots=await ref.frame.locator(`css=${scope}`).elementHandles() as ElementHandle<Element>[];
+  try{
+    const check=new Function('element','roots',`${source()}; return element.isConnected && JevDOM.withinSemanticRoots(element,roots);`) as (element:Element,roots:Element[])=>boolean;
+    return await ref.handle.evaluate(check,roots);
+  }finally{await Promise.allSettled(roots.map(root=>root.dispose()));}
 }

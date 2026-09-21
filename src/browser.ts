@@ -6,7 +6,7 @@ import { z } from 'zod';
 import type { EntryType } from '@typesafe-ai/sdk';
 import { JevDecisionEngine, type DecisionEngine, type DecisionRequest } from './decision.js';
 import { BrowserError } from './errors.js';
-import { capture, publicURL, verifyTarget, currentSemanticEvidence, readLocatorEvidence, captureComboboxChoice, captureRegions, verifyOwnedOption, type Captured } from './observation.js';
+import { capture, publicURL, verifyTarget, currentSemanticEvidence, readLocatorEvidence, semanticWithinScope, captureComboboxChoice, captureRegions, verifyOwnedOption, type Captured } from './observation.js';
 import { actionCandidates, actionDescription, modelElementId, inputBindings, modelElement, resolveSelectChoice } from './actions.js';
 import { flattenInputs } from './bindings.js';
 import { extractStructured } from './structured.js';
@@ -224,6 +224,7 @@ export class JevBrowser {
     const ref = captured.refs.get(id);
     if (!ref) throw new BrowserError('STALE_TARGET','The semantic target ref is not present in the current observation.');
     await verifyTarget(ref);
+    if(!await semanticWithinScope(ref,scope))throw new BrowserError('SEMANTIC_NO_MATCH','The captured semantic ref is outside the explicit caller scope.');
     const semantic = 'snapshotId' in actual;
     const confidence = semantic ? actual.confidence : 1;
     if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1) throw new BrowserError('INVALID_ARGUMENT','Semantic target confidence must be between 0 and 1.');
@@ -267,7 +268,7 @@ export class JevBrowser {
           const started = performance.now();
           await Promise.all(results.map(async (result,index) => {
             const source = observed?.textRefs?.has(result.evidence.sourceId) || observed?.refs.has(result.evidence.sourceId) ? observed : this.snapshotCapture;
-            const current = currentReaders[index] ? await currentReaders[index]!() : source ? await currentSemanticEvidence(this.page,source,result.evidence) : undefined;
+            const current = currentReaders[index] ? await currentReaders[index]!() : source ? await currentSemanticEvidence(this.page,source,result.evidence,options.scope) : undefined;
             result.freshness = current && isDeepStrictEqual(current,result.evidence) ? 'verified' : 'changed';
             if (result.freshness === 'changed') { result.status='inconclusive'; if (current) result.currentEvidence=current; }
           }));

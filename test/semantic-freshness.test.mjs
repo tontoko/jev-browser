@@ -25,3 +25,16 @@ test('semantic API: expected diagnostics retain the request used, not later call
  const {core,page}=await setup(t,'<p id="status">Cancelled</p>',provider);request={actual:{locator:page.locator('#status')},expected:'Active'};
  await assert.rejects(core.assertSemantic(request),e=>{assert.deepEqual(e.semantic.expected,['Active']);return true;});
 });
+
+test('semantic scope: a captured ref cannot escape a later explicit scope',async t=>{
+ const {core}=await setup(t,'<section id="allowed"><button>A</button></section><button id="outside">B</button>',{async decide(){throw Error('No inference should occur');}});
+ const snapshot=await core.snapshot(),ref=snapshot.elements.find(x=>x.name==='B').id;
+ await assert.rejects(core.assertSemantic({actual:{ref},expected:'B'},{scope:'#allowed'}),{code:'SEMANTIC_NO_MATCH'});
+});
+
+for(const refInput of [false,true])test('semantic scope: moving '+(refInput?'captured ref':'discovered source')+' outside scope cannot pass',async t=>{
+ let page;const provider={async decide(r){if(r.questions.source_0)return {answers:{source_0:{choice:r.state.page.sources.find(x=>x.text==='Active').id,confidence:1}}};await page.locator('#source').evaluate(el=>document.querySelector('#outside').append(el));return {answers:{compare_0:{choice:'equivalent',confidence:1}}};}};
+ const app=await setup(t,'<section id="allowed"><button id="source">Active</button></section><section id="outside"></section>',provider);page=app.page;
+ const actual=refInput?{ref:(await app.core.snapshot()).elements[0].id}:{description:'Current state'};
+ await assert.rejects(app.core.assertSemantic({actual,expected:'Running'},{scope:'#allowed'}),e=>e.code==='SEMANTIC_ASSERTION_INCONCLUSIVE'&&e.semantic.results[0].freshness==='changed');
+});

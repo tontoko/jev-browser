@@ -183,14 +183,7 @@ export function readSemanticText(el: Element, attribute?: string) {
 /** Read a caller-selected property without changing the element. */
 export function readLocatorValue(el: Element, args: {property:string;attribute?:string;roots?:Element[]}) {
   if (!el.isConnected || !visible(el)) return {error:'SEMANTIC_NO_MATCH'};
-  if (args.roots) {
-    let node:Element|null=el,contained=false;
-    while(node){
-      if(args.roots.some(root=>root===node||root.contains(node))){contained=true;break;}
-      const root=node.getRootNode();node=root instanceof ShadowRoot?root.host:null;
-    }
-    if(!contained)return {error:'SEMANTIC_NO_MATCH'};
-  }
+  if (args.roots && !withinSemanticRoots(el,args.roots))return {error:'SEMANTIC_NO_MATCH'};
   const role=getRole(el)??el.tagName.toLowerCase(),group=context(el);
   if(args.property==='text')return {text:normalize((el as HTMLElement).innerText??el.textContent),context:group,role};
   if(args.property==='value'){
@@ -206,4 +199,13 @@ export function readLocatorValue(el: Element, args: {property:string;attribute?:
     return {text:value,value,context:group,role,attribute:args.attribute};
   }
   return {error:'INVALID_ARGUMENT'};
+}
+
+export function withinSemanticRoots(el:Element,roots:Element[]):boolean {
+  let node:Element|null=el;
+  while(node){
+    if(roots.some(root=>root===node||root.contains(node)))return true;
+    const root=node.getRootNode();node=root instanceof ShadowRoot?root.host:null;
+  }
+  return false;
 }
