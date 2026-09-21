@@ -97,6 +97,8 @@ export type RunValue = string | number | boolean | null | RunValue[] | { [key: s
 export type RunAssertion = Omit<Extract<NativeCommand, { command: 'assert' }>, 'command'>;
 export interface RunOptions extends OperationOptions {
   values?: Record<string, RunValue>;
+  /** Explicit disclosure permission and confidence threshold for native selection input paths. */
+  semanticInputs?: Record<string, number>;
   expect?: RunAssertion | RunAssertion[];
   maxSteps?: number;
   maxDecisions?: number;
@@ -107,13 +109,16 @@ export interface RunOptions extends OperationOptions {
   until?: (page: Page, operation: OperationContext) => Promise<boolean> | boolean;
 }
 export interface ResumeOptions extends OperationOptions { values?: Record<string, RunValue> }
-export interface RunInput { path: string; applied: boolean; readback: boolean; target?: string }
+export interface SelectionResolution { source: 'semantic'; model?: string; models?: string[]; confidence: number; threshold: number; options: { index: number; label: string; value: string }[] }
+export interface RunBlocker { reason: 'semantic-permission-required' | 'no-match' | 'ambiguous' | 'low-confidence' | 'unsupported-selection' | 'missing-value'; inputPath?: string; target?: { ref: string; name: string; role: string; frame: number }; confidence?: number; threshold?: number }
+export interface RunInput { path: string; applied: boolean; readback: boolean; target?: string; resolution?: SelectionResolution }
 export interface RunEffect { id: string; kind: 'input' | 'advance' | 'commit'; status: 'attempted' | 'observed' | 'unknown'; input?: string }
-export interface RunVerification { source: 'caller' | 'inferred'; basis: 'ui-readback' | 'assertion' | 'condition'; recordId?: string; readback: string[]; unobserved: string[] }
+export interface RunVerification { source: 'caller' | 'inferred'; basis: 'ui-readback' | 'assertion' | 'condition'; recordId?: string; readback: string[]; unobserved: string[]; semanticInputs?: string[] }
 export interface GoalCheckpoint { id: string; effectId: string; verification: RunVerification; inputPaths: string[]; resultRecordId?: string }
-export type RunReason = 'verified' | 'ui-readback' | 'model-complete' | 'no-match' | 'step-limit' | 'dialog' | 'ambiguous' | 'missing-input' | 'permission-required' | 'validation' | 'value-mismatch' | 'effect-unknown' | 'error' | 'observation-limit' | 'condition-unmet';
+export type RunReason = 'verified' | 'ui-readback' | 'model-complete' | 'no-match' | 'step-limit' | 'dialog' | 'ambiguous' | 'missing-input' | 'unresolved-input' | 'permission-required' | 'validation' | 'value-mismatch' | 'effect-unknown' | 'error' | 'observation-limit' | 'condition-unmet';
 export interface GoalContinuation { id: string; reason: RunReason; pendingEffect?: 'commit' }
 export interface RunResult {
+  blockers?: RunBlocker[];
   regions?: {purpose:'act'|'readback';name:string;role:string;frame:number}[];
   inputs?: RunInput[];
   effects?: RunEffect[];

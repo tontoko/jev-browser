@@ -23,7 +23,8 @@ function cli(args,input='') {
   return new Promise((resolve,reject)=>{
     const child=spawn(process.execPath,['dist/cli.js',...args],{cwd:new URL('..',import.meta.url),env:{...process.env,JEV_API_KEY:'test-only',JEV_BASE_URL:service.url},stdio:['pipe','pipe','pipe']});
     let stdout='',stderr='';child.stdout.on('data',c=>stdout+=c);child.stderr.on('data',c=>stderr+=c);
-    const timer=setTimeout(()=>{child.kill('SIGKILL');reject(new Error('CLI did not terminate'));},12000);
+    // This asserts protocol/termination, not cold browser startup latency on shared CI.
+    const timer=setTimeout(()=>{child.kill('SIGKILL');reject(new Error('CLI did not terminate within 30s: '+args[0]+'\n'+stdout+'\n'+stderr));},30000);
     child.once('error',e=>{clearTimeout(timer);reject(e);});child.once('close',code=>{clearTimeout(timer);resolve({code,stdout,stderr});});child.stdin.end(input);
   });
 }

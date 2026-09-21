@@ -55,10 +55,15 @@ export async function goalFixture(t, browser, fields, options = {}) {
     }
     res.setHeader('Content-Type','text/html; charset=utf-8');res.end(body.replace("heading.textContent='Contact created'",'heading.textContent='+JSON.stringify(options.resultTitle ?? 'Contact created')));
   });
-  const page = await browser.newPage(); await page.goto(service.url);
+  let page,core;
+  // Setup failures must not leave the server open and hide the actual test error.
+  t.after(async()=>{
+    try{await core?.close();}
+    finally{try{await page?.close();}finally{await service.close();}}
+  });
+  page = await browser.newPage(); await page.goto(service.url);
   const decider = options.engine ?? (options.live ? new JevDecisionEngine() : formEngine());
-  const core = new JevBrowser({page,engine:decider,...options.browserOptions});
-  t.after(async()=>{await core.close();await page.close();await service.close();});
+  core = new JevBrowser({page,engine:decider,...options.browserOptions});
   return {core,page,records,attempts,decider};
 }
 

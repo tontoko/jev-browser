@@ -7,6 +7,7 @@ import type { ElementInfo, GroundedAction, RunValue, RunInput, Snapshot } from '
 
 export interface InputBinding extends RunInput {
   checkpointed?: boolean;
+  resolutionTarget?: string;
   value: string | number | boolean | null | (string | number | boolean | null)[];
   label: string;
   ref?: ElementRef;
@@ -36,7 +37,7 @@ export function flattenInputs(values: Record<string, RunValue> = {}): InputBindi
   for (const [key, value] of Object.entries(values)) visit(value, [key]);
   return inputs;
 }
-export const publicInputs = (inputs: InputBinding[]) => inputs.map(({ path, applied, readback, target }) => ({ path, applied, readback, ...(target ? { target } : {}) }));
+export const publicInputs = (inputs: InputBinding[]) => inputs.map(({ path, applied, readback, target, resolution }) => ({ path, applied, readback, ...(target ? { target } : {}), ...(resolution ? { resolution } : {}) }));
 export const inputMetadata = (inputs: InputBinding[]) => inputs.map(input => ({
   path: input.path, label: input.label, type: Array.isArray(input.value) ? 'array' : input.value === null ? 'null' : typeof input.value,
   available: true, applied: input.applied, ...(input.checkpointed?{checkpointed:true}:{}),
@@ -51,7 +52,7 @@ export function privateFilter(inputs: InputBinding[]): <T>(data: T) => T {
   const escape = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const alternatives = [...publicTokens, ...[...replacements.keys()].filter(value => value.length >= 3)].sort((a,b) => b.length-a.length);
   const pattern = alternatives.length ? new RegExp(alternatives.map(escape).join('|'), 'g') : undefined;
-  const identifiers = new Set(['id','effectId','resultRecordId','inputPaths','readback','unobserved','ownerId','snapshotId','recordId','parentId','sourceId','control','path','valueKey','fieldName','formId','kind','status','reason','role','tag','inputType','type','key','direction','source','basis','choice','model']);
+  const identifiers = new Set(['id','effectId','resultRecordId','inputPaths','inputPath','semanticInputs','readback','unobserved','ownerId','snapshotId','recordId','parentId','sourceId','control','path','valueKey','fieldName','formId','kind','status','reason','role','tag','inputType','type','key','direction','source','basis','choice','model']);
   function walk(value: unknown): unknown {
     if (typeof value === 'string') {
       const exact = replacements.get(value);
@@ -111,7 +112,10 @@ export function inputAction(input: InputBinding, target: ElementInfo): { action:
     if (target.multiple && target.options?.some(option => option.disabled && option.selected)) return;
     const desired = Array.isArray(input.value) ? input.value : [input.value];
     if (!target.multiple && desired.length !== 1) return;
-    const selected = desired.map(value => (target.options ?? []).filter(option => !option.disabled && (option.label === String(value ?? '') || option.value === String(value ?? ''))));
+    const resolved = input.resolutionTarget === target.id ? input.resolution : undefined;
+    const selected = resolved
+      ? resolved.options.map(option => (target.options ?? []).filter(current => !current.disabled && current.index === option.index && current.label === option.label && current.value === option.value))
+      : desired.map(value => (target.options ?? []).filter(option => !option.disabled && (option.label === String(value ?? '') || option.value === String(value ?? ''))));
     if (selected.some(matches => matches.length !== 1)) return;
     const chosen = [...new Map(selected.map(matches => [matches[0]!.index, matches[0]!])).values()].sort((a,b) => a.index-b.index);
     const indices = chosen.map(option => option.index);

@@ -126,3 +126,7 @@ See [goal-continuation.md](goal-continuation.md) for checkpoint evidence, final 
 - `BrowserError.semantic` preserves `{results,expected}` through process boundaries; provider bodies and credentials are never attached. Result `models` retains named inference provenance; `model` is omitted for incomplete/mixed attribution.
 
 See [semantic-verification.md](semantic-verification.md) for precise property, freshness, negation and data disclosure semantics.
+
+### Permitted native selection interpretation
+
+`RunOptions.semanticInputs?: Record<string, number>` maps explicitly disclosed JSON Pointer input paths to confidence thresholds. It is accepted through all run adapters. Default named inputs remain exact/local. `RunResult.blockers` explains grounded missing fields or unresolved supplied selections; `unresolved-input` is distinct from `missing-input`. `RunInput.resolution` records semantic option interpretation and `RunVerification.semanticInputs` identifies readback relying on it. See [observed input resolution](observed-input-resolution.md) for privacy, confidence, and native-only boundaries.

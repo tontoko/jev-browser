@@ -28,7 +28,7 @@ export const commandSchemas = {
   semantic_assert: z.object({ actual: semanticActual, expected: z.string().min(1), minConfidence: confidence, minSourceConfidence: confidence, scope }).strict(),
   semantic_compare_batch: semanticBatch,
   semantic_assert_batch: semanticBatch,
-  run: z.object({ instruction, values: runValues, scope, maxSteps: z.number().int().positive().optional(), maxDecisions:z.number().int().positive().optional(),decisionRetries:z.number().int().min(0).max(2).optional(),settleTimeoutMs:z.number().int().positive().optional(),timeoutMs:z.number().int().positive().optional(),expect:z.union([nativeSchemas.assert,z.array(nativeSchemas.assert).min(1)]).optional() }).strict(),
+  run: z.object({ instruction, values: runValues, semanticInputs:z.record(z.string().regex(/^\/(?:[^~]|~[01])*$/),z.number().min(0).max(1)).optional(), scope, maxSteps: z.number().int().positive().optional(), maxDecisions:z.number().int().positive().optional(),decisionRetries:z.number().int().min(0).max(2).optional(),settleTimeoutMs:z.number().int().positive().optional(),timeoutMs:z.number().int().positive().optional(),expect:z.union([nativeSchemas.assert,z.array(nativeSchemas.assert).min(1)]).optional() }).strict(),
   resume: z.object({ continuationId: z.string().min(1), values: runValues, scope, timeoutMs:z.number().int().positive().optional() }).strict(),
   screenshot: z.object({}).strict(),
   close: z.object({}).strict(),

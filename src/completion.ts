@@ -1,7 +1,7 @@
 import type { Page } from 'playwright';
 import type { DecisionRequest, DecisionResult } from './decision.js';
 import type { Captured } from './observation.js';
-import { progressChanged } from './dom.js';
+import { waitForFrameProgress } from './observation.js';
 import type { RunVerification, Snapshot, TextEvidence } from './types.js';
 export interface CommitReadback { verification: RunVerification; stage: 'final' | 'continue' }
 import type { InputBinding } from './bindings.js';
@@ -13,8 +13,12 @@ export function recordCounts(snapshot: Snapshot): Map<string, number> {
   for (const record of snapshot.records ?? []) if (record.readOnly !== false) counts.set(record.context, (counts.get(record.context) ?? 0)+1);
   return counts;
 }
-function sourceMatches(value: InputBinding['value'], source: TextEvidence): boolean {
-  const text = source.text;
+function sourceMatches(input: InputBinding, source: TextEvidence): boolean {
+  const value=input.value,text=source.text;
+  if(input.resolution){
+    const labels=input.resolution.options.map(option=>option.label),values=input.resolution.options.map(option=>option.value);
+    return (Array.isArray(value)?[labels.join(', '),values.join(', ')]:[...labels,...values]).some(value=>normalized(value)===normalized(text));
+  }
   if (typeof value === 'boolean') return source.value !== undefined ? source.value === value : (value ? ['true','on'] : ['false','off']).includes(source.text.trim().toLowerCase());
   if (value === null) return false;
   if (Array.isArray(value)) return normalized(value.join(', ')) === normalized(text);
@@ -34,7 +38,7 @@ export async function verifyReadback(
     return true;
   }).map(record => {
     const ids=new Set(record.textIds),sources=snapshot.texts.filter(source=>ids.has(source.id));
-    const matching=inputs.filter(input=>sources.some(source=>sourceMatches(input.value,source)));
+    const matching=inputs.filter(input=>sources.some(source=>sourceMatches(input,source)));
     const identity=hasAnchor(matching);
     return {record,sources,identity};
   }).filter(candidate=>candidate.identity);
@@ -56,7 +60,7 @@ export async function verifyReadback(
     const choice=result.answers[`read_${index}`]?.choice;
     if(choice==='__none__'){unobserved.push(input.path);continue;}
     const source=sources.find(source=>source.id===choice);
-    if(!source||!sourceMatches(input.value,source))return;
+    if(!source||!sourceMatches(input,source))return;
     readback.push(input.path);
   }
   const identities=inputs.filter(input=>readback.includes(input.path));
@@ -64,18 +68,17 @@ export async function verifyReadback(
   if(!identity)return;
   for(const input of inputs)input.readback=readback.includes(input.path);
   const stage=completion==='complete'?'final':'continue';
-  return {verification:{source:'inferred',basis:'ui-readback',recordId:record.id,readback,unobserved},stage};
+  return {verification:{source:'inferred',basis:'ui-readback',recordId:record.id,readback,unobserved,...(inputs.some(input=>input.resolution&&readback.includes(input.path))?{semanticInputs:inputs.filter(input=>input.resolution&&readback.includes(input.path)).map(input=>input.path)}:{})},stage};
 }
 
-/** Native read-only progress waits; no dynamic code construction and no provider polling. */
+/** Read-only progress waits use the same shipped observation predicate; no provider polling. */
 export async function waitForRelevantChange(page: Page, captured: Captured, timeoutMs: number, signal: AbortSignal): Promise<boolean> {
   if(timeoutMs<=0)return false;
   const abort=new AbortController(),combined=AbortSignal.any([signal,abort.signal]);
   const tasks=page.frames().map(async(frame,index)=>{
     const baseline=captured.changeKeys[index];
     if(baseline===undefined)return;
-    const handle=await frame.waitForFunction(progressChanged,baseline,{polling:Math.min(100,Math.max(1,Math.floor(timeoutMs/4))),timeout:timeoutMs,signal:combined});
-    await handle.dispose();
+    await waitForFrameProgress(frame,baseline,timeoutMs,combined);
   });
   if(!tasks.length)return false;
   try {await Promise.any(tasks);signal.throwIfAborted();return true;}

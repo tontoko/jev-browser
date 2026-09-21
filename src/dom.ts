@@ -66,6 +66,16 @@ export function describe(el: Element) {
     info.multiple, info.options?.map(o => [o.label, o.value, o.disabled, ...(info.multiple ? [o.selected] : [])]), info.disabled, info.readOnly, info.fillable]);
   return { info, signature, connected: el.isConnected, visible: visible(el) };
 }
+/** The same visible text eligibility drives observation and progress waits. */
+function observedText(el: Element, role: string): string | undefined {
+  if (['SCRIPT','STYLE','NOSCRIPT','TEMPLATE','HEAD','META','TITLE','LINK','INPUT','TEXTAREA','SELECT','OPTION'].includes(el.tagName) || el instanceof HTMLElement && el.isContentEditable) return;
+  const hasOwnText = Array.from(el.childNodes).some(n => n.nodeType === Node.TEXT_NODE && normalize(n.textContent));
+  const semanticText = ['heading','cell','rowheader','columnheader','definition','term','status','alert'].includes(role) || ['P','DD','DT','TD','TH','OUTPUT'].includes(el.tagName);
+  if (!hasOwnText && !semanticText) return;
+  const text = (el as HTMLElement).innerText ?? el.textContent ?? '';
+  if (text.trim() && text.length <= 700 && !el.querySelector('input,textarea,select,[contenteditable="true"]')) return text;
+}
+
 /** Fixed read-only browser predicate used for local progress waits, never model-authored. */
 export function progressChanged(previous?: string): string | boolean {
   const roots: (Document | ShadowRoot)[] = [document], parts: unknown[] = [location.href];
@@ -73,9 +83,11 @@ export function progressChanged(previous?: string): string | boolean {
   for (const root of roots) for (const el of root.querySelectorAll('*')) {
     if (++scanned > 6000) break;
     if (el.shadowRoot) roots.push(el.shadowRoot);
-    if (!el.getClientRects().length) continue;
+    if (!visible(el)) continue;
+    const evidence = observedText(el,getRole(el) ?? '');
+    if (evidence !== undefined) parts.push(['evidence',evidence]);
     if (el.matches('input,textarea,select,button,a,[role="button"],[role="combobox"],[role="option"],[role="checkbox"],[role="switch"],[contenteditable="true"]'))
-      parts.push([el.tagName,el.getAttribute('name'),el.getAttribute('aria-label'),el.matches(':disabled'),el.getAttribute('aria-checked'),el instanceof HTMLSelectElement ? Array.from(el.options,o=>[o.value,o.label,o.disabled]) : (el as HTMLElement).innerText]);
+      parts.push([el.tagName,el.getAttribute('name'),el.getAttribute('aria-label'),el.matches(':disabled'),checkedState(el),el instanceof HTMLAnchorElement?el.href:null,el instanceof HTMLSelectElement ? Array.from(el.options,o=>[o.value,o.label,o.disabled,o.selected]) : (el as HTMLElement).innerText]);
     else if (el.matches('h1,h2,h3,[role="status"],[role="alert"],[aria-busy],article,tbody tr,[role="row"]'))
       parts.push([el.tagName,el.getAttribute('role'),el.getAttribute('aria-busy'),(el as HTMLElement).innerText?.slice(0,1000)]);
   }
@@ -102,20 +114,15 @@ export function observe(options: { maxElements: number; maxTexts: number }, scop
       if (el.shadowRoot) roots.push(el.shadowRoot);
       if (['SCRIPT','STYLE','NOSCRIPT','TEMPLATE','HEAD','META','TITLE','LINK'].includes(el.tagName) || !visible(el)) continue;
       const role = getRole(el) ?? '';
-      const editable = el instanceof HTMLElement && el.isContentEditable;
       if (actionableRoles.has(role) || isFillable(el)) {
         if (nodes.length >= options.maxElements) truncatedElements = true;
         else { nodes.push(el); elements.push(describe(el)); }
       }
-      // Text candidates are visible semantic leaves, not whole-body blobs or form values.
-      if (!['INPUT','TEXTAREA','SELECT','OPTION'].includes(el.tagName) && !editable) {
-        const hasOwnText = Array.from(el.childNodes).some(n => n.nodeType === Node.TEXT_NODE && normalize(n.textContent));
-        const semanticText = ['heading','cell','rowheader','columnheader','definition','term','status','alert'].includes(role) || ['P','DD','DT','TD','TH','OUTPUT'].includes(el.tagName);
-        const text = (el as HTMLElement).innerText ?? el.textContent ?? '';
-        if ((hasOwnText || semanticText) && text.trim() && text.length <= 700 && !el.querySelector('input,textarea,select,[contenteditable="true"]')) {
-          if (texts.length >= options.maxTexts) truncatedTexts = true;
-          else { textKinds.push('text'); textNodes.push(el); texts.push({ text, context: context(el), role }); }
-        }
+      // Eligibility is shared with progress waits; retain original displayed text.
+      const text = observedText(el,role);
+      if (text !== undefined) {
+        if (texts.length >= options.maxTexts) truncatedTexts = true;
+        else { textKinds.push('text'); textNodes.push(el); texts.push({ text, context: context(el), role }); }
       }
       if (el instanceof HTMLAnchorElement && el.hasAttribute('href')) {
         if (texts.length >= options.maxTexts) truncatedTexts = true;
