@@ -12,7 +12,7 @@ after(async()=>{await browser?.close();});
 test('goal judgment: Jev can identify a missing later-stage value without attempting a save',async t=>{
   const base=stagedDecider();let missingQuestions=0;
   const decider={async decide(request,options){
-    if(request.questions.blocker){missingQuestions++;assert.deepEqual(request.state.inputs.map(input=>input.path),['/email']);return {answers:{blocker:{choice:'missing',confidence:0.99}}};}
+    if(request.questions.blocker){missingQuestions++;assert.deepEqual(request.state.inputs.map(input=>input.path),['/email']);return {answers:{blocker:{choice:'missing',confidence:0.99},blocker_field:{choice:request.state.page.elements.find(e=>e.name==='Membership code')?.id??'__none__',confidence:0.99}}};}
     const result=await base.decide(request,options);
     if(request.questions.action&&request.state.page.elements.some(e=>e.name==='Membership code')&&!request.state.inputs.some(input=>input.path==='/membershipCode')){
       assert.deepEqual(request.state.inputs.map(input=>input.path),['/email']);
@@ -24,6 +24,7 @@ test('goal judgment: Jev can identify a missing later-stage value without attemp
   const first=await app.core.run(goal,{values:{email:values.email}});
   assert.equal(first.reason,'missing-input',JSON.stringify(first));
   assert.equal(first.status,'stopped');assert.equal(missingQuestions,1);
+  assert.equal(first.blockers[0].target.name,'Membership code');
   assert.deepEqual(app.submissions.map(x=>x.stage),['account']);assert.ok(first.continuation?.id);
   const resumed=await app.core.resume(first.continuation.id,{values:{membershipCode:values.membershipCode,reservationReference:values.reservationReference}});
   assert.equal(resumed.status,'complete');
@@ -33,7 +34,7 @@ test('goal judgment: Jev can identify a missing later-stage value without attemp
 test('goal judgment: a missing-data judgment cannot override a satisfied caller oracle',async t=>{
   const page=await browser.newPage();await page.setContent('<p>Pending</p><button>Save</button>');
   const decider={async decide(request){
-    if(request.questions.blocker){await page.locator('p').evaluate(node=>{node.textContent='Done';});return {answers:{blocker:{choice:'missing',confidence:1}}};}
+    if(request.questions.blocker){await page.locator('p').evaluate(node=>{node.textContent='Done';});return {answers:{blocker:{choice:'missing',confidence:1},blocker_field:{choice:'__none__',confidence:1}}};}
     return {answers:Object.fromEntries(Object.keys(request.questions).map(id=>[id,{choice:id==='action'?'__none__':'commit',confidence:1}]))};
   }};
   const core=new JevBrowser({page,engine:decider});t.after(async()=>{await core.close();await page.close();});
@@ -43,7 +44,7 @@ test('goal judgment: a missing-data judgment cannot override a satisfied caller 
 
 test('goal judgment: unavailable action is not relabeled as missing data by form heuristics',async t=>{
   const page=await browser.newPage();await page.setContent('<form><label>Code<input required></label><button>Save</button></form>');
-  const core=new JevBrowser({page,engine:{async decide(request){if(request.questions.blocker)return {answers:{blocker:{choice:'__none__',confidence:1}}};return {answers:Object.fromEntries(Object.keys(request.questions).map(id=>[id,{choice:id==='action'?'__none__':'commit',confidence:1}]))};}}});
+  const core=new JevBrowser({page,engine:{async decide(request){if(request.questions.blocker)return {answers:{blocker:{choice:'__none__',confidence:1},blocker_field:{choice:'__none__',confidence:1}}};return {answers:Object.fromEntries(Object.keys(request.questions).map(id=>[id,{choice:id==='action'?'__none__':'commit',confidence:1}]))};}}});
   t.after(async()=>{await core.close();await page.close();});
   const result=await core.run('Open the unrelated inventory screen',{settleTimeoutMs:20});
   assert.equal(result.reason,'no-match');assert.deepEqual(result.steps,[]);
