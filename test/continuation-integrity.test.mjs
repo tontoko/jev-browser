@@ -64,7 +64,7 @@ test('continuation integrity: premature model done cannot bypass a failing final
   const decider=stagedDecider(3),decide=decider.decide.bind(decider);let forced=false;
   decider.decide=async(request,options)=>{
     const result=await decide(request,options);
-    if(!forced&&request.questions.action&&request.state.page?.elements?.some(element=>element.name==='Save reservation')&&request.state.inputs.every(input=>input.applied)){
+    if(!forced&&request.questions.action&&request.state.page?.elements?.some(element=>element.name==='Save reservation')&&request.state.inputs.some(input=>input.path==='/reservationReference'&&!input.applied)){
       result.answers.action={choice:'__done__',confidence:0.95};forced=true;
     }
     return result;
