@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
-import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -249,8 +248,7 @@ test('Pi shutdown closes a browser while its initial navigation is still waiting
 test('installed Pi loads the adapter and validates its shared JSON schema', { skip: !process.env.JEV_PI_PACKAGE }, async t => {
   const piRoot = resolve(process.env.JEV_PI_PACKAGE);
   const { loadExtensions } = await import(pathToFileURL(join(piRoot, 'dist/core/extensions/loader.js')));
-  const piRequire = createRequire(join(piRoot, 'package.json'));
-  const { validateToolArguments } = await import(pathToFileURL(piRequire.resolve('@earendil-works/pi-ai')));
+  const { validateToolArguments } = await import(pathToFileURL(join(piRoot, 'node_modules/@earendil-works/pi-ai/dist/utils/validation.js')));
   const { url } = await fixture(t);
   const previous = process.env.JEV_SCREEN_URL;
   process.env.JEV_SCREEN_URL = url;
