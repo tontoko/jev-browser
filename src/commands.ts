@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { JevBrowser } from './browser.js';
 import { BrowserError } from './errors.js';
 import { nativeSchemas, nativeReadOnly, type NativeCommand, type NativeName } from './native-schemas.js';
+import { screenSchema } from './screen.js';
 
 const scope = z.string().min(1).optional();
 const instruction = z.string().trim().min(1);
@@ -15,6 +16,7 @@ const semanticRequest = z.object({ actual: semanticActual, expected: z.string().
 const semanticBatch = z.object({ requests: z.array(semanticRequest).min(1), minConfidence: confidence, minSourceConfidence: confidence, scope, timeoutMs: z.number().int().positive().optional() }).strict();
 export const commandSchemas = {
   ...nativeSchemas,
+  screen: screenSchema,
   goto: z.object({ url: z.url() }).strict(),
   snapshot: z.object({ scope }).strict(),
   observe: z.object({ instruction, values, scope }).strict(),
@@ -36,6 +38,7 @@ export const commandSchemas = {
 export type CommandName = keyof typeof commandSchemas;
 export type Command = { [K in CommandName]: { command: K } & z.output<(typeof commandSchemas)[K]> }[CommandName];
 const descriptions: Partial<Record<CommandName, string>> = {
+  screen: 'Observe viewport pixels or use coordinates, focused typing, editing keys and scroll. Inputs require the latest observationId. Returns fresh images and real timestamps, never DOM, selectors, labels or URL metadata.',
   goto: 'Navigate to an HTTP(S) URL. Alias for navigate.',
   navigate: 'Navigate the selected tab to an HTTP(S) URL.',
   snapshot: 'Read accessible controls and source text, with short-lived element references. No model call.',
@@ -80,8 +83,13 @@ export function parseCommand(input: unknown): Command {
   return { command: name, ...parsed.data } as Command;
 }
 export async function executeCommand(browser: JevBrowser, request: Command, signal?: AbortSignal): Promise<object> {
+  if (browser.screenOnly && request.command !== 'screen' && request.command !== 'close') {
+    try { await browser.recordScreenDenied(request.command); } catch { /* Recording cannot authorize a forbidden command. */ }
+    throw new BrowserError('SCREEN_ONLY', 'This session accepts only screen operations and close.');
+  }
   const options = { signal, ...('scope' in request ? { scope: request.scope } : {}), ...(request.command==='act'||request.command==='observe'?{values:request.values}:{}) };
   switch (request.command) {
+    case 'screen': { const { command, ...screen } = request; return browser.screen(screen, { signal }); }
     case 'goto': return browser.goto(request.url, options);
     case 'snapshot': return browser.snapshot(options);
     case 'observe': return { plan: await browser.observe(request.instruction, options) };

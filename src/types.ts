@@ -130,12 +130,15 @@ export interface RunResult {
   reason: RunReason;
   steps: ActResult[];
 }
+export type BrowserCommand = NativeCommand | { command: 'screen'; request: import('./screen.js').ScreenRequest };
 export interface BrowserOptions extends JevOptions {
   page: Page;
   fileRoots?: string[];
   outputDir?: string;
   allowEvaluate?: boolean;
-  allowCommand?: (command: NativeCommand, operation: OperationContext) => boolean | Promise<boolean>;
+  /** Restricts CLI/MCP/shared dispatch; direct caller Page access is still trusted. */
+  screenOnly?: boolean;
+  allowCommand?: (command: BrowserCommand, operation: OperationContext) => boolean | Promise<boolean>;
   engine?: DecisionEngine;
   maxElements?: number;
   maxTexts?: number;

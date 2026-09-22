@@ -13,7 +13,7 @@ Native operations and assertions run **without an AI key**. Natural-language ope
 Node.js **22.15 or newer**. Download the package from [GitHub Releases](https://github.com/tontoko/jev-browser/releases), then install it into your project:
 
 ```sh
-npm install --save-dev ./tontoko-jev-browser-0.8.0.tgz
+npm install --save-dev ./tontoko-jev-browser-0.9.0.tgz
 npx playwright install chromium
 ```
 
@@ -123,6 +123,8 @@ npx jev-browser extract 'Read the invoice total' \
 Explicit `values` are kept out of decision payloads. Quoted values are copied verbatim from the caller's instruction, which itself is sent to Jev. Page text and page-echoed input can contain private data: see [the data boundary](SECURITY.md).
 
 ## MCP: native and natural-language tools
+
+For a reviewer that should discover the product from visible UI, use a separate `--screen-only` session. It exposes viewport images and coordinate mouse, focused keyboard, scroll and history inputs through one shared `screen` command. DOM/ARIA snapshots, selectors, semantic operations, network diagnostics and URL metadata are unavailable through that session's command surface. Every action returns current images and actual timestamps; an outer vision-capable model supplies the review judgment. See [screen-only review](docs/screen-review.md) for trusted setup, recordings, freshness and remaining browser limitations, and [Pi integration](docs/pi.md) for a clean actor with the optional `@tontoko/jev-browser/pi` extension.
 
 After installing the tarball, configure your MCP client:
 

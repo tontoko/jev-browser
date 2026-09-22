@@ -11,7 +11,7 @@ Playwright MCP／CLIのブラウザー操作と、Stagehand型の自然言語操
 Node.js 22.15以上。[GitHub Releases](https://github.com/tontoko/jev-browser/releases)のtarballをプロジェクトへインストールします。
 
 ```sh
-npm install --save-dev ./tontoko-jev-browser-0.8.0.tgz
+npm install --save-dev ./tontoko-jev-browser-0.9.0.tgz
 npx playwright install chromium
 npx jev-browser open https://example.com --session work
 npx jev-browser snapshot --session work
@@ -97,6 +97,14 @@ semantic比較は、実際に選ばれたDOM上の`evidence`、`passed | failed 
 CLIの`semantic_locate` / `semantic_compare` / `semantic_assert`と、MCPの`browser_semantic_*`も同じコアを使います。
 
 抽出はZodのスカラー・入れ子オブジェクト・配列に対応し、結果の`data`と元のDOMテキストを示す`evidence`を返します。配列は行・カード単位で根拠を分け、別の行の名前と金額を混ぜないようにします。生成された文章や、存在しない値の補完は行いません。
+
+## 画面画像を使うエージェント連携
+
+画像を理解するモデルで画面を操作する場合は、独立した`--screen-only`セッションを使えます。共有の`screen`コマンドがviewport画像、座標でのマウス操作、focusへの入力、通常のキー操作、スクロール、履歴移動を提供します。各操作は結果の原画像と時刻を返し、短い連続画像で動きも観察できます。この操作モード自体はJevモデルを呼びません。
+
+セッションのコマンド境界は`screen`と`close`だけに制限され、DOM・ARIA・selector・任意URLへの移動は公開しません。呼び出し元が初期URL・認証・viewportを準備し、モデルには画像と目的を渡します。画像の判断、UX基準、機能結果の検証は呼び出し元が担います。
+
+SDK・CLI・MCPで同じ操作を利用できます。Piを使う場合は、任意の`@tontoko/jev-browser/pi` exportが画像blockを返す2つのtoolを登録します。Pi自体はJev Browserの必須依存ではありません。[画面操作のAPIと制約](docs/screen-review.md)、[Piの起動例](docs/pi.md)を参照してください。
 
 ## 実行と判定の境界
 

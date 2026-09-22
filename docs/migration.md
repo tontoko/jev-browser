@@ -47,6 +47,8 @@ The goal runtime batches independent field questions and record extraction, exec
 
 ## Visual-only pages and large pages
 
+For a vision-capable UX reviewer, create an isolated session with `--screen-only` and use the shared `screen` command. This opt-in surface gives images and physical inputs without accessible snapshots, selectors, semantic choices or route hints. See [screen review](screen-review.md). Existing SDK Page access is trusted setup/verification and is not an isolation boundary.
+
 Screenshot and mouse-coordinate tools are available to an outer vision-capable agent. Jev itself is not an image model in this integration, so standalone autonomous Canvas/image interpretation is not claimed. Closed shadow roots are not inspectable by the DOM layer.
 
 For large pages, explicit `scope` remains authoritative. Without one, a truncated page can be indexed into bounded real semantic regions (form/main/section/article/dialog/navigation) and Jev may select the region relevant to the current action/readback; ambiguous or still-truncated regions fail closed. `recordsScope` identifies repeated rows but is not a whole-page text filter. Very long native select lists are deferred rather than truncated, and standards-associated ARIA comboboxes use only their declared owned popup. The runtime never pretends an omitted candidate was observed.

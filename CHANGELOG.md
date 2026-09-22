@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.9.0
+
+- Added a shared `screen` command for actual viewport PNGs and native coordinate, focused keyboard, scroll and history input. Each action returns the resulting images and an observation ID; input consumes the latest observation, and navigation or viewport changes require another look.
+- Added immutable `screenOnly` / `--screen-only` sessions. Shared dispatch denies every command except `screen` and `close`, and restricted MCP sessions expose only those tools. No DOM, ARIA, selectors, arbitrary navigation, source, storage or network reads are available through this interface.
+- Added the optional `@tontoko/jev-browser/pi` extension. Trusted setup fixes the initial URL and browser options before the actor starts; Pi receives only native viewport image blocks and bounded action metadata through two tools. Documentation shows a fresh Pi process with explicit system instructions and tools, without inherited repository context.
+- Bounded frame sequences preserve normal animation and report actual capture times. Persistent sessions and combined input/capture avoid additional Jev inference or a separate screenshot call after each input; screen operations make no Jev model requests.
+- Saved viewport files and a mechanical action journal retain observed outcomes, including rejected or uncertain actions, without duplicating image bytes or typed text in the journal. Cancellation never replays an input or silently starts a replacement browser.
+- Screen pointer input maps image coordinates through verified Chromium viewport scale, including mobile pages without viewport metadata. Unsupported transforms fail explicitly before input. Captures, viewport reads and history navigation honor cancellation, and closing a restricted MCP or Pi session is final.
+- Added real-browser boundary, stale-observation, adapter and installed-package regressions. Existing functional and semantic verification APIs remain available to the trusted caller.
+
+The restricted command interface is not an operating-system sandbox. Trusted SDK callers still own the Page and source-aware APIs. Observation IDs bind a sequence and browser state; they do not freeze animation or application layout. Native dialogs, popups and file choosers are explicit capture limitations. UX judgment and independent outcome verification belong to the caller; successful browser input does not establish usability or durable application success.
+
 ## 0.8.0
 
 - Progress waiting and observation share visible text eligibility; plain paragraphs, spans, definitions and output text do not require a status role. Native checked state and link destinations are observed too.
