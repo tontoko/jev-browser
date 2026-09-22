@@ -117,7 +117,7 @@ export default function jevBrowserExtension(pi: PiExtensionAPI): void {
   pi.registerTool({
     name: 'browser_screen',
     label: 'Browser screen',
-    description: 'Observe the actual browser viewport, or perform one native coordinate or keyboard action and observe the result. Start with action look. Input actions require the latest observationId. Coordinates are viewport CSS pixels. capture requests a short sequence of actual frames for observing motion.',
+    description: 'Observe the actual browser viewport, or perform one native coordinate or keyboard action and observe the result. Start with action look. Input actions require the latest observationId. Coordinates are viewport CSS pixels. capture requests a short sequence of actual frames for observing motion. Frames are chronological; choose coordinates for the next input from the last frame.',
     parameters: parameters(screenSchema),
     executionMode: 'sequential',
     async execute(_toolCallId, input, signal) {

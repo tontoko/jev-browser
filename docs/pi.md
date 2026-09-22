@@ -104,7 +104,7 @@ The response contains one or more actual Pi image blocks. Its text block describ
 }
 ```
 
-The timestamps and IDs above are illustrative. Image bytes appear only in image blocks; the metadata does not repeat base64 data or expose saved file paths. Frame index `0` identifies the first image block.
+The timestamps and IDs above are illustrative. Image bytes appear only in image blocks; the metadata does not repeat base64 data or expose saved file paths. Frame index `0` identifies the first image block. Frames are chronological: use the last image to choose coordinates for the next action, and use earlier images to inspect motion history.
 
 Use the most recent observation ID when performing an action. For example:
 
@@ -142,6 +142,8 @@ Any operation can request a short sequence of actual frames:
 ```
 
 `frames` accepts 1–10 and `intervalMs` accepts 20–1000 milliseconds. The core records actual capture times; capture work can make the observed spacing longer than the requested interval. The extension preserves frame order and the action outcome. It does not infer product correctness or UX quality from successful tool execution.
+
+Treat explicit unsupported popup or native-dialog errors as tool capability limits. The outer caller should preserve that limitation in the walkthrough result and avoid assigning a product UX failure to it.
 
 ## Lifetime and cancellation
 
