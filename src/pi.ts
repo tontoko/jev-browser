@@ -4,6 +4,7 @@ import { JevBrowser } from './browser.js';
 import { commandSchemas, executeCommand, parseCommand } from './commands.js';
 import { BrowserError, publicError } from './errors.js';
 import { screenSchema, type ScreenResult } from './screen.js';
+import { screenToolSchema } from './screen-tool.js';
 import type { BrowserLaunchOptions } from './types.js';
 
 type Content = { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string };
@@ -118,7 +119,7 @@ export default function jevBrowserExtension(pi: PiExtensionAPI): void {
     name: 'browser_screen',
     label: 'Browser screen',
     description: 'Observe the actual browser viewport, or perform one native coordinate or keyboard action and observe the result. Start with action look. Input actions require the latest observationId. Coordinates are viewport CSS pixels. capture requests a short sequence of actual frames for observing motion. Frames are chronological; choose coordinates for the next input from the last frame.',
-    parameters: parameters(screenSchema),
+    parameters: parameters(screenToolSchema),
     executionMode: 'sequential',
     async execute(_toolCallId, input, signal) {
       try {

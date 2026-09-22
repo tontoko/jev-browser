@@ -270,6 +270,8 @@ test('installed Pi loads the adapter and validates its shared JSON schema', { sk
   const look = validateToolArguments(tool, { id: 'native-look', name: 'browser_screen', arguments: { action: 'look' } });
   assert.deepEqual(look, { action: 'look' });
   assert.throws(() => validateToolArguments(tool, { id: 'native-invalid', name: 'browser_screen', arguments: { action: 'look', selector: 'body' } }));
-  assert.throws(() => validateToolArguments(tool, { id: 'native-stale', name: 'browser_screen', arguments: { action: 'click', x: 10, y: 20 } }));
+  assert.throws(() => validateToolArguments(tool, { id: 'native-empty', name: 'browser_screen', arguments: {} }));
+  const incomplete = validateToolArguments(tool, { id: 'native-incomplete', name: 'browser_screen', arguments: { action: 'click', x: 10, y: 20 } });
+  await assert.rejects(tool.execute('native-incomplete', incomplete), /INVALID_ARGUMENT/);
   observation(await tool.execute('native-look', look));
 });

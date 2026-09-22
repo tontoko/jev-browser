@@ -72,6 +72,8 @@ This is a tool and context boundary within Pi. The enclosing process retains its
 
 The adapter uses a structural registration interface and shared JSON schemas, so Jev does not require Pi as a runtime dependency. Native loader and schema validation are tested separately against `@earendil-works/pi-coding-agent` 0.87.0.
 
+Pi and MCP tool discovery expose an object with named argument properties and an `action` enum. This schema is mechanically derived from the core action union for compatibility with tool hosts that require a top-level object. Both adapters still validate the complete action against the strict shared screen schema before starting a browser or performing input.
+
 ## Screen operations
 
 Start by looking:
@@ -130,7 +132,7 @@ Coordinates are viewport CSS pixels. `type` inserts literal text at the current 
 | `back`, `forward`, `reload` | None |
 | `wait` | `milliseconds` |
 
-Input actions use the latest `observationId`. The registered schema is authoritative for required fields and bounds. Unsupported fields, selectors, configuration, and source-reading requests are rejected before browser startup or input.
+Every action except `look` requires the latest `observationId`. Its action-specific fields are required as shown above, with the scroll position optional. Tool discovery preserves the shared field types and bounds; execution also checks which fields belong to the selected action. Unsupported fields, selectors, configuration, and source-reading requests are rejected before browser startup or input.
 
 Any operation can request a short sequence of actual frames:
 
