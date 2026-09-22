@@ -77,10 +77,13 @@ function observedText(el: Element, role: string): string | undefined {
 }
 
 /** Fixed read-only browser predicate used for local progress waits, never model-authored. */
-export function progressChanged(previous?: string): string | boolean {
-  const roots: (Document | ShadowRoot)[] = [document], parts: unknown[] = [location.href];
+export function progressChanged(previous?: string, scopedRoots?: Element[]): string | boolean {
+  const roots: (Element | Document | ShadowRoot)[] = scopedRoots ? [...scopedRoots] : [document];
+  const parts: unknown[] = [location.href,scopedRoots?.map(root=>root.isConnected)];
+  const visited=new Set<Element>();
   let scanned = 0;
-  for (const root of roots) for (const el of root.querySelectorAll('*')) {
+  for (const root of roots) for (const el of root instanceof Element ? [root,...root.querySelectorAll('*')] : root.querySelectorAll('*')) {
+    if(visited.has(el))continue;visited.add(el);
     if (++scanned > 6000) break;
     if (el.shadowRoot) roots.push(el.shadowRoot);
     if (!visible(el)) continue;
@@ -141,7 +144,7 @@ export function observe(options: { maxElements: number; maxTexts: number }, scop
     const parent = recordNodes.findIndex(other => other !== el && other.contains(el) && !recordNodes.some(between => between !== other && between !== el && other.contains(between) && between.contains(el)));
     return { index, parent: parent < 0 ? undefined : parent, readOnly: !el.matches('form,input,textarea,select,[contenteditable="true"]') && !el.querySelector('input,textarea,select,[contenteditable="true"]'), context: normalize((el as HTMLElement).innerText).slice(0, 1000), texts: textNodes.flatMap((node, i) => el === node || el.contains(node) ? [i] : []) };
   });
-  return { nodes, textNodes, textKinds, elements, texts, records, recordInventoryComplete:scanned<=6000, truncatedElements, truncatedTexts, changeKey: String(progressChanged()), busy: !!document.querySelector('[aria-busy="true"]') };
+  return { nodes, textNodes, textKinds, elements, texts, records, recordInventoryComplete:scanned<=6000, truncatedElements, truncatedTexts, changeKey: String(progressChanged(undefined,scopedRoots)), busy: [...visited].some(el=>visible(el)&&el.matches('[aria-busy="true"]')) };
 }
 
 /** No global text search: options must belong to the popup declared by this control. */

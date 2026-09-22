@@ -66,7 +66,6 @@ export async function verifyReadback(
   const identities=inputs.filter(input=>readback.includes(input.path));
   const identity=hasAnchor(identities);
   if(!identity)return;
-  for(const input of inputs)input.readback=readback.includes(input.path);
   const stage=completion==='complete'?'final':'continue';
   return {verification:{source:'inferred',basis:'ui-readback',recordId:record.id,readback,unobserved,...(inputs.some(input=>input.resolution&&readback.includes(input.path))?{semanticInputs:inputs.filter(input=>input.resolution&&readback.includes(input.path)).map(input=>input.path)}:{})},stage};
 }
@@ -75,10 +74,10 @@ export async function verifyReadback(
 export async function waitForRelevantChange(page: Page, captured: Captured, timeoutMs: number, signal: AbortSignal): Promise<boolean> {
   if(timeoutMs<=0)return false;
   const abort=new AbortController(),combined=AbortSignal.any([signal,abort.signal]);
-  const tasks=page.frames().map(async(frame,index)=>{
-    const baseline=captured.changeKeys[index];
-    if(baseline===undefined)return;
-    await waitForFrameProgress(frame,baseline,timeoutMs,combined);
+  const tasks=[...captured.frames].filter(([index])=>captured.changeKeys[index]!==undefined).map(async([index,boundary])=>{
+    if(boundary.frame.isDetached()||!page.frames().includes(boundary.frame)||boundary.frame.url()!==boundary.rawURL)return;
+    try{await waitForFrameProgress(boundary.frame,captured.changeKeys[index]!,timeoutMs,combined,boundary.roots);}
+    catch(error){if(boundary.frame.isDetached()||boundary.frame.url()!==boundary.rawURL)return;throw error;}
   });
   if(!tasks.length)return false;
   try {await Promise.any(tasks);signal.throwIfAborted();return true;}

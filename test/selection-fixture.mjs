@@ -13,7 +13,7 @@ export async function selectionFixture(t,browser,options={}){
       document.querySelector('form').onsubmit=async event=>{event.preventDefault();const form=event.target;const response=await fetch('/save',{method:'POST',body:JSON.stringify(Object.fromEntries(new FormData(form)))});const data=await response.json();window.saved=data;if(!${!!options.omitResult}){const article=document.createElement('article');article.innerHTML='<h2>Address saved</h2><dl><dt>Country</dt><dd></dd></dl><dl><dt>Private note</dt><dd></dd></dl>';article.querySelectorAll('dd')[0].textContent=${JSON.stringify(options.resultCountry??'JP')};article.querySelectorAll('dd')[1].textContent=data.b4;form.remove();document.querySelector('#result').append(article);}};
     </script>`);
   });
-  const decider=options.engine??engine((q,r,id)=>{
+  const base=options.engine??engine((q,r,id)=>{
     if(id.startsWith('bind_'))return r.state.page.elements.find(e=>e.name===(q.instructions.includes('"/country"')?'Country':'Private note'))?.id??'__none__';
     if(id.startsWith('effect_'))return r.state.actions?.[id.slice(7)]?.target?.name==='Save'?'commit':'advance';
     if(id==='action')return c=>c?.kind==='click'&&c.target?.name==='Save';
@@ -23,11 +23,14 @@ export async function selectionFixture(t,browser,options={}){
     if(id.startsWith('read_'))return r.state.sources.find(s=>s.context.startsWith(q.instructions.includes('"/country"')?'Country ':'Private note '))?.id??'__none__';
     return '__none__';
   });
-  const original=decider.decide.bind(decider);
-  decider.decide=async(r,o)=>{const answer=await original(r,o);if(Object.keys(r.questions).some(id=>id.startsWith('selection_'))){
-    for(const [id,a] of Object.entries(answer.answers))if(id.startsWith('selection_'))a.confidence=options.confidence??0.95;
-    if(options.afterSelection)await options.afterSelection(page);
-  }return answer;};
+  const decider={...base,async decide(r,o){
+    const answer=await base.decide(r,o);
+    if(Object.keys(r.questions).some(id=>id.startsWith('selection_'))){
+      if(!options.engine)for(const [id,a] of Object.entries(answer.answers))if(id.startsWith('selection_'))a.confidence=options.confidence??0.95;
+      if(options.afterSelection)await options.afterSelection(page);
+    }
+    return answer;
+  }};
   const page=await browser.newPage();await page.goto(service.url);
   const core=new JevBrowser({page,engine:decider,...options.coreOptions});
   t.after(async()=>{await core.close();await page.close();await service.close();});

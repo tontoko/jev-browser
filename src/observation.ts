@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import type { ElementHandle, JSHandle, Page, Frame, Locator } from 'playwright';
 import type { Snapshot, ElementInfo, SemanticEvidence, SemanticLocatorProperty } from './types.js';
 import { BrowserError } from './errors.js';
@@ -12,7 +13,13 @@ export function publicURL(value: string): string {
   catch { return '[unavailable URL]'; }
 }
 export interface ElementRef { frame: Frame; handle: ElementHandle<Element>; signature: string; info: ElementInfo }
+export interface CapturedFrame { frame: Frame; rawURL: string; roots?: ElementHandle<Element>[] }
 export interface Captured {
+  anchor?: {capture: Captured; ref: ElementRef};
+  page: Page;
+  scope?: string;
+  frames: Map<number,CapturedFrame>;
+  reread(): Promise<Captured>;
   data: Snapshot;
   refs: Map<string, ElementRef>;
   textRefs?: Map<string, { frame: Frame; handle: ElementHandle<Element>; kind: DOM.SemanticTextKind }>;
@@ -24,6 +31,8 @@ export async function capture(page: Page, options: { semanticRefs?: boolean; sco
   const refs = new Map<string, ElementRef>();
   const textRefs = new Map<string, { frame: Frame; handle: ElementHandle<Element>; kind: DOM.SemanticTextKind }>();
   const changeKeys: Record<number,string> = {};
+  const frames = new Map<number,CapturedFrame>();
+  let retainedSelection=options.selection;
   const owned: JSHandle[] = [];
   const dispose = async () => { await Promise.allSettled(owned.splice(0).map(handle => handle.dispose())); refs.clear(); textRefs.clear(); };
   const rawURL = page.url();
@@ -38,8 +47,18 @@ export async function capture(page: Page, options: { semanticRefs?: boolean; sco
       const {selection,...ordinaryOptions}=options;
       const frameOptions = { ...ordinaryOptions, maxElements: Math.max(0, options.maxElements - data.elements.length), maxTexts: Math.max(0, options.maxTexts - data.texts.length) };
       // Use Playwright's native CSS resolver, including open shadow roots.
-      const roots = options.selection?.roots ?? (options.scope ? (await frame.locator(`css=${options.scope}`).elementHandles()) as ElementHandle<Element>[] : undefined);
-      if (roots && !options.selection) owned.push(...roots);
+      let roots:ElementHandle<Element>[]|undefined;
+      if(options.selection){
+        roots=[];
+        for(const original of options.selection.roots){
+          const retained=await original.evaluateHandle(element=>element);owned.push(retained);
+          const element=retained.asElement();if(!element)throw new BrowserError('STALE_TARGET','The captured scope root is no longer an element.');
+          roots.push(element as ElementHandle<Element>);
+        }
+        retainedSelection={frame,roots};
+      }else if(options.scope){roots=await frame.locator(`css=${options.scope}`).elementHandles() as ElementHandle<Element>[];owned.push(...roots);}
+      if (roots && !roots.length) continue;
+      frames.set(frameIndex,{frame,rawURL:frame.url(),...(roots?{roots}:{})});
       const recordRoots = options.recordsScope ? (await frame.locator(`css=${options.recordsScope}`).elementHandles()) as ElementHandle<Element>[] : undefined;
       if (recordRoots) owned.push(...recordRoots);
       const observe = new Function('args', `${source()}; return JevDOM.observe(${JSON.stringify(frameOptions)}, args.roots, args.recordRoots);`) as (args: { roots?: Element[]; recordRoots?: Element[] }) => ReturnType<typeof DOM.observe>;
@@ -77,13 +96,14 @@ export async function capture(page: Page, options: { semanticRefs?: boolean; sco
     }
     data.truncated = data.truncatedElements || data.truncatedTexts;
     if (page.url() !== rawURL) throw new BrowserError('STALE_SNAPSHOT', 'Page navigated while it was being observed. Observe again.');
-    return { data, refs, textRefs, rawURL, changeKeys, dispose };
+    return { page, scope:options.scope, frames, data, refs, textRefs, rawURL, changeKeys, dispose,
+      reread: () => capture(page,{...options,selection:retainedSelection,semanticRefs:false}) };
   } catch (error) { await dispose(); throw error; }
 }
 /** Execute the shipped shared observation predicate, never caller/model-generated code. */
-export async function waitForFrameProgress(frame: Frame, baseline: string, timeoutMs: number, signal: AbortSignal): Promise<void> {
-  const changed = new Function('previous', `${source()}; return JevDOM.progressChanged(previous);`) as (previous: string) => boolean;
-  const handle = await frame.waitForFunction(changed,baseline,{polling:Math.min(100,Math.max(1,Math.floor(timeoutMs/4))),timeout:timeoutMs,signal});
+export async function waitForFrameProgress(frame: Frame, baseline: string, timeoutMs: number, signal: AbortSignal, roots?: ElementHandle<Element>[]): Promise<void> {
+  const changed = new Function('args', `${source()}; return JevDOM.progressChanged(args.previous,args.roots);`) as (args:{previous:string;roots?:Element[]}) => boolean;
+  const handle = await frame.waitForFunction(changed,{previous:baseline,roots},{polling:Math.min(100,Math.max(1,Math.floor(timeoutMs/4))),timeout:timeoutMs,signal});
   await handle.dispose();
 }
 
@@ -99,9 +119,48 @@ export async function verifyTarget(ref: ElementRef): Promise<void> {
     throw new BrowserError('STALE_TARGET', 'The observed target or its row identity changed. Observe again.');
 }
 
+/** Shared observed-target authority for delayed plans, native refs and goal effects. */
+export async function withinCapturedScope(page:Page,captured:Captured,ref:{frame:Frame;handle:ElementHandle<Element>}):Promise<boolean> {
+  if(page!==captured.page||page.url()!==captured.rawURL||!page.frames().includes(ref.frame))return false;
+  if(captured.anchor&&!await withinCapturedScope(page,captured.anchor.capture,captured.anchor.ref))return false;
+  const boundary=[...captured.frames.values()].find(value=>value.frame===ref.frame);
+  if(!boundary||ref.frame.url()!==boundary.rawURL)return false;
+  if(boundary.roots){
+    const contains=new Function('element','roots',`${source()}; return element.isConnected && roots.every(root=>root.isConnected) && JevDOM.withinSemanticRoots(element,roots);`) as (element:Element,roots:Element[])=>boolean;
+    if(!await ref.handle.evaluate(contains,boundary.roots).catch(()=>false))return false;
+  }
+  return semanticWithinScope(ref,captured.scope).catch(()=>false);
+}
+export async function verifyCapturedTarget(page:Page,captured:Captured,ref:ElementRef):Promise<void> {
+  if(!await withinCapturedScope(page,captured,ref))throw new BrowserError('STALE_TARGET','The observed target left its Page, document or scope. Observe again.');
+  await verifyTarget(ref);
+}
+/** Adoption checks physical sources and the result/status evidence used by the judgment. */
+export async function readbackIsCurrent(page:Page,captured:Captured,recordId:string):Promise<boolean> {
+  const record=captured.data.records?.find(record=>record.id===recordId);
+  if(!record||page!==captured.page||page.url()!==captured.rawURL)return false;
+  let fresh:Captured|undefined;
+  try{
+    fresh=await captured.reread();
+    const facts=(snapshot:Snapshot)=>({url:snapshot.url,title:snapshot.title,
+      records:snapshot.records?.map(record=>({frame:record.frame,context:record.context,readOnly:record.readOnly,
+        sources:snapshot.texts.filter(source=>record.textIds.includes(source.id)).map(({id:_id,...source})=>source)})),
+      context:snapshot.texts.filter(source=>['heading','status','alert'].includes(source.role)).map(({id:_id,...source})=>source),
+      truncated:snapshot.truncatedTexts});
+    if(!isDeepStrictEqual(facts(captured.data),facts(fresh.data)))return false;
+    const selected=captured.data.texts.filter(source=>record.textIds.includes(source.id)||['heading','status','alert'].includes(source.role));
+    const checks=await Promise.all(selected.map(async({id,...source})=>{
+      const evidence={sourceId:id,...source};
+      return isDeepStrictEqual(evidence,await currentSemanticEvidence(page,captured,evidence,captured.scope));
+    }));
+    return checks.every(Boolean);
+  }catch{return false;}
+  finally{await fresh?.dispose();}
+}
+
 /** Wait locally for an owned exact option, then capture that actual node and its control. */
 export async function captureComboboxChoice(page: Page, ref: ElementRef, value: string,
-  limits: {maxElements:number;maxTexts:number}, operation: {signal:AbortSignal;timeoutMs:number}): Promise<Captured> {
+  limits: {maxElements:number;maxTexts:number}, operation: {signal:AbortSignal;timeoutMs:number}, anchor?: Captured): Promise<Captured> {
   const ready = new Function('args', `${source()}; return !args.element.isConnected || JevDOM.matchingComboboxOptions(args.element,args.value).length > 0;`) as (args:{element:Element;value:string})=>boolean;
   try {
     const wait=await ref.frame.waitForFunction(ready,{element:ref.handle,value},{timeout:operation.timeoutMs,signal:operation.signal,polling:50});
@@ -119,7 +178,9 @@ export async function captureComboboxChoice(page: Page, ref: ElementRef, value: 
     const options=handles.map(handle=>handle.asElement()).filter((handle):handle is ElementHandle<Element>=>!!handle);
     if(options.length>1)throw new BrowserError('AMBIGUOUS_SELECTION','Multiple enabled options with the same label belong to this combobox.');
     if(!options.length)throw new BrowserError('NO_MATCH','The matching option disappeared before observation.');
-    return await capture(page,{...limits,selection:{frame:ref.frame,roots:[ref.handle,options[0]!]}});
+    const result=await capture(page,{...limits,selection:{frame:ref.frame,roots:[ref.handle,options[0]!]}});
+    if(anchor)result.anchor={capture:anchor,ref};
+    return result;
   } finally {await Promise.allSettled([result,...handles].map(handle=>handle.dispose()));}
 }
 
@@ -163,7 +224,7 @@ export async function currentSemanticEvidence(page: Page, captured: Captured, ev
   const ref = element ?? text;
   if (!ref || page.frames()[evidence.frame] !== ref.frame) return;
   try {
-    if(!await semanticWithinScope(ref,scope))return;
+    if(!await withinCapturedScope(page,captured,ref)||!await semanticWithinScope(ref,scope))return;
     if (element) {
       await verifyTarget(element);
       return {...evidence};
