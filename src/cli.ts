@@ -42,6 +42,7 @@ Options:
   --cdp-endpoint URL  --ws-endpoint URL  --user-data-dir DIR
   --storage-state FILE  --output-dir DIR  --file-root DIR (repeatable)
   --allow-evaluate           Enable trusted page JS; never Node code execution
+  --screen-only              Immutable session mode: screen pixels/physical inputs and close only
   --model NAME  --idle-timeout-ms N  --help  --version
 
 Native operations, snapshots and assertions need no API key. AI operations use
@@ -58,7 +59,7 @@ async function main(): Promise<void> {
   if (values.version) { process.stdout.write(`${version}\n`); return; }
   if (values.help || !positionals.length) { process.stdout.write(help); return; }
   let [name, ...words] = positionals;
-  if (name === 'mcp') { startMcpStdio(options); return; }
+  if (name === 'mcp') { startMcpStdio(options, values.url); return; }
   if (name === 'sessions') { await write({ ok: true, result: await listSessions() }); return; }
   if (name === 'open') {
     const result = await openSession(values.session ?? 'default', options, words[0] ?? values.url, positive(values['idle-timeout-ms'], '--idle-timeout-ms'));
@@ -76,7 +77,11 @@ async function main(): Promise<void> {
     return session ? sendSession(session, request, signal) : executeCommand(browser!, request, signal);
   };
   try {
-    if (values.url && !['goto', 'navigate'].includes(name!)) await execute(parseCommand({ command: 'goto', url: values.url }));
+    if (values.url && !['goto', 'navigate'].includes(name!)) {
+      // Fresh launch URL is trusted setup; named-session commands remain restricted.
+      if (browser?.screenOnly) await browser.goto(values.url);
+      else await execute(parseCommand({ command: 'goto', url: values.url }));
+    }
     if (name === 'session') {
       const lines = createInterface({ input: process.stdin, crlfDelay: Infinity });
       for await (const line of lines) {

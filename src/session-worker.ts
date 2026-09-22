@@ -48,7 +48,7 @@ process.once('message', async (input: Start) => {
         try { data = JSON.parse(body); } catch { throw new BrowserError('INVALID_ARGUMENT', 'Session commands must be valid JSON.'); }
         touch();
         if (typeof data === 'object' && data !== null && 'command' in data && data.command === 'health') {
-          respond(200, { ok: true, result: { session: input.name, status: 'open' } }); return;
+          respond(200, { ok: true, result: { session: input.name, status: 'open', screenOnly: core!.screenOnly } }); return;
         }
         const command = parseCommand(data);
         if (command.command === 'close') { await close(); respond(200, { ok: true, result: { status: 'closed' } }); return; }
@@ -64,7 +64,7 @@ process.once('message', async (input: Start) => {
     if (!address || typeof address === 'string') throw new Error('Missing local listener');
     await writeFile(join(input.directory, 'session.json'), JSON.stringify({ name: input.name, cwd: resolve(process.cwd()), pid: process.pid, port: address.port, token, createdAt: new Date().toISOString() }), { mode: 0o600, flag: 'wx' });
     touch();
-    process.send?.({ ready: true, url: publicURL(core.page.url()) });
+    process.send?.({ ready: true, ...(core.screenOnly ? { screenOnly: true } : { url: publicURL(core.page.url()) }) });
   } catch (error) {
     process.send?.({ error: publicError(error) });
     await close(); process.exitCode = 1;

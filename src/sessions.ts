@@ -60,6 +60,10 @@ export async function openSession(name: string, options: BrowserLaunchOptions, u
       return openSession(name, options, url, idleTimeoutMs);
     }
     const existing = await sendSession(name, { command: 'health' });
+    if ((existing.screenOnly === true) !== (options.screenOnly === true))
+      throw new BrowserError('SESSION_MODE_MISMATCH', 'An existing session cannot change screen-only mode. Use a different session name.');
+    if (existing.screenOnly === true && url)
+      throw new BrowserError('SCREEN_ONLY', 'A screen-only session cannot be reopened at a supplied URL. Continue with screen, or start a new session.');
     if (url) await sendSession(name, { command: 'goto', url });
     return { ...existing, session: name, status: 'open', reused: true };
   }
@@ -74,11 +78,11 @@ export async function openSession(name: string, options: BrowserLaunchOptions, u
     child.once('error', fail);
     child.once('exit', () => fail(new BrowserError('SESSION_START_FAILED', 'Browser session exited before it was ready. Check browser installation and launch options.')));
     child.on('message', message => {
-      const result = message as { ready?: boolean; error?: { code: string; message: string }; url?: string };
+      const result = message as { ready?: boolean; error?: { code: string; message: string }; url?: string; screenOnly?: boolean };
       if (result.error) { fail(new BrowserError(result.error.code, result.error.message)); return; }
       if (!result.ready || settled) return;
       settled = true; clearTimeout(timer); child.disconnect(); child.unref();
-      resolve({ session: name, status: 'open', url: result.url, reused: false });
+      resolve({ session: name, status: 'open', ...(result.screenOnly ? { screenOnly: true } : { url: result.url }), reused: false });
     });
     child.send({ name, directory, options, url, idleTimeoutMs });
   });

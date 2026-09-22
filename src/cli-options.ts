@@ -5,7 +5,7 @@ import { parseCommand } from './commands.js';
 import type { BrowserLaunchOptions } from './types.js';
 const definitions = {
   help: { type: 'boolean', short: 'h' }, version: { type: 'boolean' }, headed: { type: 'boolean' },
-  'allow-evaluate': { type: 'boolean' }, session: { type: 'string', short: 's' },
+  'allow-evaluate': { type: 'boolean' }, 'screen-only': { type: 'boolean' }, session: { type: 'string', short: 's' },
   url: { type: 'string' }, scope: { type: 'string' }, frame: { type: 'string' }, args: { type: 'string' },
   values: { type: 'string' }, fields: { type: 'string' }, schema: { type: 'string' }, 'records-scope': { type: 'string' },
   'plan-id': { type: 'string' }, 'max-steps': { type: 'string' }, 'timeout-ms': { type: 'string' }, model: { type: 'string' },
@@ -36,7 +36,7 @@ export function parseCLI(argv = process.argv.slice(2)) {
     timeoutMs: positive(values['timeout-ms'], '--timeout-ms'), model: values.model,
     maxElements: positive(values['max-elements'], '--max-elements'), maxTexts: positive(values['max-texts'], '--max-texts'), maxCandidates: positive(values['max-candidates'], '--max-candidates'),
     cdpEndpoint: values['cdp-endpoint'], wsEndpoint: values['ws-endpoint'], userDataDir: values['user-data-dir'],
-    storageState: values['storage-state'], outputDir: values['output-dir'], fileRoots: values['file-root'], allowEvaluate: values['allow-evaluate'],
+    storageState: values['storage-state'], outputDir: values['output-dir'], fileRoots: values['file-root'], allowEvaluate: values['allow-evaluate'], screenOnly: values['screen-only'],
   };
   return { values, positionals, options };
 }

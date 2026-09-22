@@ -11,6 +11,7 @@ import { actionCandidates, actionDescription, modelElementId, inputBindings, mod
 import { flattenInputs } from './bindings.js';
 import { extractStructured } from './structured.js';
 import { NativeBrowser } from './native.js';
+import { ScreenController, type ScreenRequest, type ScreenResult } from './screen.js';
 import { compareSemanticWork, elementEvidence, locateSemanticTargets, semanticThreshold } from './semantic.js';
 import { parseNative, nativeSchemas, nativeReadOnly, type NativeCommand } from './native-schemas.js';
 import type { ActionPlan, ActOptions, ActResult, BrowserOptions, BrowserLaunchOptions, ExtractResult, ExtractOptions, GoalCheckpoint, OperationOptions, ResumeOptions, RunOptions, RunResult, RunValue, Snapshot, SemanticEvidence, SemanticLocateOptions, SemanticTarget, SemanticActual, SemanticCompareOptions, SemanticComparisonRequest, SemanticComparisonResult } from './types.js';
@@ -51,6 +52,8 @@ export class JevBrowser {
   private readonly leasedPages = new Set<Page>();
   get page(): Page { return this.currentPage; }
   get isClosed(): boolean { return this.closed; }
+  get screenOnly(): boolean { return this.options.screenOnly === true; }
+  private screenController?: ScreenController;
   private readonly nativeBrowser: NativeBrowser;
   private snapshotCapture?: Captured;
   private readonly options: BrowserOptions;
@@ -140,6 +143,27 @@ export class JevBrowser {
       try { return await this.nativeBrowser.execute(parsed, { signal: operation.signal, timeoutMs: this.remaining(operation) }); }
       finally { if (mutates) await this.invalidatePlan(); }
     }, parsed.command);
+  }
+  private screenCore(): ScreenController {
+    return this.screenController ??= new ScreenController(() => this.page, this.options.outputDir);
+  }
+  /** Tool-surface refusal. Direct SDK Page access remains trusted caller code. */
+  async recordScreenDenied(command: string): Promise<void> {
+    await this.screenCore().deny(command);
+  }
+  async screen(request: ScreenRequest, options: OperationOptions = {}): Promise<ScreenResult> {
+    return this.exclusive(options, async operation => {
+      if (options.scope !== undefined) throw new BrowserError('INVALID_ARGUMENT', 'Screen capture cannot use a DOM scope.');
+      const context = () => ({ signal: operation.signal, timeoutMs: this.remaining(operation) });
+      try {
+        return await this.screenCore().execute(request, context,
+          this.options.allowCommand ? async (request, operation) => this.options.allowCommand!({ command: 'screen', request: structuredClone(request) }, operation) : undefined,
+          async action => {
+            const result = await this.nativeBrowser.action(action);
+            if (result.status === 'dialog') throw new BrowserError('SCREEN_DIALOG_UNSUPPORTED', 'A browser-native dialog opened. It cannot be observed by this viewport tool; this is a tool capability limit, not a product failure.');
+          });
+      } finally { await this.invalidatePlan(); }
+    }, 'screen');
   }
   private engine(): DecisionEngine {
     return this.engineInstance ??= new JevDecisionEngine(this.options);
@@ -548,6 +572,7 @@ export class JevBrowser {
       await this.active?.catch(() => undefined);
       await this.invalidate();
       this.continuations.clear();
+      this.screenController?.close();
       await this.ownedCleanup?.();
     })();
   }
