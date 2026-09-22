@@ -68,7 +68,10 @@ export async function extractStructured<S extends z.ZodType>(snapshot: Snapshot,
       });
     } catch (error) { for (const read of reads) read.reject(error); }
   }
-  const prefix = (path: string, key: string) => path ? `${path}.${key}` : key;
+  const prefix = (path: string, key: string) => {
+    const segment=key===''?'\\e':key.replace(/\\/g,'\\\\').replace(/\./g,'\\.');
+    return path?`${path}.${segment}`:segment;
+  };
   async function scalarFields(snap: Snapshot, fields: Record<string, z.ZodType>, path: string, ancestry: string[]) {
     const contextual = Object.fromEntries(Object.entries(fields).map(([name, field]) => [name, field.describe([field.description, `Full field path: ${prefix(path,name)}`, ...ancestry].filter(Boolean).join('; '))]));
     const result = await extractGrounded(snap, instruction, z.object(contextual), () => batchEngine, signal, limit);

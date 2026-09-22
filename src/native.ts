@@ -41,8 +41,10 @@ export class NativeBrowser extends BrowserEvents {
           return { field, target };
         }));
         return this.action(async () => {
-          for (const { field, target } of fields) {
+          for (const { field } of fields) {
             op.signal.throwIfAborted();
+            // Each earlier field may invalidate a later captured reference.
+            const target = await this.target(field);
             if (field.type === 'checkbox' || field.type === 'radio') { if (typeof field.value !== 'boolean') throw new BrowserError('INVALID_ARGUMENT', 'Checkbox/radio values must be boolean.'); await target.setChecked(field.value, time); }
             else if (field.type === 'combobox') { if (typeof field.value === 'boolean') throw new BrowserError('INVALID_ARGUMENT', 'Combobox values must be strings.'); await target.selectOption(field.value, time); }
             else { if (typeof field.value !== 'string') throw new BrowserError('INVALID_ARGUMENT', 'Text values must be strings.'); await target.fill(field.value, time); }
@@ -72,12 +74,13 @@ export class NativeBrowser extends BrowserEvents {
       case 'file_upload': {
         const paths = await Promise.all(c.paths.map(p => this.files.input(p)));
         if (c.target || c.ref) await (await this.target(c)).setInputFiles(paths, time);
-        else { if (!this.chooser) throw new BrowserError('NO_FILE_CHOOSER', 'Provide a file input target or open a file chooser first.'); const chooser = this.chooser; this.chooser = undefined; await chooser.setFiles(paths, time); }
+        else { const chooser=this.takeChooser(); await chooser.setFiles(paths, time); }
         return { status: 'executed', count: paths.length };
       }
       case 'downloads': {
-        if (c.action === 'list') return { downloads: this.downloads.map((d, index) => ({ index, filename: d.suggestedFilename(), url: publicURL(d.url()) })) };
-        const d = this.downloads[c.index!]; if (!d) throw new BrowserError('INVALID_ARGUMENT', 'Download index is not present.');
+        const downloads=this.downloads.filter(download=>download.page()===page);
+        if (c.action === 'list') return { downloads: downloads.map((d, index) => ({ index, filename: d.suggestedFilename(), url: publicURL(d.url()) })) };
+        const d = downloads[c.index!]; if (!d) throw new BrowserError('INVALID_ARGUMENT', 'Download index is not present.');
         if (c.action === 'cancel') { await d.cancel(); return { status: 'cancelled' }; }
         // Never trust a server-provided suggested filename as a path.
         const path = await this.files.outputPath(c.filename ?? `${randomUUID()}.download`); await d.saveAs(path); return { path };

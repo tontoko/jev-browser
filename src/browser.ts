@@ -6,7 +6,7 @@ import { z } from 'zod';
 import type { EntryType } from '@typesafe-ai/sdk';
 import { JevDecisionEngine, type DecisionEngine, type DecisionRequest } from './decision.js';
 import { BrowserError } from './errors.js';
-import { capture, publicURL, verifyTarget, currentSemanticEvidence, readLocatorEvidence, semanticWithinScope, captureComboboxChoice, captureRegions, verifyOwnedOption, type Captured } from './observation.js';
+import { capture, publicURL, verifyTarget, verifyCapturedTarget, currentSemanticEvidence, readLocatorEvidence, semanticWithinScope, captureComboboxChoice, captureRegions, verifyOwnedOption, type Captured } from './observation.js';
 import { actionCandidates, actionDescription, modelElementId, inputBindings, modelElement, resolveSelectChoice } from './actions.js';
 import { flattenInputs } from './bindings.js';
 import { extractStructured } from './structured.js';
@@ -20,7 +20,7 @@ const pageLeases = new WeakMap<Page, JevBrowser>();
 interface Pending { plan: ActionPlan; captured: Captured; values: Record<string, string> }
 interface CarriedState { inputPaths: string[]; context: string }
 interface ContinuationState { resolutions?: ResolvedInput[]; carried?: CarriedState; page: Page; origin: string; instruction: string; options: RunOptions; checkpoints: GoalCheckpoint[]; checkpointedInputs: string[]; pendingUnknown?: PendingCommitState; verifiedActionKeys?: string[] }
-interface GoalExecution { resolutions?: ResolvedInput[]; carried?: CarriedState; result: RunResult; error?: BrowserError; pendingUnknown?: PendingCommitState; verifiedActionKeys?: string[] }
+interface GoalExecution { continuationUnsafe?: boolean; resolutions?: ResolvedInput[]; carried?: CarriedState; result: RunResult; error?: BrowserError; pendingUnknown?: PendingCommitState; verifiedActionKeys?: string[] }
 const json = (value: unknown): EntryType => JSON.parse(JSON.stringify(value)) as EntryType;
 function positiveInteger(value: number, name: string): number {
   if (!Number.isSafeInteger(value) || value < 1) throw new BrowserError('CONFIG', `${name} must be a positive integer.`);
@@ -80,7 +80,7 @@ export class JevBrowser {
       select: async page => {
         const owner=pageLeases.get(page); if(owner && owner!==this)throw new BrowserError('BUSY','Another core is operating this Page.');
         if(this.active){pageLeases.set(page,this);this.leasedPages.add(page);}
-        await this.invalidate(); this.currentPage = page;
+        await this.invalidate(); this.nativeBrowser.selectPage(page); this.currentPage = page;
       },
       resolve: (target, frame) => this.resolveNative(target, frame),
       validateURL: async url => this.validURL(url),
@@ -123,7 +123,7 @@ export class JevBrowser {
       const captured = this.snapshotCapture?.refs.has(id) ? this.snapshotCapture : this.pending?.captured;
       const ref = captured?.refs.get(id);
       if (!captured || !ref || this.page.url() !== captured.rawURL) throw new BrowserError('STALE_TARGET', 'Snapshot reference is expired or from another page. Take a new snapshot.');
-      await verifyTarget(ref); return ref.handle;
+      await verifyCapturedTarget(this.page,captured,ref); return ref.handle;
     }
     const frame = frameIndex === undefined ? this.page.mainFrame() : this.page.frames()[frameIndex];
     if (!frame) throw new BrowserError('INVALID_ARGUMENT', 'Frame index is not present.');
@@ -367,10 +367,10 @@ export class JevBrowser {
     let resolutions=structuredClone(seed.resolutions??[]);
     let result:RunResult, failure:BrowserError|undefined;
     try {result=await runGoal({
-      page: () => this.page, capture: () => capture(this.page,{...this.limits,scope:options.scope}),
+      page: () => this.page, capture: () => capture(this.page,{...this.limits,scope:options.scope,semanticRefs:true}),
       regions: () => captureRegions(this.page),
-      captureRegion: ref => capture(this.page,{...this.limits,selection:{frame:ref.frame,roots:[ref.handle]}}),
-      captureChoice: (ref,value) => captureComboboxChoice(this.page,ref,value,this.limits,{signal:operation.signal,timeoutMs:Math.min(this.remaining(operation),options.settleTimeoutMs??2000)}),
+      captureRegion: ref => capture(this.page,{...this.limits,semanticRefs:true,selection:{frame:ref.frame,roots:[ref.handle]}}),
+      captureChoice: (ref,value,anchor) => captureComboboxChoice(this.page,ref,value,this.limits,{signal:operation.signal,timeoutMs:Math.min(this.remaining(operation),options.settleTimeoutMs??2000)},anchor),
       engine: () => this.engine(), operation: () => ({signal:operation.signal,timeoutMs:this.remaining(operation)}),
       perform: (plan,observed,values,started) => this.executeCaptured(plan,observed,values,operation,started),
       assert: async condition => {
@@ -391,13 +391,15 @@ export class JevBrowser {
     }
     // Uncommitted wizard values are reusable only while the paused browser view
     // remains unchanged. They are never promoted to saved checkpoint evidence.
-    let carried:CarriedState|undefined;
+    let carried:CarriedState|undefined,continuationUnsafe=this.page.isClosed();
     if(carriedInputs.length&&!pendingUnknown&&result.status!=='complete'){
-      const observed=await capture(this.page,{...this.limits,scope:options.scope});
-      try{carried={inputPaths:carriedInputs,context:JSON.stringify([observed.rawURL,observed.changeKeys])};}
-      finally{await observed.dispose();}
+      try{
+        const observed=await capture(this.page,{...this.limits,scope:options.scope});
+        try{carried={inputPaths:carriedInputs,context:JSON.stringify([observed.rawURL,observed.changeKeys])};}
+        finally{await observed.dispose();}
+      }catch{continuationUnsafe=true;} // Optional resume preparation cannot replace the primary outcome.
     }
-    return {result,...(resolutions.length?{resolutions}:{}),...(failure?{error:failure}:{}),...(pendingUnknown?{pendingUnknown}:{}),...(carried?{carried}:{}),...(verifiedActionKeys.size?{verifiedActionKeys:[...verifiedActionKeys]}:{})};
+    return {result,...(continuationUnsafe?{continuationUnsafe:true}:{}),...(resolutions.length?{resolutions}:{}),...(failure?{error:failure}:{}),...(pendingUnknown?{pendingUnknown}:{}),...(carried?{carried}:{}),...(verifiedActionKeys.size?{verifiedActionKeys:[...verifiedActionKeys]}:{})};
   }
   private attachContinuation(execution: GoalExecution, instruction: string, options: RunOptions, existingId?: string): RunResult {
     const {result,error,pendingUnknown,verifiedActionKeys,carried,resolutions}=execution;
@@ -406,7 +408,7 @@ export class JevBrowser {
     const checkpoints=result.checkpoints??[];
     const resumableMissing=checkpoints.length>0&&!result.effects?.some(effect=>effect.kind!=='commit'&&effect.status==='unknown');
     const resumableUnknown=!!pendingUnknown;
-    if(!resumableMissing&&!resumableUnknown){if(existingId)this.continuations.delete(existingId);return finish(result);}
+    if(execution.continuationUnsafe||this.page.isClosed()||!resumableMissing&&!resumableUnknown){if(existingId)this.continuations.delete(existingId);return finish(result);}
     const id=existingId??randomUUID();
     this.continuations.set(id,{...(resolutions?{resolutions:structuredClone(resolutions)}:{}),...(carried?{carried:structuredClone(carried)}:{}),page:this.page,origin:pageOrigin(this.page),instruction,options:this.storedRunOptions(options),checkpoints:structuredClone(checkpoints),checkpointedInputs:[...new Set(checkpoints.flatMap(checkpoint=>checkpoint.inputPaths))],...(pendingUnknown?{pendingUnknown:structuredClone(pendingUnknown)}:{}),...(verifiedActionKeys?{verifiedActionKeys:[...verifiedActionKeys]}:{})});
     return finish({...result,continuation:{id,reason:result.reason,...(pendingUnknown?{pendingEffect:'commit' as const}:{})}});
@@ -499,7 +501,7 @@ export class JevBrowser {
     const action=plan.action, ref=action.target?captured.refs.get(action.target.id):undefined;
     if(action.deferred)throw new BrowserError('UNRESOLVED_ACTION','A deferred option choice cannot be executed.');
     if(action.target&&!ref)throw new BrowserError('STALE_TARGET','The observed target is no longer available.');
-    if(ref)await verifyTarget(ref);
+    if(ref)await verifyCapturedTarget(this.page,captured,ref);
     const target=action.target?{ref:action.target.id,element:action.target.name,frame:action.target.frame}:{};
     let command: NativeCommand;
     switch(action.kind){
@@ -517,7 +519,7 @@ export class JevBrowser {
     if(this.options.allowCommand && await this.options.allowCommand(structuredClone(parsed),op())!==true)
       throw new BrowserError('ACTION_DENIED','The caller policy denied this action.');
     operation.signal.throwIfAborted();
-    if(ref)await verifyTarget(ref);
+    if(ref)await verifyCapturedTarget(this.page,captured,ref);
     if(action.ownerId){
       const owner=captured.refs.get(action.ownerId);if(!owner||!ref)throw new BrowserError('STALE_TARGET','The observed option owner is no longer available.');
       await verifyOwnedOption(owner,ref);

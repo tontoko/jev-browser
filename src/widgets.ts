@@ -5,7 +5,7 @@ import type {GroundedAction,ActResult,OperationContext} from './types.js';
 
 export interface ChoiceHost {
   perform(action:GroundedAction,observed:Captured,value?:string):Promise<ActResult>;
-  captureChoice(ref:ElementRef,value:string):Promise<Captured>;
+  captureChoice(ref:ElementRef,value:string,observed:Captured):Promise<Captured>;
   operation():OperationContext;
 }
 /** A single bound widget, not a site script: open/filter -> owned option -> verified selection. */
@@ -14,7 +14,7 @@ export async function applyCombobox(input:InputBinding,ref:ElementRef,observed:C
   const editable=ref.info.fillable&&!ref.info.readOnly;
   const opened=await host.perform({kind:editable?'fill':'click',target:ref.info,valueKey:input.path},observed,editable?input.value:undefined);
   if(opened.status==='dialog')throw new BrowserError('DIALOG_PENDING','A dialog interrupted the combobox interaction; inspect the partial result.');
-  const choices=await host.captureChoice(ref,input.value);
+  const choices=await host.captureChoice(ref,input.value,observed);
   const control=[...choices.refs.values()].find(candidate=>candidate.info.role==='combobox'&&candidate.info.name===ref.info.name);
   if(!control||!await control.handle.evaluate((node,original)=>node===original,ref.handle))throw new BrowserError('STALE_TARGET','The bound combobox changed identity while opening its popup.');
   const options=choices.data.elements.filter(element=>element.role==='option'&&!element.disabled);

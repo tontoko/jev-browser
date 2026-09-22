@@ -1,6 +1,6 @@
 {
   "name": "@tontoko/jev-browser",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "Grounded Jev browser automation: a shared Playwright SDK, persistent CLI, and MCP server",
   "type": "module",
   "license": "Apache-2.0",

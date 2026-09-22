@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.8.1
+
+- Revalidate observed Page/frame/scope authority after model and authorization awaits, including delayed plans, goal effects and compound native form writes.
+- Revalidate inferred save readback before checkpoint adoption; changed evidence is re-observed and never causes an automatic mutation replay.
+- Scope progress waits to actually observed frames/roots instead of unrelated iframes or page regions.
+- Isolate dialog, file-chooser and download ownership by Page/core so neighboring cores cannot consume or dismiss each other’s pending effects.
+- Preserve primary errors and executed-action partial results when optional continuation preparation cannot observe a closed Page.
+- Make structured extraction evidence paths reversible for literal dots, backslashes and empty keys.
+- Stop custom System One endpoints from implicitly inheriting hosted cloud credentials; authenticated custom endpoints require an explicit key or JEV_ENDPOINT_API_KEY.
+- Keep injected real decision engines and their confidence values unmodified in fixtures, and discard speculative actions made before newly resolved input state.
+
 ## 0.8.0
 
 - Progress waiting and observation share visible text eligibility; plain paragraphs, spans, definitions and output text do not require a status role. Native checked state and link destinations are observed too.

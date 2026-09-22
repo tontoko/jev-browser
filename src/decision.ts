@@ -34,8 +34,13 @@ const wireResult = z.object({
 export class JevDecisionEngine implements DecisionEngine {
   private readonly client: TypeSafeClient;
   constructor(options: JevOptions = {}) {
-    const baseURL = options.baseURL ?? process.env.JEV_BASE_URL;
-    const apiKey = options.apiKey ?? process.env.JEV_API_KEY ?? process.env.TYPESAFE_API_KEY ?? (baseURL ? 'local' : undefined);
+    const baseURL = options.baseURL ?? process.env.JEV_BASE_URL ?? 'https://api.typesafe.ai';
+    let hosted: boolean;
+    try { hosted = new URL(baseURL).origin === 'https://api.typesafe.ai'; }
+    catch { throw new BrowserError('CONFIG','A valid decision baseURL is required.'); }
+    const apiKey = options.apiKey ?? (hosted
+      ? process.env.JEV_API_KEY ?? process.env.TYPESAFE_API_KEY
+      : process.env.JEV_ENDPOINT_API_KEY ?? 'local');
     if (!apiKey) throw new BrowserError('CONFIG', 'Set JEV_API_KEY or TYPESAFE_API_KEY, or configure a custom System One baseURL.');
     this.client = new TypeSafeClient({
       apiKey,
