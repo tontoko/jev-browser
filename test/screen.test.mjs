@@ -84,14 +84,18 @@ test('cancellation during typing stops dispatching remaining characters without 
  const actual=await page.locator('input').inputValue();assert.ok(actual.length>0&&actual.length<300);
 });
 test('native dialogs and popup tabs are explicit tool limitations without hidden metadata',async t=>{
- for(const script of ['alert("PRIVATE_NATIVE_DIALOG")','window.open("'+server.url+'")']){
+ // Firefox's open alert can block input in another context. End each fixture before starting the next case.
+ for(const [name,script,code] of [
+  ['native dialog','alert("PRIVATE_NATIVE_DIALOG")','SCREEN_DIALOG_UNSUPPORTED'],
+  ['popup tab','window.open("'+server.url+'")','SCREEN_POPUP_UNSUPPORTED'],
+ ])await t.test(name,async t=>{
   const {core,page}=await fixture(t);await page.locator('button').evaluate((button,script)=>button.setAttribute('onclick',script),script);
   const seen=await core.screen({action:'look'});
   await assert.rejects(core.screen({action:'click',x:70,y:100,observationId:seen.observationId}),error=>{
-   assert.ok(['SCREEN_DIALOG_UNSUPPORTED','SCREEN_POPUP_UNSUPPORTED'].includes(error.code));
+   assert.equal(error.code,code);
    assert.equal(error.message.includes('PRIVATE_'),false);return true;
   });
- }
+ });
 });
 test('invalid screen commands cannot inject selectors or privileged keyboard chords',async t=>{
  const {core,page}=await fixture(t);assert.equal(typeof core.screen,'function');
