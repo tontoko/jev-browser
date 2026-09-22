@@ -66,6 +66,8 @@ This does not make browser input atomic with page changes. Content can move, ani
 
 Failed inputs are never automatically retried. The result can be unknown because the browser already received an input. Look again before deciding what to do next. Browser-native dialogs, file choosers and new tabs are explicit capability limits; report them as tool limitations, not proof that product UX failed. This version does not provide screenshot-based native-dialog/file-chooser handling or tab switching. Restart a restricted session after reaching one of these unsupported browser interfaces.
 
+A native dialog that opens asynchronously during capture can first interrupt that capture and leave a pending-dialog error on the next observation. Its contents are not a viewport image. Preserve the interrupted attempt and report the capture limitation instead of inferring an application result.
+
 With a trusted outputDir, the session writes PNG frames and one JSONL record of permitted, denied and failed operations that reach the shared core. Records include coordinates, text length, timings, outcomes and image references, without duplicating typed strings or DOM metadata. Images can naturally contain visible input. Protocol/schema rejections before the core belong to the calling agent's tool transcript. This journal is ordinary local evidence, not a tamper-proof audit or proof that a crashed process persisted its last operation.
 
 ## Trust and judgment
