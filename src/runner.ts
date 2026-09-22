@@ -330,10 +330,10 @@ Input bindings listed in state.inputs are available locally, not missing. Their 
       }
       if(choice==='__inputs__')continue;
       if(!action){
-        if(await callerCondition()||!options.until&&await callerAssertions())return finish('complete','verified');
         // The speculative no-action answer predates these actual input effects.
-        // Ask on their new state; do not guess a Save or resample unchanged evidence.
-        if(steps.length>beforeInputs)continue;
+        // Ask on their new state before any final caller verification.
+        if(steps.length>beforeInputs){lastRequest='';continue;}
+        if(await callerCondition()||!options.until&&await callerAssertions())return finish('complete','verified');
         if(await wait(observed))continue;
         if(await callerCondition())return finish('complete','verified');
         if(choice==='__done__'&&options.until){
