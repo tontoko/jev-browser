@@ -110,7 +110,8 @@ export class ScreenController {
           previous.generation !== tracking.generation || !dimensionsEqual(previous.configured, page.viewportSize()))
           throw new BrowserError('STALE_SCREEN', 'The screen observation is no longer current. Look again before any input.');
         if (!page.viewportSize()) {
-          const current = imageSize(await page.screenshot({ type:'png', scale:'css', animations:'allow', caret:'initial', timeout:operation().timeoutMs }));
+          const op=operation();
+          const current = imageSize(await page.screenshot({ type:'png', scale:'css', animations:'allow', caret:'initial', timeout:op.timeoutMs, signal:op.signal }));
           if (!dimensionsEqual(current, previous.viewport) || previous.generation !== tracking.generation)
             throw new BrowserError('STALE_SCREEN', 'The screen viewport changed. Look again before any input.');
         }
@@ -121,7 +122,7 @@ export class ScreenController {
       }
       operation().signal.throwIfAborted();
       effectStarted = !['look','wait'].includes(request.action);
-      await perform(async () => { switch (request!.action) {
+      await perform(async () => { const op=operation(); switch (request!.action) {
         case 'look': break;
         case 'click': await page.mouse.click(request.x,request.y); break;
         case 'move': await page.mouse.move(request.x,request.y); break;
@@ -138,9 +139,9 @@ export class ScreenController {
           for (const character of request.text) { operation().signal.throwIfAborted(); await page.keyboard.type(character); }
           break;
         case 'press': await page.keyboard.press(request.key); break;
-        case 'back': await page.goBack({ waitUntil:'commit',timeout:operation().timeoutMs }); break;
-        case 'forward': await page.goForward({ waitUntil:'commit',timeout:operation().timeoutMs }); break;
-        case 'reload': await page.reload({ waitUntil:'commit',timeout:operation().timeoutMs }); break;
+        case 'back': await page.goBack({ waitUntil:'commit',timeout:op.timeoutMs,signal:op.signal }); break;
+        case 'forward': await page.goForward({ waitUntil:'commit',timeout:op.timeoutMs,signal:op.signal }); break;
+        case 'reload': await page.reload({ waitUntil:'commit',timeout:op.timeoutMs,signal:op.signal }); break;
         case 'wait': await delay(request.milliseconds,undefined,{signal:operation().signal}); break;
       } });
       checkPopup();
@@ -150,7 +151,7 @@ export class ScreenController {
       for (let i=0;i<count;i++) {
         if (i) await delay(interval,undefined,{signal:operation().signal});
         const op=operation();op.signal.throwIfAborted();checkPopup();
-        const png=await page.screenshot({type:'png',scale:'css',animations:'allow',caret:'initial',timeout:op.timeoutMs});
+        const png=await page.screenshot({type:'png',scale:'css',animations:'allow',caret:'initial',timeout:op.timeoutMs,signal:op.signal});
         checkPopup();
         const size=imageSize(png);
         if (this.page() !== page || generation !== tracking.generation || viewport && !dimensionsEqual(viewport,size))
