@@ -59,6 +59,24 @@ test('continuation integrity: provider interruption after a sent commit preserve
   assert.equal(result.status,'complete');assert.equal(app.submissions.length,1);
 });
 
+
+test('continuation integrity: premature model done cannot bypass a failing final expect',async t=>{
+  const decider=stagedDecider(3),decide=decider.decide.bind(decider);let forced=false;
+  decider.decide=async(request,options)=>{
+    const result=await decide(request,options);
+    if(!forced&&request.questions.action&&request.state.page?.elements?.some(element=>element.name==='Save reservation')&&request.state.inputs.every(input=>input.applied)){
+      result.answers.action={choice:'__done__',confidence:0.95};forced=true;
+    }
+    return result;
+  };
+  const app=await continuationFixture(t,browser,{decider});
+  const result=await app.core.run(goal,{values,expect:{target:'#final',property:'text',expected:'Ready'}});
+  assert.equal(forced,true);
+  assert.equal(result.status,'complete',JSON.stringify(result));
+  assert.equal(result.checkpoints.length,3);
+  assert.deepEqual(app.submissions.map(x=>x.stage),['account','membership','reservation']);
+});
+
 test('continuation integrity: a caller final condition also checkpoints the last save',async t=>{
   const app=await continuationFixture(t,browser);
   const result=await app.core.run(goal,{values,until:async page=>(await page.locator('#final').textContent())==='Ready'});
