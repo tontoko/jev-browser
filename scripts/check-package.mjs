@@ -32,6 +32,8 @@ async function run(args, options = {}) {
 const packed = JSON.parse((await run([npm, 'pack', '--json'])).stdout)[0];
 assert.ok(packed.files.some(f => f.path === 'dist/dom.bundle.cjs'));
 assert.ok(packed.files.some(f => f.path === 'dist/session-worker.js'));
+assert.ok(packed.files.some(f => f.path === 'dist/pi.js'));
+assert.ok(packed.files.some(f => f.path === 'dist/pi.d.ts'));
 assert.ok(packed.files.some(f => f.path === 'skills/jev-browser/SKILL.md'));
 assert.ok(!packed.files.some(f => /(^|\/)(\.env($|\.)|node_modules|artifacts|test-results|\.git)(\/|$)/.test(f.path)));
 const tarball = resolve(root, packed.filename);
@@ -49,7 +51,9 @@ try {
     import { chromium } from 'playwright';
     import { expect } from 'playwright/test';
     import { JevBrowser } from '@tontoko/jev-browser';
+    import piExtension from '@tontoko/jev-browser/pi';
     import { z } from 'zod';
+    assert.equal(typeof piExtension, 'function');
     const browser = await chromium.launch({ headless: true });
     const page = await browser.newPage();
     const engine = { async decide(request) {
