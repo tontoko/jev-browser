@@ -16,7 +16,7 @@ for(const preselected of [false,true])test(`decision dependency: a pre-resolutio
    }
    return result;
  };
- const result=await app.core.run('Use the supplied country and private note, then Save once.',{values:{country:'Germany',note:'synthetic-state-change'},semanticInputs:{'/country':0.8},maxSteps:8,maxDecisions:16,settleTimeoutMs:100});
+ const result=await app.core.run('Use the supplied country and private note, then Save once.',{values:{country:'Germany',note:'synthetic-state-change'},semanticInputs:{'/country':0.8},maxSteps:8,maxDecisions:16});
  assert.equal(result.status,'complete',JSON.stringify(result));assert.equal(app.submissions.length,1);assert.equal(app.submissions[0].a9,'DE');
  assert.ok(!(await app.page.evaluate(()=>window.selectedCountries)).includes('JP'),'The obsolete predicted action must not undo the resolved field.');
  assert.ok(app.decider.requests.some(r=>r.questions.action&&r.state.inputs.some(input=>input.path==='/country'&&input.applied)));
