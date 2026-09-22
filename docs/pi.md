@@ -119,7 +119,7 @@ Use the most recent observation ID when performing an action. For example:
 }
 ```
 
-Coordinates are viewport CSS pixels. `type` inserts literal text at the current focus. The shared `screen` schema specifies each supported action and its required fields:
+Coordinates are pixels in the returned viewport image. The core maps supported viewport scaling to native input; see the [coordinate limits](screen-review.md#images-and-physical-inputs). `type` inserts literal text at the current focus. The shared `screen` schema specifies each supported action and its required fields:
 
 | Action | Action-specific fields |
 | --- | --- |

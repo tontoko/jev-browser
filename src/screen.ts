@@ -140,7 +140,7 @@ export class ScreenController {
         const inside = (x: number, y: number) => x >= 0 && y >= 0 && x < previous.viewport.width && y < previous.viewport.height;
         if ('x' in request && request.x !== undefined && request.y !== undefined && !inside(request.x,request.y) ||
           request.action === 'drag' && !inside(request.toX,request.toY))
-          throw new BrowserError('SCREEN_COORDINATES', 'Input coordinates must be inside the observed CSS-pixel viewport.');
+          throw new BrowserError('SCREEN_COORDINATES', 'Input coordinates must be inside the observed viewport image.');
         if (['click','move','drag','scroll'].includes(request.action) && (previous.geometry.offsetX !== 0 || previous.geometry.offsetY !== 0 ||
           previous.geometry.scale !== 1 && page.context().browser()?.browserType().name() !== 'chromium'))
           throw new BrowserError('SCREEN_VIEWPORT_UNSUPPORTED', 'Pointer input for this viewport transform is not supported. This is a tool capability limit; no input was sent.');

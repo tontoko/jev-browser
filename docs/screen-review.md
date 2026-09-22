@@ -50,7 +50,9 @@ SDK browser.screen(request), CLI screen --args JSON, and MCP browser_screen shar
 | back, forward, reload | observationId |
 | wait | observationId, milliseconds from 0 to 10,000 |
 
-Coordinates use the screenshot's CSS-pixel viewport. Out-of-viewport inputs are rejected. The tool does not locate elements, scroll them into view, fill unobserved fields, capture full pages or evaluate page code. Keyboard chords for clipboard access, address-bar focus, source and developer tools are excluded. Ordinary editing, selection, undo and keyboard navigation remain available.
+Coordinates refer to pixels in the returned viewport image, including mobile screenshots. The core privately reads numeric viewport geometry to map Chromium image coordinates to native pointer input when the page is scaled. Ordinary desktop and mobile meta-viewport pages remain 1:1. Wheel deltas retain native wheel units; only an optional wheel position uses image coordinates. Out-of-image inputs are rejected. The tool does not locate elements, scroll them into view, fill unobserved fields, capture full pages or expose page evaluation. Keyboard chords for clipboard access, address-bar focus, source and developer tools are excluded. Ordinary editing, selection, undo and keyboard navigation remain available.
+
+Pointer input with a nonzero visual viewport offset, or a non-unit scale on an engine other than Chromium, returns `SCREEN_VIEWPORT_UNSUPPORTED` before input. Images remain available for observation. These are explicit coordinate-mapping limits, not product UX findings.
 
 Every successful action returns fresh viewport images. There is no fixed settle delay, screenshot cache or action replay. Optional capture settings {frames:1..10, intervalMs:20..1000} add timestamped images for transient states. Screenshots preserve CSS animations and caret rendering.
 
@@ -60,7 +62,7 @@ For continuous motion, trusted setup can use Playwright recordVideo in contextOp
 
 ## Freshness and failures
 
-Inputs need the most recent successful observationId. IDs are consumed by screen attempts and bind the selected Page, its frame navigation generation and viewport. Old IDs, navigation (including an iframe), a different selected Page or a resized viewport require a new look. Authorization waits are followed by the same checks.
+Inputs need the most recent successful observationId. IDs are consumed by screen attempts and bind the selected Page, its frame navigation generation and the private viewport geometry read immediately after the last image. Old IDs, navigation (including an iframe), a different selected Page or changed viewport dimensions, scale, offsets or scroll position require a new look. Authorization waits are followed by the same checks. Geometry is not returned as actor metadata, and frame sequences may observe changing scroll positions.
 
 This does not make browser input atomic with page changes. Content can move, animate or update after capture without navigating. Pixel-identical frames are deliberately not required: that would make animations and caret blinking unusable. Review the returned image before the next decision.
 
