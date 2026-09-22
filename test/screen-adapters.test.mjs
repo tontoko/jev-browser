@@ -1,6 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
+import {once} from 'node:events';
 import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -57,9 +58,15 @@ test('named CLI screen sessions preserve mode and reject DOM commands or mode re
 test('installed-style MCP entrypoint performs trusted initial navigation before exposing only pixel tools',async t=>{
  const {server,directory,env}=await setup(t);
  const transport=new StdioClientTransport({command:process.execPath,args:[cli,'mcp','--screen-only','--url',server.url+'/PRIVATE_ROUTE'],cwd:directory,env,stderr:'pipe'});
- const client=new Client({name:'screen-stdio-contract',version:'1'});t.after(()=>client.close());
- await client.connect(transport);
- assert.deepEqual((await client.listTools()).tools.map(t=>t.name).sort(),['browser_close','browser_screen']);
- const r=await client.callTool({name:'browser_screen',arguments:{action:'look'}});assert.notEqual(r.isError,true);
- assert.equal(r.content.filter(c=>c.type==='image').length,1);assert.equal(JSON.stringify(r).includes('PRIVATE_'),false);
+ const client=new Client({name:'screen-stdio-contract',version:'1'});
+ try{
+  await client.connect(transport);
+  assert.deepEqual((await client.listTools()).tools.map(t=>t.name).sort(),['browser_close','browser_screen']);
+  const r=await client.callTool({name:'browser_screen',arguments:{action:'look'}});assert.notEqual(r.isError,true);
+  assert.equal(r.content.filter(c=>c.type==='image').length,1);assert.equal(JSON.stringify(r).includes('PRIVATE_'),false);
+ }finally{
+  // The subprocess owns cwd; await its exit before setup's after-hook removes it on Windows.
+  const closed=transport._process?once(transport._process,'close'):undefined;
+  await client.close();await closed;
+ }
 });
