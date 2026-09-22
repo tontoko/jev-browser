@@ -40,13 +40,33 @@ export interface ScreenResult {
   frames: ScreenFrame[];
   action: { id: string; kind: ScreenRequest['action']; startedAt: string; durationMs: number; outcome: 'observed' | 'executed' | 'denied' | 'failed' | 'unknown' };
 }
-type Observation = { id: string; page: Page; generation: number; viewport: ScreenResult['viewport']; configured: ReturnType<Page['viewportSize']> };
+type ViewportGeometry = { width: number; height: number; scale: number; offsetX: number; offsetY: number; scrollX: number; scrollY: number };
+type Observation = { id: string; page: Page; generation: number; viewport: ScreenResult['viewport']; configured: ReturnType<Page['viewportSize']>; geometry: ViewportGeometry };
 type Tracking = { page: Page; generation: number; popup?: Page; fileChooser?: boolean; detach: () => void };
 type EvidenceAction = Omit<ScreenResult['action'],'kind'> & { kind: string };
 const actions = new Set(screenSchema.options.map(option => option.shape.action.value));
 const dimensionsEqual = (a: ReturnType<Page['viewportSize']>, b: ReturnType<Page['viewportSize']>) =>
   a === null || b === null ? a === b : a.width === b.width && a.height === b.height;
 const imageSize = (png: Buffer) => ({ width: png.readUInt32BE(16), height: png.readUInt32BE(20) });
+const sameGeometry = (a: ViewportGeometry, b: ViewportGeometry) =>
+  (Object.keys(a) as (keyof ViewportGeometry)[]).every(key => a[key] === b[key]);
+async function viewportGeometry(page: Page, op: OperationContext): Promise<ViewportGeometry> {
+  // The first predicate evaluation returns only viewport numbers. A primitive handle avoids a
+  // second unbounded page evaluation during jsonValue; the native wait honors cancellation.
+  const value = await page.waitForFunction(() => {
+    const viewport = window.visualViewport;
+    return JSON.stringify({ width: viewport?.width ?? innerWidth, height: viewport?.height ?? innerHeight,
+      scale: viewport?.scale ?? 1, offsetX: viewport?.offsetLeft ?? 0, offsetY: viewport?.offsetTop ?? 0,
+      scrollX: window.scrollX, scrollY: window.scrollY });
+  }, undefined, { timeout: op.timeoutMs, signal: op.signal });
+  try {
+    const geometry = JSON.parse(await value.jsonValue()) as ViewportGeometry;
+    if (!geometry || !(['width','height','scale','offsetX','offsetY','scrollX','scrollY'] as const).every(key => Number.isFinite(geometry[key])) ||
+      geometry.width <= 0 || geometry.height <= 0 || geometry.scale <= 0)
+      throw new BrowserError('SCREEN_VIEWPORT_UNSUPPORTED', 'The browser viewport geometry could not be established.');
+    return geometry;
+  } finally { await value.dispose(); }
+}
 
 /** Owned by one JevBrowser and called under its existing operation/Page lease. */
 export class ScreenController {
@@ -115,25 +135,32 @@ export class ScreenController {
           if (!dimensionsEqual(current, previous.viewport) || previous.generation !== tracking.generation)
             throw new BrowserError('STALE_SCREEN', 'The screen viewport changed. Look again before any input.');
         }
+        if (!sameGeometry(previous.geometry, await viewportGeometry(page, operation())) || previous.generation !== tracking.generation)
+          throw new BrowserError('STALE_SCREEN', 'The visible viewport changed. Look again before any input.');
         const inside = (x: number, y: number) => x >= 0 && y >= 0 && x < previous.viewport.width && y < previous.viewport.height;
         if ('x' in request && request.x !== undefined && request.y !== undefined && !inside(request.x,request.y) ||
           request.action === 'drag' && !inside(request.toX,request.toY))
           throw new BrowserError('SCREEN_COORDINATES', 'Input coordinates must be inside the observed CSS-pixel viewport.');
+        if (['click','move','drag','scroll'].includes(request.action) && (previous.geometry.offsetX !== 0 || previous.geometry.offsetY !== 0 ||
+          previous.geometry.scale !== 1 && page.context().browser()?.browserType().name() !== 'chromium'))
+          throw new BrowserError('SCREEN_VIEWPORT_UNSUPPORTED', 'Pointer input for this viewport transform is not supported. This is a tool capability limit; no input was sent.');
       }
+      const point = (x: number, y: number) => ({ x: x / previous!.geometry.scale, y: y / previous!.geometry.scale });
       operation().signal.throwIfAborted();
       effectStarted = !['look','wait'].includes(request.action);
       await perform(async () => { const op=operation(); switch (request!.action) {
         case 'look': break;
-        case 'click': await page.mouse.click(request.x,request.y); break;
-        case 'move': await page.mouse.move(request.x,request.y); break;
+        case 'click': { const p=point(request.x,request.y); await page.mouse.click(p.x,p.y); break; }
+        case 'move': { const p=point(request.x,request.y); await page.mouse.move(p.x,p.y); break; }
         case 'drag':
-          await page.mouse.move(request.x,request.y);
+          { const from=point(request.x,request.y), to=point(request.toX,request.toY);
+          await page.mouse.move(from.x,from.y);
           await page.mouse.down();
-          try { operation().signal.throwIfAborted(); await page.mouse.move(request.toX,request.toY,{steps:5}); }
+          try { operation().signal.throwIfAborted(); await page.mouse.move(to.x,to.y,{steps:5}); }
           finally { await page.mouse.up(); }
-          break;
+          break; }
         case 'scroll':
-          if (request.x !== undefined && request.y !== undefined) await page.mouse.move(request.x,request.y);
+          if (request.x !== undefined && request.y !== undefined) { const p=point(request.x,request.y); await page.mouse.move(p.x,p.y); }
           await page.mouse.wheel(request.deltaX,request.deltaY); break;
         case 'type':
           for (const character of request.text) { operation().signal.throwIfAborted(); await page.keyboard.type(character); }
@@ -147,22 +174,29 @@ export class ScreenController {
       checkPopup();
       const count = request.capture?.frames ?? 1, interval = request.capture?.intervalMs ?? 20;
       let viewport: ScreenResult['viewport'] | undefined;
+      let geometry: ViewportGeometry | undefined;
       const generation = tracking.generation;
       for (let i=0;i<count;i++) {
         if (i) await delay(interval,undefined,{signal:operation().signal});
         const op=operation();op.signal.throwIfAborted();checkPopup();
         const png=await page.screenshot({type:'png',scale:'css',animations:'allow',caret:'initial',timeout:op.timeoutMs,signal:op.signal});
+        const capturedAt=new Date().toISOString(), elapsedMs=performance.now()-started;
+        // Frames intentionally span animation and scrolling. Bind freshness to the last frame,
+        // before optional file writes, without requiring constant scroll across the sequence.
+        if (i === count-1) geometry=await viewportGeometry(page,operation());
         checkPopup();
         const size=imageSize(png);
         if (this.page() !== page || generation !== tracking.generation || viewport && !dimensionsEqual(viewport,size))
           throw new BrowserError('STALE_SCREEN','The Page or viewport changed during capture. Look again before any input.');
         viewport=size;
-        frames.push({data:png.toString('base64'),mimeType:'image/png',capturedAt:new Date().toISOString(),elapsedMs:performance.now()-started,
+        frames.push({data:png.toString('base64'),mimeType:'image/png',capturedAt,elapsedMs,
           ...(this.files ? {path:await this.files.write(png,'screen-'+action.id+'-'+i+'.png','png')} : {})});
       }
+      if (this.page() !== page || generation !== tracking.generation)
+        throw new BrowserError('STALE_SCREEN','The Page changed during capture. Look again before any input.');
       operation().signal.throwIfAborted();
       const observationId=randomUUID();
-      this.observation={id:observationId,page,generation,viewport:viewport!,configured:page.viewportSize()};
+      this.observation={id:observationId,page,generation,viewport:viewport!,configured:page.viewportSize(),geometry:geometry!};
       action.outcome=effectStarted?'executed':'observed';action.durationMs=performance.now()-started;
       await this.record(action,input,frames,observationId);
       return {observationId,viewport:viewport!,frames,action:action as ScreenResult['action']};
