@@ -57,6 +57,14 @@ test('screen checks the existing command policy and rechecks freshness after aut
  const denied=await fixture(t,{allowCommand:command=>command.command!=='screen'});
  await assert.rejects(denied.core.screen({action:'look'}),{code:'ACTION_DENIED'});
 });
+test('navigation inside an observed iframe invalidates the whole viewport observation',async t=>{
+ const {core,page}=await fixture(t);
+ await page.setContent('<iframe src="'+server.url+'"></iframe><button style="position:absolute;left:20px;top:20px;width:100px;height:40px" onclick="this.textContent=\'Unexpected\'">Unchanged</button>');
+ const seen=await core.screen({action:'look'});
+ await page.frames().find(frame=>frame!==page.mainFrame()).goto(server.url+'/changed');
+ await assert.rejects(core.screen({action:'click',x:50,y:35,observationId:seen.observationId}),{code:'STALE_SCREEN'});
+ assert.equal(await page.locator('button').textContent(),'Unchanged');
+});
 test('screen mode rejects ordinary dispatcher commands and does not change normal mode',async t=>{
  const {core}=await fixture(t,{screenOnly:true});
  assert.equal(core.screenOnly,true);
@@ -66,6 +74,24 @@ test('screen mode rejects ordinary dispatcher commands and does not change norma
  assert.throws(()=>{core.screenOnly=false;},TypeError);
  const normal=await fixture(t);assert.equal(normal.core.screenOnly,false);
  assert.ok((await executeCommand(normal.core,parseCommand({command:'snapshot'}))).elements.length>0);
+});
+test('cancellation during typing stops dispatching remaining characters without replay',async t=>{
+ const {core,page}=await fixture(t);const abort=new AbortController();
+ await page.exposeFunction('interruptScreenTyping',()=>abort.abort());
+ await page.locator('input').evaluate(input=>input.addEventListener('input',()=>{void window.interruptScreenTyping();},{once:true}));
+ let seen=await core.screen({action:'look'});seen=await core.screen({action:'click',x:50,y:35,observationId:seen.observationId});
+ await assert.rejects(core.screen({action:'type',text:'x'.repeat(300),observationId:seen.observationId},{signal:abort.signal}),{code:'SCREEN_INTERRUPTED'});
+ const actual=await page.locator('input').inputValue();assert.ok(actual.length>0&&actual.length<300);
+});
+test('native dialogs and popup tabs are explicit tool limitations without hidden metadata',async t=>{
+ for(const script of ['alert("PRIVATE_NATIVE_DIALOG")','window.open("'+server.url+'")']){
+  const {core,page}=await fixture(t);await page.locator('button').evaluate((button,script)=>button.setAttribute('onclick',script),script);
+  const seen=await core.screen({action:'look'});
+  await assert.rejects(core.screen({action:'click',x:70,y:100,observationId:seen.observationId}),error=>{
+   assert.ok(['SCREEN_DIALOG_UNSUPPORTED','SCREEN_POPUP_UNSUPPORTED'].includes(error.code));
+   assert.equal(error.message.includes('PRIVATE_'),false);return true;
+  });
+ }
 });
 test('invalid screen commands cannot inject selectors or privileged keyboard chords',async t=>{
  const {core,page}=await fixture(t);assert.equal(typeof core.screen,'function');
@@ -86,7 +112,7 @@ test('screen emits timestamped transient frames and writes evidence without dupl
  const outputDir=await mkdtemp(join(root,'evidence-'));const {core,page}=await fixture(t,{outputDir});assert.equal(typeof core.screen,'function');
  let r=await core.screen({action:'look'});r=await core.screen({action:'click',x:50,y:35,observationId:r.observationId});
  r=await core.screen({action:'type',text:'PRIVATE_TYPED_VALUE',observationId:r.observationId});
- await page.evaluate(()=>{document.body.style.background='white';setTimeout(()=>document.body.style.background='black',75);});
+ await page.evaluate(()=>document.body.animate([{background:'rgb(255,255,255)'},{background:'rgb(0,0,0)'}],{duration:1000,iterations:Infinity,direction:'alternate'}));
  r=await core.screen({action:'look',capture:{frames:4,intervalMs:40}});
  assert.equal(r.frames.length,4);assert.ok(r.frames[3].elapsedMs>=100);assert.ok(new Set(r.frames.map(f=>f.data)).size>1);
  for(const f of r.frames){assert.equal((await readFile(f.path)).subarray(1,4).toString(),'PNG');}
@@ -96,4 +122,3 @@ test('screen emits timestamped transient frames and writes evidence without dupl
  const rows=text.trim().split('\n').map(JSON.parse);assert.ok(rows.some(row=>row.action.kind==='type'&&row.input.textLength===19));
  assert.ok(rows.some(row=>row.action.outcome==='denied'));
 });
-

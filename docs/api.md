@@ -12,6 +12,7 @@ Options include:
 - Files: `fileRoots`, `outputDir`. Native uploads/artifacts use these boundaries. Explicit launch/profile paths are independently granted by the caller.
 - Guard callbacks: `allowAction(plan, operation)` for Jev actions, `allowCommand(command, operation)` for native operations. Both require literal `true`. `operation` has `signal` and remaining `timeoutMs`. These callbacks do not restrict direct Page access or create a network sandbox.
 - `allowEvaluate`: enables caller-authored page evaluation and init scripts. Disabled by default. No Node-side evaluation command exists.
+- `screenOnly`: fixes CLI/MCP/shared dispatch to `screen` and `close` for the session lifetime. Direct caller Page access remains trusted. `allowCommand` additionally receives `{command:'screen',request}` for screen operations; existing allowlists still need to permit it explicitly.
 
 Per-operation `signal`, `timeoutMs` and `scope` are available where relevant. The default operation budget is 30 seconds. Cancellation does not roll back completed effects. User-supplied callbacks and custom decision engines must honor the signal and remain bounded.
 
@@ -33,6 +34,7 @@ Per-operation `signal`, `timeoutMs` and `scope` are available where relevant. Th
 | `agent(defaults?).execute(instructionOrOptions)` | Same run result, same core loop |
 | `native(command, options?)` | Typed command union; mechanical operation without a model |
 | `screenshot(options?)` | Viewport PNG Buffer |
+| `screen(request, options?)` | Viewport images, physical inputs, observation IDs and actual timestamps; no DOM/URL metadata. See [screen review](screen-review.md). |
 | `close()` | Disposes references/listeners, closes owned resources |
 
 `observe` plans are local and single-use. `act(plan)` and `act({id: plan.id})` use the internally retained action, not fields supplied by the caller. A new AI observation, snapshot or navigation can invalidate a plan. Native snapshot refs may survive several operations as long as the original node and its meaning still match; a new snapshot replaces the reference set. Use a fresh snapshot after `STALE_TARGET`.

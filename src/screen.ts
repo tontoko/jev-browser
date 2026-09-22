@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { appendFile } from 'node:fs/promises';
 import { setTimeout as delay } from 'node:timers/promises';
-import type { Page, Frame } from 'playwright';
+import type { Page } from 'playwright';
 import { z } from 'zod';
 import { BrowserError } from './errors.js';
 import { FileAccess } from './paths.js';
@@ -41,7 +41,7 @@ export interface ScreenResult {
   action: { id: string; kind: ScreenRequest['action']; startedAt: string; durationMs: number; outcome: 'observed' | 'executed' | 'denied' | 'failed' | 'unknown' };
 }
 type Observation = { id: string; page: Page; generation: number; viewport: ScreenResult['viewport']; configured: ReturnType<Page['viewportSize']> };
-type Tracking = { page: Page; generation: number; popup?: Page; detach: () => void };
+type Tracking = { page: Page; generation: number; popup?: Page; fileChooser?: boolean; detach: () => void };
 type EvidenceAction = Omit<ScreenResult['action'],'kind'> & { kind: string };
 const actions = new Set(screenSchema.options.map(option => option.shape.action.value));
 const dimensionsEqual = (a: ReturnType<Page['viewportSize']>, b: ReturnType<Page['viewportSize']>) =>
@@ -60,10 +60,11 @@ export class ScreenController {
   private track(page: Page): Tracking {
     if (this.tracking?.page === page) return this.tracking;
     this.tracking?.detach();
-    const tracking: Tracking = { page, generation: 0, detach: () => { page.off('framenavigated', onNavigation); page.off('popup', onPopup); } };
-    const onNavigation = (frame: Frame) => { if (frame === page.mainFrame()) tracking.generation++; };
+    const tracking: Tracking = { page, generation: 0, detach: () => { page.off('framenavigated', onNavigation); page.off('popup', onPopup); page.off('filechooser', onFileChooser); } };
+    const onNavigation = () => { tracking.generation++; };
     const onPopup = (popup: Page) => { tracking.popup = popup; };
-    page.on('framenavigated', onNavigation); page.on('popup', onPopup);
+    const onFileChooser = () => { tracking.fileChooser = true; };
+    page.on('framenavigated', onNavigation); page.on('popup', onPopup); page.on('filechooser', onFileChooser);
     return this.tracking = tracking;
   }
   private async record(action: EvidenceAction, input: object, frames: ScreenFrame[], observationId?: string): Promise<void> {
@@ -99,7 +100,10 @@ export class ScreenController {
       authorized = true;
       operation().signal.throwIfAborted();
       const page = this.page(), tracking = this.track(page);
-      const checkPopup = () => { if (tracking.popup && !tracking.popup.isClosed()) throw new BrowserError('SCREEN_POPUP_UNSUPPORTED','A new browser tab opened. This viewport session cannot inspect or switch that tab; this is a tool capability limit, not a product failure.'); };
+      const checkPopup = () => {
+        if (tracking.popup && !tracking.popup.isClosed()) throw new BrowserError('SCREEN_POPUP_UNSUPPORTED','A new browser tab opened. This viewport session cannot inspect or switch that tab; this is a tool capability limit, not a product failure.');
+        if (tracking.fileChooser) throw new BrowserError('SCREEN_FILE_CHOOSER_UNSUPPORTED','A native file chooser opened. This viewport tool cannot inspect or operate it; this is a tool capability limit, not a product failure.');
+      };
       checkPopup();
       if (request.action !== 'look') {
         if (!previous || previous.id !== request.observationId || previous.page !== page ||
@@ -130,7 +134,9 @@ export class ScreenController {
         case 'scroll':
           if (request.x !== undefined && request.y !== undefined) await page.mouse.move(request.x,request.y);
           await page.mouse.wheel(request.deltaX,request.deltaY); break;
-        case 'type': await page.keyboard.type(request.text); break;
+        case 'type':
+          for (const character of request.text) { operation().signal.throwIfAborted(); await page.keyboard.type(character); }
+          break;
         case 'press': await page.keyboard.press(request.key); break;
         case 'back': await page.goBack({ waitUntil:'commit',timeout:operation().timeoutMs }); break;
         case 'forward': await page.goForward({ waitUntil:'commit',timeout:operation().timeoutMs }); break;
@@ -145,6 +151,7 @@ export class ScreenController {
         if (i) await delay(interval,undefined,{signal:operation().signal});
         const op=operation();op.signal.throwIfAborted();checkPopup();
         const png=await page.screenshot({type:'png',scale:'css',animations:'allow',caret:'initial',timeout:op.timeoutMs});
+        checkPopup();
         const size=imageSize(png);
         if (this.page() !== page || generation !== tracking.generation || viewport && !dimensionsEqual(viewport,size))
           throw new BrowserError('STALE_SCREEN','The Page or viewport changed during capture. Look again before any input.');

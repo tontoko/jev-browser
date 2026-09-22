@@ -7,6 +7,8 @@ description: Automate and test browsers with native Playwright commands, paralle
 
 Use the installed `jev-browser` executable, or `node /path/to/jev-browser/dist/cli.js`. Read `--help` once for available commands. Native operations need no model key; AI operations need JEV_API_KEY.
 
+For visible UX/discoverability review, use an isolated `--screen-only` session and `screen --args JSON` / MCP `browser_screen`. Read its image, then use coordinates, focused text, editing keys or scroll with the latest `observationId`. Observe meaningful transitions; do not inject selectors, DOM snapshots, exact routes or implementation knowledge. The calling model must understand images. This tool executes physical inputs and records evidence; it does not judge UX. See `docs/screen-review.md` for recordings and capability limits. Use ordinary automation and deterministic assertions separately for functional verification.
+
 For a whole creation task, prefer one `run --session task --args JSON` with `instruction` and nested `values`; use `browser_run` in MCP. The runtime batches judgments, fills serially, saves and checks a new result. Inspect `verification.readback`/`unobserved` and `effects`; never repeat an `unknown` commit. A `continuation.id` on the result or `error.partial` can be resumed with `resume ID --session task` / `browser_resume` in the same running session; unknown saves are reconciled read-only first. Existing values and observation scope cannot change. Inspect ordered `checkpoints` separately from final verification. Optional `expect` uses the native read-only assertion schema. Use the low-level sequence below for direct control or unsupported widgets.
 
 1. Open an isolated named session: `jev-browser open URL --session task`.

@@ -12,6 +12,7 @@ import { checkInstalledGoal } from './check-installed-goal.mjs';
 import { checkInstalledSemantic } from './check-installed-semantic.mjs';
 import { checkInstalledResume } from './check-installed-resume.mjs';
 import { checkInstalledSelection } from './check-installed-selection.mjs';
+import { checkInstalledScreen } from './check-installed-screen.mjs';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
@@ -90,7 +91,8 @@ try {
   const semantic = await checkInstalledSemantic(pkg,directory,env);
   const resume = await checkInstalledResume(pkg,directory,env);
   const selections = await checkInstalledSelection(pkg,directory,env);
-  console.log(JSON.stringify({ ...goals, ...semantic, ...resume, ...selections, package: packed.name, version: packed.version, filename: packed.filename, sha256: createHash('sha256').update(await readFile(tarball)).digest('hex'), installedSDK: true, nativePlaywrightAssertions: true, installedPersistentCLI: true, installedMCP: true, entryCount: packed.entryCount }, null, 2));
+  const screen = await checkInstalledScreen(pkg,directory,env);
+  console.log(JSON.stringify({ ...goals, ...semantic, ...resume, ...selections, ...screen, package: packed.name, version: packed.version, filename: packed.filename, sha256: createHash('sha256').update(await readFile(tarball)).digest('hex'), installedSDK: true, nativePlaywrightAssertions: true, installedPersistentCLI: true, installedMCP: true, entryCount: packed.entryCount }, null, 2));
 } finally {
   if (site) { site.closeAllConnections(); await new Promise(resolve => site.close(resolve)); }
   await rm(directory, { recursive: true, force: true, maxRetries: 8, retryDelay: 125 });
