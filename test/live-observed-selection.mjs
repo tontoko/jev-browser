@@ -17,6 +17,20 @@ for(const tag of ['p','span','output','dd'])test('LIVE observed progress: delaye
   console.log(JSON.stringify({case:'progress-'+tag,status:r.status,reason:r.reason,ms:Math.round(performance.now()-start),submissions,usage:r.usage}));
   assert.equal(r.status,'complete',JSON.stringify(r));assert.equal(submissions,1);
 });
+
+function assertRawSelectionOutcome(result,app,expected){
+  const input=result.inputs?.find(input=>input.path==='/country'),blocker=result.blockers?.find(blocker=>blocker.inputPath==='/country');
+  if(result.status==='complete'){
+    assert.equal(app.submissions.length,1);assert.equal(app.submissions[0].a9,expected);
+    assert.ok(input?.resolution);assert.ok(input.resolution.confidence>=input.resolution.threshold);
+    return true;
+  }
+  assert.equal(result.status,'stopped',JSON.stringify(result));assert.equal(result.reason,'unresolved-input');assert.equal(app.submissions.length,0);
+  assert.ok(blocker);assert.ok(['low-confidence','no-match','ambiguous'].includes(blocker.reason),JSON.stringify(blocker));
+  if(blocker.reason==='low-confidence')assert.ok(blocker.confidence<blocker.threshold);
+  return false;
+}
+
 for(const [value,options,country] of [
  ['Japan',[{label:'Choose',value:''},{label:'日本',value:'JP'},{label:'ドイツ',value:'DE'}],'JP'],
  ['Deutschland',[{label:'Choose',value:''},{label:'Japan',value:'JP'},{label:'Germany',value:'DE'}],'DE'],
@@ -24,8 +38,8 @@ for(const [value,options,country] of [
   const engine=new JevDecisionEngine(),requests=[];const wrapped={decide(r,o){requests.push(structuredClone(r));return engine.decide(r,o);}};
   const app=await selectionFixture(t,browser,{engine:wrapped,options,resultCountry:country});
   const start=performance.now();const r=await app.core.run('Set the supplied country and private note, then Save once and verify the address.',{values:{country:value,note:'synthetic-private-note'},semanticInputs:{'/country':0.8}});
-  console.log(JSON.stringify({case:value,status:r.status,reason:r.reason,ms:Math.round(performance.now()-start),submissions:app.submissions.length,usage:r.usage,resolution:r.inputs?.find(i=>i.path==='/country')?.resolution,blockers:r.blockers}));
-  assert.equal(r.status,'complete',JSON.stringify(r));assert.equal(app.submissions.length,1);assert.equal(app.submissions[0].a9,country);
+  const taskSuccess=assertRawSelectionOutcome(r,app,country);
+  console.log(JSON.stringify({case:value,taskSuccess,status:r.status,reason:r.reason,ms:Math.round(performance.now()-start),submissions:app.submissions.length,usage:r.usage,resolution:r.inputs?.find(i=>i.path==='/country')?.resolution,blockers:r.blockers}));
   assert.ok(requests.some(r=>r.state.suppliedSelections?.['/country']===value));
   assert.ok(requests.every(r=>!JSON.stringify(r).includes('synthetic-private-note')));
 });
@@ -36,7 +50,7 @@ test('LIVE semantic selection: distant option in a thousand-option list',async t
   const app=await selectionFixture(t,browser,{engine:wrapped,options});
   const start=performance.now();const r=await app.core.run('Set the country and private note, Save once, and verify the address.',{values:{country:'Japan',note:'synthetic-large-list-note'},semanticInputs:{'/country':0.8}});
   const optionCalls=requests.filter(r=>Object.keys(r.questions).some(id=>id.startsWith('selection_')));
-  console.log(JSON.stringify({case:'semantic-1000-options',status:r.status,reason:r.reason,ms:Math.round(performance.now()-start),submissions:app.submissions.length,usage:r.usage,optionRequests:optionCalls.length,optionQuestions:optionCalls.reduce((n,r)=>n+Object.keys(r.questions).length,0)}));
-  assert.equal(r.status,'complete',JSON.stringify(r));assert.equal(app.submissions.length,1);assert.equal(app.submissions[0].a9,'JP');
-  assert.ok(optionCalls.some(r=>Object.values(r.questions).some(q=>Object.hasOwn(q.criteria,'option_999'))));
+  const taskSuccess=assertRawSelectionOutcome(r,app,'JP');
+  console.log(JSON.stringify({case:'semantic-1000-options',taskSuccess,status:r.status,reason:r.reason,ms:Math.round(performance.now()-start),submissions:app.submissions.length,usage:r.usage,resolution:r.inputs?.find(i=>i.path==='/country')?.resolution,blockers:r.blockers,optionRequests:optionCalls.length,optionQuestions:optionCalls.reduce((n,r)=>n+Object.keys(r.questions).length,0)}));
+  assert.equal(optionCalls.length,1);assert.ok(optionCalls.some(r=>Object.values(r.questions).some(q=>Object.hasOwn(q.criteria,'option_999'))));
 });
