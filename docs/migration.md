@@ -69,3 +69,22 @@ Compare against the versions you actually deploy; upstream interfaces change ind
 SDK users can pass `{actual:{locator:page.getByTestId('plan')},expected:'Professional annual plan'}` or extend their existing Playwright `expect` with `semanticMatchers(core)` from `@tontoko/jev-browser/playwright`. No model key is required for an exact comparison. For CLI/MCP, the new `semantic_compare_batch`, `semantic_assert_batch` and `semantic_locate_batch` accept JSON descriptions/refs; Locator objects stay SDK-only.
 
 Mixed model provenance is now reported in `models`; do not require a singular `model` when it is unknown or multiple models participated. Semantic failures now include `error.semantic` expected/results; treat logs as potentially sensitive UI data. Existing `run`, `resume`, native actions and deterministic assertions remain available without a new planner or backend service.
+
+## Removing the Pi adapter (next minor release)
+
+The `@tontoko/jev-browser/pi` export, bundled Pi adapter and its dedicated launch
+guide are removed. Use the existing SDK, persistent CLI or MCP interfaces;
+Jev Browser does not own the agent host's model loop, context or lifecycle.
+This is a breaking subpath removal, not a removal of screen control.
+
+For screenshot-only operation, use the documented restricted MCP server
+(`jev-browser-mcp --screen-only --url <ordinary-entry>`) or an explicitly
+restricted CLI/SDK consumer. Keep authentication and launch configuration in
+trusted setup. Configure the host to expose only the selected tools and task
+context; adding an unrestricted shell is not an equivalent isolation boundary.
+See [screen-only review](screen-review.md) for the shared commands and limits.
+
+The old `JEV_SCREEN_URL` / `JEV_SCREEN_OPTIONS` adapter variables and Pi-specific
+launch flags are not settings for the generic MCP server. Map only supported
+options using the ordinary CLI/MCP documentation. The published v0.9.0 archive
+and its historical verification remain unchanged.

@@ -104,7 +104,7 @@ CLIの`semantic_locate` / `semantic_compare` / `semantic_assert`と、MCPの`bro
 
 セッションのコマンド境界は`screen`と`close`だけに制限され、DOM・ARIA・selector・任意URLへの移動は公開しません。呼び出し元が初期URL・認証・viewportを準備し、モデルには画像と目的を渡します。画像の判断、UX基準、機能結果の検証は呼び出し元が担います。
 
-SDK・CLI・MCPで同じ操作を利用できます。Piを使う場合は、任意の`@tontoko/jev-browser/pi` exportが画像blockを返す2つのtoolを登録します。Pi自体はJev Browserの必須依存ではありません。[画面操作のAPIと制約](docs/screen-review.md)、[Piの起動例](docs/pi.md)を参照してください。
+SDK・CLI・MCPで同じ操作を利用できます。エージェントからもこの汎用経路を使い、特定ハーネス専用のadapterは提供しません。[画面操作のAPIと制約](docs/screen-review.md)、[削除された`./pi`経路の移行案内](docs/migration.md#removing-the-pi-adapter-next-minor-release)を参照してください。
 
 ## 実行と判定の境界
 
