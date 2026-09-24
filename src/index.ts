@@ -7,3 +7,5 @@ export type { ScreenRequest, ScreenResult, ScreenFrame } from './screen.js';
 export type * from './types.js';
 
 export type { NativeCommand, NativeName } from './native-schemas.js';
+export { ChatCompletionsImageUnderstanding, decideFromScreen } from './image-understanding.js';
+export type { VisualObservation, ImageDescription, ImageUnderstanding, ImageUnderstandingOptions, VisualEvidence, VisualDecisionResult } from './image-understanding.js';
