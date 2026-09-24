@@ -8,7 +8,7 @@ permissions:
   contents: read
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   verify:
     name: ${{ matrix.os }} / Node ${{ matrix.node }} / ${{ matrix.browser }}
@@ -49,3 +49,62 @@ jobs:
           path: '*.tgz'
           if-no-files-found: error
           retention-days: 7
+  release:
+    name: Publish tested package on a main version change
+    needs: verify
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Select a new release version
+        id: version
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { readFileSync, appendFileSync } from 'node:fs';
+          import { execFileSync } from 'node:child_process';
+          const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
+          const lock = JSON.parse(readFileSync('package-lock.json', 'utf8'));
+          const before = JSON.parse(execFileSync('git', ['show', `${process.env.BEFORE}:package.json`], { encoding: 'utf8' }));
+          assert.equal(pkg.name, '@tontoko/jev-browser');
+          assert.match(pkg.version, /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/);
+          assert.equal(lock.version, pkg.version);
+          assert.equal(lock.packages[''].version, pkg.version);
+          const changed = before.version !== pkg.version;
+          if (changed) readFileSync(`docs/releases/${pkg.version}.md`, 'utf8');
+          appendFileSync(process.env.GITHUB_OUTPUT, `changed=${changed}\nversion=${pkg.version}\n`);
+          NODE
+      - name: Publish the existing verified artifact
+        if: steps.version.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --name package-ubuntu-24.04-node24-chromium --dir release-assets
+          archive="tontoko-jev-browser-$VERSION.tgz"
+          tar -xOf "release-assets/$archive" package/package.json > release-package.json
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { readFileSync } from 'node:fs';
+          assert.deepEqual(JSON.parse(readFileSync('release-package.json', 'utf8')), JSON.parse(readFileSync('package.json', 'utf8')));
+          NODE
+          (cd release-assets && sha256sum "$archive" > SHA256SUMS)
+          cp "docs/releases/$VERSION.md" release-notes.md
+          printf '\nSource: `%s`\n\nVerification: https://github.com/%s/actions/runs/%s\n' \
+            "$GITHUB_SHA" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" >> release-notes.md
+          tag="v$VERSION"
+          gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
+            -f "ref=refs/tags/$tag" -f "sha=$GITHUB_SHA"
+          gh release create "$tag" "release-assets/$archive" release-assets/SHA256SUMS \
+            --repo "$GITHUB_REPOSITORY" --verify-tag --draft --title "$tag" --notes-file release-notes.md
+          gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --draft=false
