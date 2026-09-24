@@ -19,10 +19,6 @@
     "./playwright": {
       "types": "./dist/playwright.d.ts",
       "import": "./dist/playwright.js"
-    },
-    "./pi": {
-      "types": "./dist/pi.d.ts",
-      "import": "./dist/pi.js"
     }
   },
   "bin": {
@@ -55,7 +51,8 @@
     "test:live:semantic": "node --test --test-concurrency=1 --test-timeout=120000 test/live-semantic.mjs",
     "test:live:resume": "node --test --test-concurrency=1 --test-timeout=90000 test/live-resume.mjs",
     "test:live:refinement": "node --test --test-concurrency=1 --test-timeout=90000 test/live-refinement.mjs",
-    "test:live:observed": "node --test --test-concurrency=1 --test-timeout=90000 test/live-observed-selection.mjs"
+    "test:live:observed": "node --test --test-concurrency=1 --test-timeout=90000 test/live-observed-selection.mjs",
+    "prebuild": "node --input-type=module -e \"import { rmSync } from 'node:fs'; rmSync('dist', { recursive: true, force: true });\""
   },
   "dependencies": {
     "@modelcontextprotocol/server": "2.0.0",

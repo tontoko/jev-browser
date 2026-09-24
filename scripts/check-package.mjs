@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdtemp, readFile, rm, access } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, access, mkdir, writeFile } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -29,11 +29,16 @@ async function run(args, options = {}) {
     child.stdin.end();
   });
 }
+// Simulate an upgrade in a checkout with output from the removed adapter.
+// The ordinary prepack build must remove it, not merely hide its export.
+await mkdir(join(root, 'dist'), { recursive: true });
+await writeFile(join(root, 'dist', 'pi.js'), '// stale adapter output\n');
+await writeFile(join(root, 'dist', 'pi.d.ts'), '// stale adapter declaration\n');
 const packed = JSON.parse((await run([npm, 'pack', '--json'])).stdout)[0];
 assert.ok(packed.files.some(f => f.path === 'dist/dom.bundle.cjs'));
 assert.ok(packed.files.some(f => f.path === 'dist/session-worker.js'));
-assert.ok(packed.files.some(f => f.path === 'dist/pi.js'));
-assert.ok(packed.files.some(f => f.path === 'dist/pi.d.ts'));
+assert.ok(!packed.files.some(f => /^dist\/pi\.(?:js|d\.ts)(?:\.map)?$/.test(f.path)));
+assert.ok(!packed.files.some(f => f.path === 'docs/pi.md'));
 assert.ok(packed.files.some(f => f.path === 'skills/jev-browser/SKILL.md'));
 assert.ok(!packed.files.some(f => /(^|\/)(\.env($|\.)|node_modules|artifacts|test-results|\.git)(\/|$)/.test(f.path)));
 const tarball = resolve(root, packed.filename);
@@ -51,9 +56,8 @@ try {
     import { chromium } from 'playwright';
     import { expect } from 'playwright/test';
     import { JevBrowser } from '@tontoko/jev-browser';
-    import piExtension from '@tontoko/jev-browser/pi';
     import { z } from 'zod';
-    assert.equal(typeof piExtension, 'function');
+    assert.throws(() => import.meta.resolve('@tontoko/jev-browser/pi'), { code: 'ERR_PACKAGE_PATH_NOT_EXPORTED' });
     const browser = await chromium.launch({ headless: true });
     const page = await browser.newPage();
     const engine = { async decide(request) {
