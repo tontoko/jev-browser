@@ -60,10 +60,11 @@ process.once('message', async (input: Start) => {
       } finally { res.off('close', disconnected); if (!closing) touch(); }
     });
     server.requestTimeout = 300_000; server.headersTimeout = 15_000;
-    await new Promise<void>((resolve, reject) => { server!.once('error', reject); server!.listen(0, '127.0.0.1', resolve); });
-    const address = server.address();
-    if (!address || typeof address === 'string') throw new Error('Missing local listener');
-    await writeFile(join(input.directory, 'session.json'), JSON.stringify({ name: input.name, cwd: resolve(process.cwd()), pid: process.pid, port: address.port, token, createdAt: new Date().toISOString() }), { mode: 0o600, flag: 'wx' });
+    // A Unix domain socket keeps the command channel off the network stack entirely
+    // (no loopback TCP/HTTP frames to sniff), unlike binding to 127.0.0.1.
+    const socketPath = join(input.directory, 'session.sock');
+    await new Promise<void>((resolve, reject) => { server!.once('error', reject); server!.listen(socketPath, resolve); });
+    await writeFile(join(input.directory, 'session.json'), JSON.stringify({ name: input.name, cwd: resolve(process.cwd()), pid: process.pid, socketPath, token, createdAt: new Date().toISOString() }), { mode: 0o600, flag: 'wx' });
     touch();
     process.send?.({ ready: true, ...(core.screenOnly ? { screenOnly: true } : { url: publicURL(core.page.url()) }) });
   } catch (error) {

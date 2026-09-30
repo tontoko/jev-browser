@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { fork } from 'node:child_process';
+import { request as httpRequest } from 'node:http';
 import { lstat, mkdir, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -8,7 +9,7 @@ import { BrowserError, type BrowserErrorCode, type PublicError } from './errors.
 import type { BrowserLaunchOptions } from './types.js';
 import type { Command } from './commands.js';
 
-export const descriptorSchema = z.object({ name: z.string(), cwd: z.string(), pid: z.number().int().positive(), port: z.number().int().min(1).max(65535), token: z.string().regex(/^[0-9a-f]{64}$/), createdAt: z.string() });
+export const descriptorSchema = z.object({ name: z.string(), cwd: z.string(), pid: z.number().int().positive(), socketPath: z.string().min(1), token: z.string().regex(/^[0-9a-f]{64}$/), createdAt: z.string() });
 export function sessionRoot(): string { return resolve(process.env.JEV_SESSION_DIR ?? join(tmpdir(), `jev-browser-${process.getuid?.() ?? 'user'}`)); }
 export function sessionDirectory(name: string): string {
   if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(name)) throw new BrowserError('INVALID_ARGUMENT', 'Session names must be 1–64 letters, digits, underscores or hyphens.');
@@ -31,11 +32,18 @@ export async function hasSession(name: string): Promise<boolean> {
 }
 export async function sendSession(name: string, command: Command | { command: 'health' }, signal?: AbortSignal): Promise<Record<string, unknown>> {
   const d = await descriptor(name);
-  let response: Response;
-  try { response = await fetch(`http://127.0.0.1:${d.port}/command`, { method: 'POST', headers: { authorization: `Bearer ${d.token}`, 'content-type': 'application/json' }, body: JSON.stringify(command), signal: signal ?? AbortSignal.timeout(300_000) }); }
-  catch { if (signal?.aborted) signal.throwIfAborted(); throw new BrowserError('SESSION_UNAVAILABLE', `Session ${name} is not responding. No browser action was retried.`); }
-  const envelope = await response.json() as { ok: boolean; result?: Record<string, unknown>; error?: Partial<PublicError> };
-  if (!response.ok || !envelope.ok) {
+  let status = 0, raw = '';
+  try {
+    await new Promise<void>((settle, reject) => {
+      const req = httpRequest({ socketPath: d.socketPath, path: '/command', method: 'POST', headers: { authorization: `Bearer ${d.token}`, 'content-type': 'application/json' }, signal: signal ?? AbortSignal.timeout(300_000) }, res => {
+        status = res.statusCode ?? 0; res.setEncoding('utf8');
+        res.on('data', chunk => { raw += chunk; }); res.on('end', () => settle());
+      });
+      req.on('error', reject); req.end(JSON.stringify(command));
+    });
+  } catch { if (signal?.aborted) signal.throwIfAborted(); throw new BrowserError('SESSION_UNAVAILABLE', `Session ${name} is not responding. No browser action was retried.`); }
+  const envelope = JSON.parse(raw) as { ok: boolean; result?: Record<string, unknown>; error?: Partial<PublicError> };
+  if (status < 200 || status >= 300 || !envelope.ok) {
     const error=new BrowserError(envelope.error?.code ?? 'SESSION_ERROR', envelope.error?.message ?? 'The session command failed.', { retryable: envelope.error?.retryable === true });
     if(envelope.error?.partial)error.partial=envelope.error.partial;
     if(envelope.error?.semantic)error.semantic=envelope.error.semantic;
