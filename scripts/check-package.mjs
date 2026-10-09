@@ -51,8 +51,10 @@ const directory = await mkdtemp(join(tmpdir(), 'jev-package-consumer-'));
 const env = { ...process.env, JEV_API_KEY: '', TYPESAFE_API_KEY: '', JEV_SESSION_DIR: join(directory, 'sessions') };
 let site;
 try {
-  // Standalone: npm installs the peers (playwright-core, zod) itself; the full playwright package is not needed.
-  await run([npm, 'install', '--ignore-scripts', '--no-audit', '--no-fund', tarball], { cwd: directory, env });
+  // Standalone: npm installs the zod peer itself; the full playwright package is not needed. playwright-core is
+  // named at the tested pin: left to npm it resolves to the newest release in the peer range, whose browser build
+  // this run has not installed.
+  await run([npm, 'install', '--ignore-scripts', '--no-audit', '--no-fund', tarball, `playwright-core@${devDependencies['playwright-core']}`], { cwd: directory, env });
   const pkg = join(directory, 'node_modules', '@tontoko', 'jev-browser');
   const installed = name => JSON.parse(readFileSync(join(directory, 'node_modules', name, 'package.json'), 'utf8')).version;
   assert.equal(installed('playwright-core'), devDependencies['playwright-core']);

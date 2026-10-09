@@ -51,6 +51,30 @@ export function wireDecisionRequest(request: DecisionRequest): DecisionRequest {
 }
 export const decisionRequestBytes = (request: DecisionRequest): number => Buffer.byteLength(JSON.stringify(wireDecisionRequest(request)));
 const hostedOrigin = 'https://api.typesafe.ai';
+/**
+ * A Cloudflare Workers AI run URL for a System One model, e.g.
+ * `https://api.cloudflare.com/client/v4/accounts/<account>/ai/run/@cf/cloudflare/clef-flash`. Clef follows the
+ * System One API, but the run URL replaces the SDK's `/v1/systemone` path, the `model` field must be the model's
+ * short name, and the v4 envelope wraps the System One answer in `result`.
+ */
+const workersAiRun = /^\/client\/v4\/accounts\/[^/]+\/ai\/run\/@cf\/[^/]+\/([^/]+)$/;
+export const workersAiModel = (url: URL): string | undefined =>
+  url.protocol === 'https:' && url.hostname === 'api.cloudflare.com' ? workersAiRun.exec(url.pathname)?.[1] : undefined;
+/** Sends the SDK's System One request to a Workers AI run URL and hands the SDK the unwrapped `result`. */
+const workersAiFetch = (runUrl: string, model: string, inner: Fetch = globalThis.fetch): Fetch =>
+  (async (_input: unknown, init?: RequestInit) => {
+    const body = typeof init?.body === 'string' ? (JSON.parse(init.body) as Record<string, unknown>) : {};
+    const response = await inner(runUrl, { ...init, body: JSON.stringify({ ...body, model }) });
+    const text = await response.text();
+    let envelope: unknown;
+    try { envelope = JSON.parse(text); } catch { envelope = undefined; }
+    const record = typeof envelope === 'object' && envelope !== null ? (envelope as { success?: unknown; result?: unknown }) : undefined;
+    const headers = { 'content-type': 'application/json' };
+    // A v4 error keeps its HTTP status; `success: false` on a 200 is a provider error, not an answer.
+    if (!response.ok || !record || record.success === false || record.result === undefined)
+      return new Response(text, { status: response.ok ? 502 : response.status, headers });
+    return new Response(JSON.stringify(record.result), { status: 200, headers });
+  }) as Fetch;
 /** Empty or whitespace-only settings are unset, matching `.env` files that leave a key blank. */
 export const setting = (value: string | undefined) => value?.trim() || undefined;
 export const loopback = (host: string) => host === 'localhost' || host === '[::1]' || /^127\.\d+\.\d+\.\d+$/.test(host);
@@ -69,19 +93,22 @@ export class JevDecisionEngine implements DecisionEngine {
     if (!url || !['http:', 'https:'].includes(url.protocol)) throw new BrowserError('CONFIG', 'The decision baseURL must be an HTTP(S) URL.');
     // Hosted keys from the environment stay with hosted Jev; another endpoint needs apiKey or JEV_ENDPOINT_API_KEY, else a keyless placeholder.
     const hosted = url.origin === hostedOrigin;
+    const workersModel = workersAiModel(url);
     const apiKey = setting(options.apiKey) ?? (hosted ? setting(process.env.JEV_API_KEY) ?? setting(process.env.TYPESAFE_API_KEY) : setting(process.env.JEV_ENDPOINT_API_KEY));
     if (hosted && !apiKey) throw new BrowserError('CONFIG', 'Hosted Jev needs apiKey, JEV_API_KEY or TYPESAFE_API_KEY. A custom System One baseURL or JEV_BASE_URL needs no hosted key.');
+    if (workersModel && !apiKey)
+      throw new BrowserError('CONFIG', 'A Workers AI run URL needs a Cloudflare API token in apiKey or JEV_ENDPOINT_API_KEY.');
     if (apiKey && url.protocol === 'http:' && !loopback(url.hostname))
       throw new BrowserError('CONFIG', 'An API key is sent only over HTTPS or to a loopback endpoint. Use an https:// decision baseURL.');
     this.client = new TypeSafeClient({
       apiKey: apiKey ?? 'local',
       // Always explicit, so the SDK's own TYPESAFE_BASE_URL cannot redirect a hosted key.
-      baseURL: url.href,
-      defaultModel: setting(options.model) ?? setting(process.env.JEV_MODEL),
+      baseURL: workersModel ? url.origin : url.href,
+      defaultModel: workersModel ?? setting(options.model) ?? setting(process.env.JEV_MODEL),
       timeout: options.timeoutMs ?? 15_000,
       retry: { maxRetries: 0 },
       logLevel: 'off',
-      fetch: options.fetch,
+      fetch: workersModel ? workersAiFetch(url.href, workersModel, options.fetch) : options.fetch,
     });
   }
   async decide(request: DecisionRequest, options: { signal?: AbortSignal; maxRetries?: number } = {}): Promise<DecisionResult> {

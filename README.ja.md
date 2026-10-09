@@ -11,7 +11,7 @@ Playwright MCP／CLIのブラウザー操作と、Stagehand型の自然言語操
 Node.js 22.15以上。[GitHub Releases](https://github.com/tontoko/jev-browser/releases)のtarballをプロジェクトへインストールします。
 
 ```sh
-npm install --save-dev ./tontoko-jev-browser-0.14.2.tgz
+npm install --save-dev ./tontoko-jev-browser-0.15.0.tgz
 npx jev-browser install chromium
 npx jev-browser open https://example.com --session work
 npx jev-browser snapshot --session work
@@ -62,7 +62,7 @@ const result = await browser.run(
 
 ## 自然言語とSDK
 
-hosted Jevを使う場合は`JEV_API_KEY`を設定します。Jev互換のSystem One endpointを使う場合は`JEV_BASE_URL=http://127.0.0.1:8765`のようにbase URLだけ指定でき、JevのAPIキーは不要です。`JEV_API_KEY`／`TYPESAFE_API_KEY`はhosted Jev（`https://api.typesafe.ai`）にだけ送られ、custom endpointには送られません。endpoint側でキーが必要な場合は`JEV_ENDPOINT_API_KEY`（SDKでは`apiKey`）を指定します。キーはHTTPSかloopbackアドレスにだけ送られ、それ以外は`CONFIG`エラーになります。空のキー変数は未設定として扱います。endpointは`POST /v1/systemone`で同じ`state/questions -> model/answers/usage`形式を実装する必要があります。APIキーをリポジトリやCLI引数に書き込まないでください。
+hosted Jevを使う場合は`JEV_API_KEY`を設定します。Jev互換のSystem One endpointを使う場合は`JEV_BASE_URL=http://127.0.0.1:8765`のようにbase URLだけ指定でき、JevのAPIキーは不要です。`JEV_API_KEY`／`TYPESAFE_API_KEY`はhosted Jev（`https://api.typesafe.ai`）にだけ送られ、custom endpointには送られません。endpoint側でキーが必要な場合は`JEV_ENDPOINT_API_KEY`（SDKでは`apiKey`）を指定します。キーはHTTPSかloopbackアドレスにだけ送られ、それ以外は`CONFIG`エラーになります。空のキー変数は未設定として扱います。Cloudflare Workers AIのSystem Oneモデルは直接使えます。`JEV_BASE_URL`にモデルのrun URL（例: `https://api.cloudflare.com/client/v4/accounts/<account>/ai/run/@cf/cloudflare/clef-flash`）、`JEV_ENDPOINT_API_KEY`にWorkers AIを使えるCloudflare API tokenを指定すると、判断はそのURLに送られ、答えはv4 envelopeの`result`から読みます。それ以外のendpointは`POST /v1/systemone`で同じ`state/questions -> model/answers/usage`形式を実装する必要があります。APIキーをリポジトリやCLI引数に書き込まないでください。
 
 ```ts
 const browser = new JevBrowser({ page });

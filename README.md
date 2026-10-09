@@ -13,7 +13,7 @@ Native operations and assertions run **without an AI key**. Natural-language ope
 Node.js **22.15 or newer**. Download the package from [GitHub Releases](https://github.com/tontoko/jev-browser/releases), then install it into your project:
 
 ```sh
-npm install --save-dev ./tontoko-jev-browser-0.14.2.tgz
+npm install --save-dev ./tontoko-jev-browser-0.15.0.tgz
 npx jev-browser install chromium
 ```
 
@@ -123,7 +123,7 @@ npx jev-browser fill 'input[name=email]' 'user@example.invalid' --session work
 npx jev-browser assert --args '{"target":"input[name=email]","property":"value","expected":"user@example.invalid"}' --session work
 ```
 
-For hosted Jev, set `JEV_API_KEY` or `TYPESAFE_API_KEY`. Those keys are sent only to hosted Jev (`https://api.typesafe.ai`), never to a custom endpoint. For a compatible local/remote System One endpoint, set only `JEV_BASE_URL` (for example `http://127.0.0.1:8765`), plus `JEV_ENDPOINT_API_KEY` (or the SDK `apiKey` option) if that endpoint needs its own key. A key is sent only over HTTPS or to a loopback address; otherwise the AI operation fails with `CONFIG`. Blank key variables count as unset. The endpoint must implement `POST /v1/systemone` with the same `state/questions -> model/answers/usage` envelope:
+For hosted Jev, set `JEV_API_KEY` or `TYPESAFE_API_KEY`. Those keys are sent only to hosted Jev (`https://api.typesafe.ai`), never to a custom endpoint. For a compatible local/remote System One endpoint, set only `JEV_BASE_URL` (for example `http://127.0.0.1:8765`), plus `JEV_ENDPOINT_API_KEY` (or the SDK `apiKey` option) if that endpoint needs its own key. A key is sent only over HTTPS or to a loopback address; otherwise the AI operation fails with `CONFIG`. Blank key variables count as unset. Cloudflare Workers AI's System One models are supported directly: set `JEV_BASE_URL` to the model's run URL, for example `https://api.cloudflare.com/client/v4/accounts/<account>/ai/run/@cf/cloudflare/clef-flash`, and `JEV_ENDPOINT_API_KEY` to a Cloudflare API token with Workers AI access; decisions go to that URL and the answer is read from the v4 envelope's `result`. Any other endpoint must implement `POST /v1/systemone` with the same `state/questions -> model/answers/usage` envelope:
 
 ```sh
 npx jev-browser act 'Fill the Name field with "Alice Example"' --session work
