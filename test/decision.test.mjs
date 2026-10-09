@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as sdk from '../dist/index.js';
 import { publicError } from '../dist/errors.js';
+import { workersAiModel } from '../dist/decision.js';
 import { apiResult } from './helpers.mjs';
 const request = {state:{screen:'synthetic test'},questions:{action:{type:'choice',instructions:'Choose a button',criteria:{a:'Submit',__none__:'No match'}}}};
 
@@ -156,4 +157,40 @@ test('other HTTP 400 rejections stay non-retryable PROVIDER_ERROR', async () => 
   }
   const engine = new sdk.JevDecisionEngine({apiKey:'test-only',fetch:async()=>Response.json({detail:{error_type:'max_tokens_exceeded'}},{status:500})});
   await assert.rejects(engine.decide(request), {code:'PROVIDER_ERROR',retryable:true});
+});
+
+const runUrl='https://api.cloudflare.com/client/v4/accounts/acc/ai/run/@cf/cloudflare/clef-flash';
+test('a Workers AI run URL posts to that URL with the short model name and reads result', async () => {
+  let url, body, auth;
+  const engine = new sdk.JevDecisionEngine({baseURL:runUrl,apiKey:'cf-token',model:'jev-latest',fetch:async(u,init)=>{
+    url=String(u); body=JSON.parse(init.body); auth=new Headers(init.headers).get('authorization');
+    return Response.json({result:{...apiResult(body),model:'clef-flash'},success:true,errors:[],messages:[]});
+  }});
+  const result = await engine.decide(request);
+  assert.equal(url,runUrl);
+  assert.equal(body.model,'clef-flash');
+  assert.deepEqual(body.questions,request.questions);
+  assert.equal(auth,'Bearer cf-token');
+  assert.equal(result.answers.action.choice,'a');
+  assert.equal(result.model,'clef-flash');
+});
+test('a Workers AI success false or HTTP error is a provider error, never an answer', async () => {
+  const ok = new sdk.JevDecisionEngine({baseURL:runUrl,apiKey:'cf',fetch:async()=>Response.json({success:false,errors:[{message:'Bad input'}],result:null})});
+  await assert.rejects(ok.decide(request), {code:'PROVIDER_ERROR'});
+  const down = new sdk.JevDecisionEngine({baseURL:runUrl,apiKey:'cf',fetch:async()=>Response.json({success:false,errors:[]},{status:401})});
+  await assert.rejects(down.decide(request), {code:'PROVIDER_ERROR'});
+});
+test('a Workers AI run URL takes JEV_ENDPOINT_API_KEY, never a hosted key, and requires one', () => {
+  const saved={JEV_API_KEY:process.env.JEV_API_KEY,TYPESAFE_API_KEY:process.env.TYPESAFE_API_KEY,JEV_ENDPOINT_API_KEY:process.env.JEV_ENDPOINT_API_KEY,JEV_BASE_URL:process.env.JEV_BASE_URL};
+  process.env.JEV_API_KEY='hosted'; process.env.TYPESAFE_API_KEY='hosted'; delete process.env.JEV_ENDPOINT_API_KEY; process.env.JEV_BASE_URL=runUrl;
+  try {
+    assert.throws(()=>new sdk.JevDecisionEngine(),{code:'CONFIG'});
+    process.env.JEV_ENDPOINT_API_KEY='cf';
+    assert.doesNotThrow(()=>new sdk.JevDecisionEngine());
+  } finally { for(const [key,value] of Object.entries(saved)) value===undefined?delete process.env[key]:process.env[key]=value; }
+});
+test('only a Cloudflare v4 run path for an @cf model is read as Workers AI', () => {
+  assert.equal(workersAiModel(new URL(runUrl)),'clef-flash');
+  for (const other of ['https://api.cloudflare.com/client/v4/accounts/acc/ai/models','http://api.cloudflare.com/client/v4/accounts/acc/ai/run/@cf/cloudflare/clef','https://example.com/client/v4/accounts/acc/ai/run/@cf/cloudflare/clef'])
+    assert.equal(workersAiModel(new URL(other)),undefined,other);
 });

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.15.0
+
+- A Cloudflare Workers AI run URL for a System One model (for example `https://api.cloudflare.com/client/v4/accounts/<account>/ai/run/@cf/cloudflare/clef-flash`) is accepted as `baseURL` / `JEV_BASE_URL`: decisions are posted to that URL with the model's short name (`clef-flash`), the Cloudflare API token comes from `apiKey` or `JEV_ENDPOINT_API_KEY` (never a hosted Jev key), and the answer is read from the v4 envelope's `result`. A `success: false` or HTTP error is `PROVIDER_ERROR`, never an answer.
+
 ## 0.14.2
 
 - `run` combobox selection no longer fails with `NO_MATCH` when the matching option is already shown as a short `settleTimeoutMs` budget expires on a slow machine; the deadline is judged on the page, not on how many polls fit into it.
