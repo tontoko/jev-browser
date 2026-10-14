@@ -13,6 +13,7 @@ import { flattenInputs } from './bindings.js';
 import { extractStructured } from './structured.js';
 import { NativeBrowser } from './native.js';
 import { ScreenController, screenDialogMessage, type ScreenRequest, type ScreenResult } from './screen.js';
+import { judgeFromScreen, screenJudge, validateJudgeRequest, type ScreenJudge, type ScreenJudgeRequest, type ScreenJudgeResult } from './screen-judge.js';
 import { decideFromScreen, imageUnderstanding, validateVisualRequest, type ImageUnderstanding, type ScreenDecideRequest, type VisualDecisionResult } from './image-understanding.js';
 import { compareSemanticWork, elementEvidence, locateSemanticTargets, semanticThreshold } from './semantic.js';
 import { parseNative, nativeSchemas, nativeReadOnly, type NativeCommand } from './native-schemas.js';
@@ -92,6 +93,7 @@ export class JevBrowser {
   // #private: inspecting, logging or serializing the core cannot reveal the key.
   readonly #apiKey?: string;
   readonly #vision?: ImageUnderstanding;
+  readonly #judge?: ScreenJudge & { defaultThreshold?: number };
   private readonly timeoutMs: number;
   private readonly limits: { maxElements: number; maxTexts: number; maxCandidates: number };
   private readonly lifetime = new AbortController();
@@ -108,10 +110,11 @@ export class JevBrowser {
   constructor(options: BrowserOptions) {
     assertPlaywrightCore();
     this.currentPage = options.page;
-    const { apiKey, vision, ...rest } = options;
+    const { apiKey, vision, judge, ...rest } = options;
     this.options = rest; this.#apiKey = apiKey;
     // Validated now, so a bad image endpoint fails at launch rather than at the first screenDecide.
     if (vision !== undefined) this.#vision = imageUnderstanding(vision);
+    if (judge !== undefined) this.#judge = screenJudge(judge);
     this.engineInstance = options.engine;
     if (options.screenFollowPopups && !options.screenOnly) throw new BrowserError('CONFIG', 'screenFollowPopups requires screenOnly; without it, the tabs tool selects new tabs.');
     this.timeoutMs = positiveInteger(options.timeoutMs ?? 30_000, 'timeoutMs');
@@ -222,6 +225,25 @@ export class JevBrowser {
     return this.exclusive(options, async operation => {
       const screen = await this.runScreen({ action: 'look', ...(request.capture ? { capture: request.capture } : {}) }, options, operation);
       return decideFromScreen(screen, { state: request.state ?? {}, questions: request.questions }, { understand: vision, engine: this.engine(), signal: operation.signal });
+    }, 'screen');
+  }
+  /** True when this core was given a `judge` endpoint or adapter for `screenJudge`. */
+  get hasJudge(): boolean { return this.#judge !== undefined; }
+  /**
+   * Opt-in: capture the viewport once and send it, with the page's visible text or HTML when allowed, and all items in ONE
+   * request to the configured image-capable judge. Every item gets a probability and passes at or above its threshold
+   * (default 0.5). No input is sent. Screen-only sessions send pixels only.
+   */
+  async screenJudge(request: ScreenJudgeRequest, options: OperationOptions = {}): Promise<ScreenJudgeResult> {
+    const judge = this.#judge;
+    if (!judge) throw new BrowserError('CONFIG', 'screenJudge needs a judge endpoint. Pass the judge option.');
+    validateJudgeRequest(request);
+    const kind = request.page ?? (this.screenOnly ? 'none' : 'text');
+    if (this.screenOnly && kind !== 'none') throw new BrowserError('INVALID_ARGUMENT', "A screen-only session sends pixels only; use page: 'none'.");
+    return this.exclusive(options, async operation => {
+      const screen = await this.runScreen({ action: 'look' }, options, operation);
+      const content = kind === 'html' ? await this.page.content() : kind === 'text' ? await this.page.evaluate(() => document.body?.innerText ?? '') : '';
+      return judgeFromScreen(screen, request, { judge, page: { kind, content }, signal: operation.signal });
     }, 'screen');
   }
   private async runScreen(request: ScreenRequest, options: OperationOptions, operation: Operation): Promise<ScreenResult> {
