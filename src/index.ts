@@ -8,5 +8,7 @@ export type { ScreenRequest, ScreenResult, ScreenFrame, ScreenFailureReason } fr
 export type * from './types.js';
 
 export type { NativeCommand, NativeName } from './native-schemas.js';
+export { SystemOneScreenJudge, judgeFromScreen } from './screen-judge.js';
+export type { ScreenJudge, ScreenJudgeOptions, ScreenJudgeInput, ScreenJudgeItem, ScreenJudgeRequest, ScreenJudgeResult } from './screen-judge.js';
 export { ChatCompletionsImageUnderstanding, decideFromScreen } from './image-understanding.js';
 export type { VisualObservation, ImageDescription, ImageUnderstanding, ImageUnderstandingOptions, VisualEvidence, VisualDecisionResult, ScreenDecideRequest } from './image-understanding.js';

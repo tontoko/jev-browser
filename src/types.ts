@@ -2,6 +2,7 @@ import type { Page, Locator, LaunchOptions, BrowserContextOptions } from 'playwr
 import type { NativeCommand } from './native-schemas.js';
 import type { DecisionEngine, DecisionResult, JevOptions } from './decision.js';
 import type { ImageUnderstanding, ImageUnderstandingOptions } from './image-understanding.js';
+import type { ScreenJudge, ScreenJudgeOptions } from './screen-judge.js';
 
 export interface ElementInfo {
   id: string;
@@ -166,6 +167,11 @@ export interface BrowserOptions extends JevOptions {
    * endpoint, or your own adapter. Screenshots go only to this endpoint and only when `screenDecide` is called.
    */
   vision?: ImageUnderstanding | ImageUnderstandingOptions;
+  /**
+   * Opt-in itemized screen judging for `screenJudge`: an image-capable System One-compatible endpoint (e.g. a Workers AI
+   * run URL) or your own adapter. The screenshot and the requested page content go only to this endpoint, only when called.
+   */
+  judge?: ScreenJudge | ScreenJudgeOptions;
   maxElements?: number;
   maxTexts?: number;
   maxCandidates?: number;

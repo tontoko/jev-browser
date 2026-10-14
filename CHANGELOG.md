@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.16.0
+
+- Opt-in itemized screen judging: `screenJudge` (SDK) captures the viewport once and sends it, with the page's visible text (default), HTML or nothing, and up to 64 positively phrased yes/no items in ONE request to an image-capable System One-compatible model given by the new `judge` launch option (a Workers AI run URL such as `.../ai/run/@cf/<vendor>/<model>`, a System One API root, or your own `ScreenJudge` adapter). Every item gets its own probability and passes at or above its threshold (configurable per judge, request or item; default 0.5). The result lists `passed`, `failed`, per-item probabilities and snapshot evidence. Screen-only sessions send pixels only. `SystemOneScreenJudge` and `judgeFromScreen` are exported. The text-only decision engine and `screenDecide` are unchanged.
+
 ## 0.15.1
 
 - `run` no longer sends the blocker diagnosis's `blocker_field` question on a page with no enabled fillable, select or combobox control. That question then had a single criterion (`__none__`), which Clef and System One reject with HTTP 422, so such a page failed with `PROVIDER_ERROR` instead of stopping with `missing-input` or `no-match`.
