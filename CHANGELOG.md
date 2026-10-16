@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.17.0
+
+- CDP and WebSocket attach accept optional `cdpHeaders` (SDK and `--options-file`): Playwright `connectOverCDP({ endpointURL, headers })` / `connect({ wsEndpoint, headers })`, so authenticated endpoints such as Cloudflare Browser Run work. Header values are redacted from screen evidence and are left out of the session options hash, like `apiKey`, so rotating a token does not strand an open session.
+
+
 ## 0.16.0
 
 - Opt-in itemized screen judging: `screenJudge` (SDK) captures the viewport once and sends it, with the page's visible text (default), HTML or nothing, and up to 64 positively phrased yes/no items in ONE request to an image-capable System One-compatible model given by the new `judge` launch option (a Workers AI run URL such as `.../ai/run/@cf/<vendor>/<model>`, a System One API root, or your own `ScreenJudge` adapter). Every item gets its own probability and passes at or above its threshold (configurable per judge, request or item; default 0.5). The result lists `passed`, `failed`, per-item probabilities and snapshot evidence. Screen-only sessions send pixels only. `SystemOneScreenJudge` and `judgeFromScreen` are exported. The text-only decision engine and `screenDecide` are unchanged.

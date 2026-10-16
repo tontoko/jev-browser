@@ -22,7 +22,7 @@ npx jev-browser close --session work
 
 `open`で作成した名前付きセッションは、別々のCLI呼び出しでもブラウザー状態を維持します。全コマンドは`--args JSON`で呼び出せます。MCPでは同じ操作を`browser_click`、`browser_type`、`browser_assert`などのツールとして公開します。
 
-CLIとMCPサーバーでは、`--viewport 390x844`、`--reduced-motion`、`--color-scheme dark`、`--locale ja-JP`でPlaywrightのcontext設定を指定できます。device設定などは`--options-file FILE`のJSON（`launchOptions`、`contextOptions`など`JevBrowser.launch()`の起動設定）で渡し、明示したフラグが優先されます。MCPの並列ツール呼び出しは`BUSY`にせず、到着順に1つずつ実行します。cookie・storage、route、trace、ページ内評価のツールは`--caps storage,network,trace,evaluate`（必要なものだけ）で有効にし、無効なツールはMCPの一覧に出ません。アップロードは`--file-root DIR`で指定したディレクトリからだけ読み込みます（`--file-root .`で作業ディレクトリ）。
+CLIとMCPサーバーでは、`--viewport 390x844`、`--reduced-motion`、`--color-scheme dark`、`--locale ja-JP`でPlaywrightのcontext設定を指定できます。device設定などは`--options-file FILE`のJSON（`launchOptions`、`contextOptions`、`cdpEndpoint`、`cdpHeaders`など`JevBrowser.launch()`の起動設定）で渡し、明示したフラグが優先されます。`cdpHeaders`はCDP/WebSocket接続時の追加HTTPヘッダ（例: Cloudflare Browser Runの`Authorization`）で、画面証跡では伏せ字になり、セションの起動オプションハッシュには入りません。MCPの並列ツール呼び出しは`BUSY`にせず、到着順に1つずつ実行します。cookie・storage、route、trace、ページ内評価のツールは`--caps storage,network,trace,evaluate`（必要なものだけ）で有効にし、無効なツールはMCPの一覧に出ません。アップロードは`--file-root DIR`で指定したディレクトリからだけ読み込みます（`--file-root .`で作業ディレクトリ）。
 
 ## 既存のPlaywright Locatorをそのまま使う
 

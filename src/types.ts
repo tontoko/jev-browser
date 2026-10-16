@@ -187,6 +187,8 @@ export interface BrowserLaunchOptions extends Omit<BrowserOptions, 'page'> {
   userDataDir?: string;
   cdpEndpoint?: string;
   wsEndpoint?: string;
+  /** Extra HTTP headers for CDP/WS connect (e.g. Cloudflare Browser Run Authorization). */
+  cdpHeaders?: { [key: string]: string };
 }
 export interface ExtractResult<T> {
   data: T;

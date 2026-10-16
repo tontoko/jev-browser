@@ -145,6 +145,61 @@ test('attaching over CDP to an existing context rejects context options instead 
   assert.equal(remote.isConnected(), true);
 });
 
+test('options-file accepts cdpHeaders and rejects a non-string map', async () => {
+  const file = await optionsFile({ cdpEndpoint: 'http://127.0.0.1:9222', cdpHeaders: { Authorization: 'Bearer secret-token-value' } });
+  const parsed = parseCLI(['snapshot', '--options-file', file]).options;
+  assert.equal(parsed.cdpEndpoint, 'http://127.0.0.1:9222');
+  assert.deepEqual(parsed.cdpHeaders, { Authorization: 'Bearer secret-token-value' });
+  invalid(['snapshot', '--options-file', await optionsFile({ cdpHeaders: { Authorization: 1 } })], /^Invalid --options-file at cdpHeaders/);
+  // Misplaced secret-like keys are named without echoing values.
+  const misplaced = await optionsFile({ apiKey: 'jev-secret-value', cdpHeaders: { Authorization: 'Bearer leaked' } });
+  assert.throws(() => parseCLI(['snapshot', '--options-file', misplaced]),
+    error => error.code === 'INVALID_ARGUMENT' && /apiKey/.test(error.message) && !error.message.includes('jev-secret-value') && !error.message.includes('Bearer leaked'));
+});
+
+test('cdpHeaders are required to pass an Authorization gate in front of CDP', async t => {
+  if ((process.env.JEV_BROWSER ?? 'chromium') !== 'chromium') { t.skip('CDP requires Chromium'); return; }
+  const { createServer: createHttpServer, request: httpRequest } = await import('node:http');
+  const port = await freePort();
+  const remote = await chromium.launch({ headless: true, args: [`--remote-debugging-port=${port}`] });
+  t.after(() => remote.close());
+  const token = `Bearer test-${randomUUID()}`;
+  let authorizedHits = 0;
+  const gate = createHttpServer((req, res) => {
+    if (req.headers.authorization !== token) { res.writeHead(401); res.end('unauthorized'); return; }
+    authorizedHits += 1;
+    const upstream = httpRequest({ hostname: '127.0.0.1', port, path: req.url, method: req.method, headers: { ...req.headers, host: `127.0.0.1:${port}` } }, up => {
+      res.writeHead(up.statusCode ?? 502, up.headers); up.pipe(res);
+    });
+    upstream.on('error', error => { res.writeHead(502); res.end(String(error)); });
+    req.pipe(upstream);
+  });
+  gate.on('upgrade', (req, socket, head) => {
+    if (req.headers.authorization !== token) { socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n'); socket.destroy(); return; }
+    authorizedHits += 1;
+    const upstream = httpRequest({ hostname: '127.0.0.1', port, path: req.url, method: 'GET', headers: { ...req.headers, host: `127.0.0.1:${port}`, connection: 'Upgrade', upgrade: 'websocket' } });
+    upstream.on('upgrade', (upRes, upSocket, upHead) => {
+      socket.write(`HTTP/1.1 101 Switching Protocols\r\n${Object.entries(upRes.headers).map(([k, v]) => `${k}: ${v}`).join('\r\n')}\r\n\r\n`);
+      if (upHead?.length) socket.write(upHead);
+      upSocket.pipe(socket); socket.pipe(upSocket);
+    });
+    upstream.on('error', () => socket.destroy());
+    if (head?.length) upstream.write(head);
+    upstream.end();
+  });
+  await new Promise(resolve => gate.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise(resolve => gate.close(resolve)));
+  const gatePort = gate.address().port;
+  const cdpEndpoint = `http://127.0.0.1:${gatePort}`;
+  await assert.rejects(JevBrowser.launch({ cdpEndpoint }), error => error.code === 'BROWSER_LAUNCH_FAILED' || error.code === 'CONFIG' || /401|Unauthorized|connect/i.test(String(error.message)), 'missing headers must fail');
+  const core = await JevBrowser.launch({ cdpEndpoint, cdpHeaders: { Authorization: token } });
+  t.after(() => core.close());
+  assert.ok(authorizedHits >= 1, `gate saw Authorization (hits=${authorizedHits})`);
+  await core.goto(site.url);
+  const snap = await core.snapshot();
+  assert.equal(snap.url.replace(/\/$/, ''), site.url.replace(/\/$/, ''));
+});
+
 test('the MCP stdio server launches its lazy browser with CLI context options', async t => {
   const file = await optionsFile({ contextOptions: { viewport: { width: 414, height: 896 }, colorScheme: 'dark' } });
   const transport = new StdioClientTransport({ command: process.execPath, args: [cliFile, 'mcp', '--options-file', file, '--reduced-motion', '--locale', 'ja-JP', '--url', site.url], cwd, env: env(), stderr: 'pipe' });

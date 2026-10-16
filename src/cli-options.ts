@@ -30,9 +30,9 @@ const optionsFileSchema = z.object({
     locale: z.string().min(1).optional(), timezoneId: z.string().min(1).optional(), userAgent: z.string().min(1).optional(),
   }).loose().optional(),
   storageState: z.union([z.string().min(1), z.record(z.string(), z.unknown())]).optional(),
-  userDataDir: z.string().min(1).optional(), cdpEndpoint: z.string().min(1).optional(), wsEndpoint: z.string().min(1).optional(),
+  userDataDir: z.string().min(1).optional(), cdpEndpoint: z.string().min(1).optional(), wsEndpoint: z.string().min(1).optional(), cdpHeaders: z.record(z.string(), z.string()).optional(),
 }).strict();
-type OptionsFile = Pick<BrowserLaunchOptions, 'browser' | 'headless' | 'launchOptions' | 'contextOptions' | 'storageState' | 'userDataDir' | 'cdpEndpoint' | 'wsEndpoint'>;
+type OptionsFile = Pick<BrowserLaunchOptions, 'browser' | 'headless' | 'launchOptions' | 'contextOptions' | 'storageState' | 'userDataDir' | 'cdpEndpoint' | 'wsEndpoint' | 'cdpHeaders'>;
 /** Launch and context settings only; paths inside resolve against the working directory, as flags do. */
 function readOptionsFile(path: string): OptionsFile {
   let text: string;
@@ -85,7 +85,7 @@ export function parseCLI(argv = process.argv.slice(2)) {
     ...file, browser: browserName as BrowserLaunchOptions['browser'], headless: values.headed ? false : file.headless ?? true,
     timeoutMs: positive(values['timeout-ms'], '--timeout-ms'), model: values.model,
     maxElements: positive(values['max-elements'], '--max-elements'), maxTexts: positive(values['max-texts'], '--max-texts'), maxCandidates: positive(values['max-candidates'], '--max-candidates'),
-    cdpEndpoint: values['cdp-endpoint'] ?? file.cdpEndpoint, wsEndpoint: values['ws-endpoint'] ?? file.wsEndpoint, userDataDir: values['user-data-dir'] ?? file.userDataDir,
+    cdpEndpoint: values['cdp-endpoint'] ?? file.cdpEndpoint, wsEndpoint: values['ws-endpoint'] ?? file.wsEndpoint, cdpHeaders: file.cdpHeaders, userDataDir: values['user-data-dir'] ?? file.userDataDir,
     storageState: values['storage-state'] ?? file.storageState, outputDir: values['output-dir'],
     // CLI/MCP uploads have no implicit read root; --file-root . grants the working directory.
     fileRoots: values['file-root'] ?? [], allowEvaluate: capabilities.includes('evaluate'), screenOnly: values['screen-only'], screenFollowPopups: values['screen-follow-popups'],

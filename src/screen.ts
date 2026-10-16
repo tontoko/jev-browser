@@ -82,9 +82,9 @@ const plainContext = new Set(['viewport','screen','deviceScaleFactor','isMobile'
 const redact = (options: object | undefined, plain: Set<string>) => options &&
   Object.fromEntries(Object.entries(options).filter(([, value]) => value !== undefined).map(([name, value]) => [name, plain.has(name) ? value : '[redacted]']));
 function launchEvidence(options: Partial<BrowserLaunchOptions> = {}): Record<string, unknown> | undefined {
-  const { browser, headless, launchOptions, contextOptions, storageState, userDataDir, cdpEndpoint, wsEndpoint } = options;
+  const { browser, headless, launchOptions, contextOptions, storageState, userDataDir, cdpEndpoint, wsEndpoint, cdpHeaders } = options;
   const evidence = Object.entries({ browser, headless, launchOptions: redact(launchOptions, plainLaunch), contextOptions: redact(contextOptions, plainContext),
-    ...Object.fromEntries(Object.entries({ storageState, userDataDir, cdpEndpoint, wsEndpoint }).filter(([, value]) => value !== undefined).map(([name]) => [name, '[redacted]'])) })
+    ...Object.fromEntries(Object.entries({ storageState, userDataDir, cdpEndpoint, wsEndpoint, cdpHeaders }).filter(([, value]) => value !== undefined).map(([name]) => [name, '[redacted]'])) })
     .filter(([, value]) => value !== undefined);
   return evidence.length ? Object.fromEntries(evidence) : undefined;
 }
