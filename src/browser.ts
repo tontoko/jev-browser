@@ -149,9 +149,20 @@ export class JevBrowser {
       try { const core = new JevBrowser({ ...options, captureDialogs: options.captureDialogs ?? true, page: context.pages()[0] ?? await context.newPage() }); core.ownedCleanup = () => context.close(); return core; }
       catch (error) { await context.close(); throw error; }
     }
-    const browser = await start(() => options.cdpEndpoint ? chromium.connectOverCDP(options.cdpEndpoint)
-      : options.wsEndpoint ? type.connect(options.wsEndpoint)
-      : type.launch({ headless: options.headless ?? true, ...options.launchOptions }));
+    const browser = await start(() => {
+      const headers = options.cdpHeaders;
+      if (options.cdpEndpoint) {
+        return headers
+          ? chromium.connectOverCDP({ endpointURL: options.cdpEndpoint, headers })
+          : chromium.connectOverCDP(options.cdpEndpoint);
+      }
+      if (options.wsEndpoint) {
+        return headers
+          ? type.connect({ wsEndpoint: options.wsEndpoint, headers })
+          : type.connect(options.wsEndpoint);
+      }
+      return type.launch({ headless: options.headless ?? true, ...options.launchOptions });
+    });
     try {
       const attached = !!(options.cdpEndpoint || options.wsEndpoint);
       const existing = attached ? browser.contexts()[0] : undefined;

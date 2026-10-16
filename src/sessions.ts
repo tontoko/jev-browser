@@ -17,7 +17,7 @@ function canonical(value: unknown): unknown {
 }
 /** Everything a session worker fixes at start, including its CLI capabilities. API keys are excluded so rotating one does not strand a session. */
 export function launchOptionsHash(options: BrowserLaunchOptions, capabilities: readonly Capability[] = []): string {
-  const { apiKey: _apiKey, vision, ...rest } = options;
+  const { apiKey: _apiKey, cdpHeaders: _cdpHeaders, vision, ...rest } = options;
   const fixed = { ...rest, ...(vision && typeof vision === 'object' && !('describe' in vision) ? { vision: { ...vision, apiKey: undefined } } : {}) };
   return createHash('sha256').update(JSON.stringify(canonical({ ...fixed, capabilities: [...capabilities].sort() }))).digest('hex');
 }
