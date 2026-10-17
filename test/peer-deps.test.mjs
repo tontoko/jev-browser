@@ -9,7 +9,10 @@ test('Playwright and zod are peer dependencies the caller shares, not bundled co
   assert.equal(pkg.dependencies?.playwright, undefined);
   assert.equal(pkg.dependencies?.['playwright-core'], undefined);
   assert.equal(pkg.dependencies?.zod, undefined);
-  assert.deepEqual(pkg.peerDependencies, { 'playwright-core': '>=1.62.0 <2', zod: '^4.2.0' });
+  assert.deepEqual(pkg.peerDependencies, { '@cloudflare/playwright': '^1.3.6', 'playwright-core': '>=1.62.0 <2', zod: '^4.2.0' });
+  // @cloudflare/playwright is only for the ./workers entry (Cloudflare Browser Run).
+  assert.deepEqual(pkg.peerDependenciesMeta, { '@cloudflare/playwright': { optional: true } });
+  assert.equal(pkg.devDependencies['@cloudflare/playwright'], '1.3.6');
   // Development pins the newest supported versions exactly.
   assert.equal(pkg.devDependencies['playwright-core'], '1.63.0');
   assert.equal(pkg.devDependencies['@playwright/test'], '1.63.0');
@@ -27,7 +30,7 @@ test('source imports playwright-core, never the playwright package', async () =>
 
 test('an unsupported playwright-core is a CONFIG error naming the supported range', async () => {
   const { assertPlaywrightCore, playwrightCoreVersion } = await import('../dist/playwright-core-version.js');
-  assert.equal(playwrightCoreVersion, createRequire(import.meta.url)('playwright-core/package.json').version);
+  assert.equal(playwrightCoreVersion(), createRequire(import.meta.url)('playwright-core/package.json').version);
   for (const version of ['1.62.0', '1.63.0', '1.99.3', '1.64.0-alpha-2026-09-01']) assert.doesNotThrow(() => assertPlaywrightCore(version), version);
   for (const version of ['1.61.9', '1.49.0', '0.63.0', '2.0.0', 'garbage']) {
     assert.throws(() => assertPlaywrightCore(version), error => {

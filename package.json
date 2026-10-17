@@ -1,6 +1,6 @@
 {
   "name": "@tontoko/jev-browser",
-  "version": "0.17.0",
+  "version": "0.18.0",
   "description": "Grounded Jev browser automation: a shared Playwright SDK, persistent CLI, and MCP server",
   "type": "module",
   "license": "Apache-2.0",
@@ -19,6 +19,10 @@
     "./playwright": {
       "types": "./dist/playwright.d.ts",
       "import": "./dist/playwright.js"
+    },
+    "./workers": {
+      "types": "./dist/workers.d.ts",
+      "import": "./dist/workers.js"
     }
   },
   "bin": {
@@ -39,7 +43,7 @@
     "skills"
   ],
   "scripts": {
-    "build": "tsc && esbuild src/dom.ts --bundle --platform=browser --format=iife --global-name=JevDOM --outfile=dist/dom.bundle.cjs",
+    "build": "tsc && esbuild src/dom.ts --bundle --platform=browser --format=iife --global-name=JevDOM --outfile=dist/dom.bundle.cjs && node scripts/dom-source.mjs",
     "test": "node scripts/test.mjs",
     "check": "npm run build && npm test",
     "test:live": "node --test --test-concurrency=1 --test-timeout=90000 test/live.mjs test/live-adapters.mjs test/live-extended.mjs test/live-release.mjs test/live-goal.mjs test/live-goal-adapters.mjs",
@@ -61,11 +65,18 @@
     "@typesafe-ai/sdk": "0.6.0"
   },
   "peerDependencies": {
+    "@cloudflare/playwright": "^1.3.6",
     "playwright-core": ">=1.62.0 <2",
     "zod": "^4.2.0"
   },
+  "peerDependenciesMeta": {
+    "@cloudflare/playwright": {
+      "optional": true
+    }
+  },
   "devDependencies": {
     "@biomejs/biome": "2.5.14",
+    "@cloudflare/playwright": "1.3.6",
     "@modelcontextprotocol/client": "2.1.0",
     "@playwright/test": "1.63.0",
     "@types/node": "22.20.4",

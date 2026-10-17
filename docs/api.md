@@ -22,6 +22,8 @@ Options include:
 
 Per-operation `signal`, `timeoutMs` and `scope` are available where relevant. The default operation budget is 30 seconds, and 60 seconds for `run` and `resume`. A constructor `timeoutMs` replaces both defaults and is also the timeout of each Jev HTTP request, which is 15 seconds when it is omitted. A per-operation `timeoutMs` sets only that operation's budget. An exhausted budget fails with `TIMEOUT`; an aborted caller `signal` or `close()` fails with `CANCELLED`. Page evaluation has no Playwright timeout, so work stuck in a hung renderer is abandoned about one second after the deadline or cancellation and the Page is released for the next operation. A result that settles before that is returned even if the deadline passed meanwhile, so an executed action is not reported as cancelled. Cancellation does not roll back completed effects. User-supplied callbacks and custom decision engines must honor the signal and remain bounded.
 
+Cloudflare Workers / Agents: `import { launchBrowserRun, attachBrowserRunPage } from '@tontoko/jev-browser/workers'`. `launchBrowserRun(env.BROWSER, { ...JevBrowser options, recording?, keepAlive?, contextOptions? })` returns `{ browser, sessionId }` on a Browser Run browser through `@cloudflare/playwright` (optional peer); closing the JevBrowser closes that browser. `attachBrowserRunPage(page, options)` attaches a caller-owned `@cloudflare/playwright` page. `JevBrowser.launch()`, the CLI and MCP still need Node and playwright-core.
+
 ## Main methods
 
 | Method | Result and purpose |

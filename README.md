@@ -249,6 +249,34 @@ expect(result.status).toBe('complete');
 
 `agent().execute()` delegates to `run()`. An SDK `until` returning literal `true`, or a supplied `expect` assertion, produces caller-verified completion once requested inputs are covered. When both are supplied, both must pass. It should promptly return `false` while work remains. Without caller checks, a fresh matching result record can produce `complete / ui-readback` with explicit evidence coverage. Model-only completion stays `unverified`. Prompt/ambiguous dialogs, missing inputs and budgets stop explicitly. Mutation failures are never automatically retried; see `error.partial` before deciding what to do next.
 
+## Cloudflare Workers and Agents: Browser Run
+
+`@tontoko/jev-browser/workers` runs the SDK inside a Worker, Durable Object or Agent and drives a
+[Cloudflare Browser Run](https://developers.cloudflare.com/browser-run/) browser through its binding. Add
+`@cloudflare/playwright` (optional peer dependency) to the Worker and enable `nodejs_compat`.
+
+```ts
+import { launchBrowserRun } from '@tontoko/jev-browser/workers';
+
+const { browser, sessionId } = await launchBrowserRun(env.BROWSER, {
+  engine,                      // a DecisionEngine (for example over Workers AI)
+  judge,                       // optional ScreenJudge for screenJudge()
+  recording: true,             // Browser Run session recording, readable after the session closes
+  keepAlive: 60_000,
+  contextOptions: { viewport: { width: 1440, height: 900 } },
+});
+try {
+  await browser.goto('https://example.com/');
+  const run = await browser.run('Open the link to learn more about example domains');
+} finally {
+  await browser.close();       // closes the Browser Run browser
+}
+```
+
+`attachBrowserRunPage(page, options)` attaches a Page you opened yourself with `@cloudflare/playwright`; you keep its browser.
+`JevBrowser.launch()`, the CLI and MCP still need Node and playwright-core. `@cloudflare/playwright` is based on an older
+Playwright without AbortSignal options, so on Browser Run cancellation is bounded by Jev's own deadlines.
+
 ## Scope and migration
 
 This is a **functional alternative**, not a binary-compatible re-export of Microsoft or Browserbase packages. Tool configuration, CLI flags, SDK types, and result envelopes have documented differences. [The migration guide](docs/migration.md) maps the supported workflows and remaining boundaries.

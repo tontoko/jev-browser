@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.18.0
+
+- New entry `@tontoko/jev-browser/workers` runs the SDK inside Cloudflare Workers, Durable Objects and Agents against Cloudflare Browser Run: `launchBrowserRun(env.BROWSER, { recording, keepAlive, contextOptions, ... })` through `@cloudflare/playwright` (new optional peer dependency), and `attachBrowserRunPage(page)` for a caller-owned page.
+- The package reads no files at import (the version is a constant, the DOM bundle is embedded as `dist/dom-source.js`), loads `playwright-core` only inside `JevBrowser.launch()`, and sends page functions as source text instead of compiling them with `new Function`, so Wrangler bundles it and workerd runs it.
+- `playwrightCoreVersion` in the internal `playwright-core-version` module is now a function that returns `undefined` where playwright-core cannot be resolved.
+
 ## 0.17.0
 
 - CDP and WebSocket attach accept optional `cdpHeaders` (SDK and `--options-file`): Playwright `connectOverCDP({ endpointURL, headers })` / `connect({ wsEndpoint, headers })`, so authenticated endpoints such as Cloudflare Browser Run work. Header values are redacted from screen evidence and are left out of the session options hash, like `apiKey`, so rotating a token does not strand an open session.
