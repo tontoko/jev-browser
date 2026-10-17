@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 
 const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
@@ -21,11 +22,11 @@ test('./workers is exported and bundles for workerd without playwright-core or c
   assert.deepEqual(pkg.exports['./workers'], { types: './dist/workers.d.ts', import: './dist/workers.js' });
   assert.equal(pkg.peerDependenciesMeta?.['@cloudflare/playwright']?.optional, true);
   const result = await build({
-    entryPoints: [new URL('../dist/workers.js', import.meta.url).pathname], bundle: true, write: false, metafile: true, format: 'esm',
+    entryPoints: ['dist/workers.js'], absWorkingDir: fileURLToPath(new URL('..', import.meta.url)), bundle: true, write: false, metafile: true, format: 'esm',
     platform: 'neutral', conditions: ['workerd', 'worker', 'import'], mainFields: ['module', 'main'],
     external: ['@cloudflare/playwright', 'node:*'], logLevel: 'silent',
   });
-  const inputs = Object.keys(result.metafile.inputs);
+  const inputs = Object.keys(result.metafile.inputs).map(path => path.replaceAll('\\', '/'));
   assert.ok(!inputs.some(path => path.includes('node_modules/playwright-core')), 'playwright-core must not be bundled');
   for (const path of inputs.filter(path => path.startsWith('dist/'))) {
     const source = readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
