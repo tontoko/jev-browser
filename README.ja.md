@@ -112,6 +112,31 @@ CLIの`semantic_locate` / `semantic_compare` / `semantic_assert`と、MCPの`bro
 
 SDK・CLI・MCPで同じ操作を利用できます。エージェントからもこの汎用経路を使い、特定ハーネス専用のadapterは提供しません。[画面操作のAPIと制約](docs/screen-review.md)、[削除された`./pi`経路の移行案内](docs/migration.md#removing-the-pi-adapter-0100)を参照してください。
 
+## Cloudflare Workers・Agents: Browser Run
+
+`@tontoko/jev-browser/workers` は Worker・Durable Object・Agent の中で SDK を動かし、バインディング経由で
+[Cloudflare Browser Run](https://developers.cloudflare.com/browser-run/) のブラウザを操作します。Worker に
+`@cloudflare/playwright`（省略可能な peer dependency）を入れ、`nodejs_compat` を有効にしてください。
+
+```ts
+import { launchBrowserRun } from '@tontoko/jev-browser/workers';
+
+const { browser, sessionId } = await launchBrowserRun(env.BROWSER, {
+  engine, judge, recording: true, keepAlive: 60_000,
+  contextOptions: { viewport: { width: 1440, height: 900 } },
+});
+try {
+  await browser.goto('https://example.com/');
+  await browser.run('Open the link to learn more about example domains');
+} finally {
+  await browser.close();
+}
+```
+
+自分で `@cloudflare/playwright` から開いた Page は `attachBrowserRunPage(page, options)` でつなげます（ブラウザは呼び出し側のもの）。
+`JevBrowser.launch()`・CLI・MCP は引き続き Node と playwright-core が必要です。`@cloudflare/playwright` は AbortSignal の
+オプションを持たない古い Playwright が元なので、Browser Run では中断は Jev 自身の期限で抑えます。
+
 ## 実行と判定の境界
 
 Jevは観測済みの候補から操作を選び、Playwrightが実行します。存在しないセレクターやJavaScriptをモデルに生成させません。ただし、実在する候補の選び間違いまでなくなるわけではありません。

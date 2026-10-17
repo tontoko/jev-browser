@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { domSource } from './dom-source.js';
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import type { ElementHandle, JSHandle, Page, Frame, Locator } from 'playwright-core';
@@ -7,7 +8,17 @@ import { BrowserError, browserError, type BrowserErrorCode } from './errors.js';
 import type * as DOM from './dom.js';
 
 let bundle: string | undefined;
-const source = () => bundle ??= readFileSync(new URL('./dom.bundle.cjs', import.meta.url), 'utf8');
+/**
+ * A page function built from source text, with the arguments of the Function constructor (params..., body) but without compiling it here:
+ * Playwright sends `String(fn)` to the page, so only the page evaluates the text. Cloudflare Workers forbid `new Function`.
+ */
+function pageFunction(...parts: string[]): (...args: any[]) => any {
+  const body = parts.pop() ?? '', text = `function (${parts.join(', ')}) {\n${body}\n}`;
+  const fn = () => { throw new Error('A page function only runs in the page.'); };
+  Object.defineProperty(fn, 'toString', { value: () => text });
+  return fn;
+}
+const source = () => bundle ??= domSource ?? readFileSync(new URL('./dom.bundle.cjs', import.meta.url), 'utf8');
 export function publicURL(value: string): string {
   try { const url = new URL(value); url.username = ''; url.password = ''; url.search = ''; url.hash = ''; return url.href; }
   catch { return '[unavailable URL]'; }
@@ -95,7 +106,7 @@ async function captureOnce(page: Page, options: CaptureOptions): Promise<Capture
       if (recordRoots) owned.push(...recordRoots);
       const excluded = options.exclude?.length ? (await Promise.all(options.exclude.map(selector => frame.locator(`css=${selector}`).elementHandles()))).flat() as ElementHandle<Element>[] : undefined;
       if (excluded) owned.push(...excluded);
-      const observe = new Function('args', `${source()}; return JevDOM.observe(${JSON.stringify(frameOptions)}, args.roots, args.recordRoots, args.excluded);`) as (args: { roots?: Element[]; recordRoots?: Element[]; excluded?: Element[] }) => ReturnType<typeof DOM.observe>;
+      const observe = pageFunction('args', `${source()}; return JevDOM.observe(${JSON.stringify(frameOptions)}, args.roots, args.recordRoots, args.excluded);`) as (args: { roots?: Element[]; recordRoots?: Element[]; excluded?: Element[] }) => ReturnType<typeof DOM.observe>;
       const result = await frame.evaluateHandle(observe, { roots, recordRoots, excluded });
       owned.push(result);
       const observed = await result.evaluate(r => ({ elements: r.elements, texts: r.texts, textKinds:r.textKinds, records: r.records, recordInventoryComplete:r.recordInventoryComplete, busy: r.busy, changeKey: r.changeKey, truncatedElements: r.truncatedElements, truncatedTexts: r.truncatedTexts }));
@@ -164,7 +175,7 @@ export async function validateScopeSyntax(page: Page, scope: string | undefined)
 }
 /** Execute the shipped shared observation predicate, never caller/model-generated code. */
 export async function waitForFrameProgress(frame: Frame, baseline: string, timeoutMs: number, signal: AbortSignal, roots?: ElementHandle<Element>[]): Promise<void> {
-  const changed = new Function('args', `${source()}; return JevDOM.progressChanged(args.previous, args.roots);`) as (args: { previous: string; roots?: Element[] }) => boolean;
+  const changed = pageFunction('args', `${source()}; return JevDOM.progressChanged(args.previous, args.roots);`) as (args: { previous: string; roots?: Element[] }) => boolean;
   const handle = await frame.waitForFunction(changed,{ previous: baseline, roots },{polling:Math.min(100,Math.max(1,Math.floor(timeoutMs/4))),timeout:timeoutMs,signal});
   await handle.dispose();
 }
@@ -172,7 +183,7 @@ export async function waitForFrameProgress(frame: Frame, baseline: string, timeo
 export async function verifyTarget(ref: ElementRef, signal?: AbortSignal): Promise<void> {
   let current: ReturnType<typeof DOM.describe>;
   try {
-    const describe = new Function('element', `${source()}; return JevDOM.describe(element);`) as (element: Element) => ReturnType<typeof DOM.describe>;
+    const describe = pageFunction('element', `${source()}; return JevDOM.describe(element);`) as (element: Element) => ReturnType<typeof DOM.describe>;
     current = await ref.handle.evaluate(describe);
   } catch (error) {
     signal?.throwIfAborted();
@@ -189,7 +200,7 @@ export async function withinCapturedScope(page: Page, captured: Captured, ref: {
   const boundary = [...captured.frames.values()].find(entry => entry.frame === ref.frame);
   if (!boundary || ref.frame.url() !== boundary.rawURL) return false;
   if (!boundary.roots) return true;
-  const inside = new Function('element', 'roots', `${source()}; return element.isConnected && roots.every(root => root.isConnected) && JevDOM.withinSemanticRoots(element, roots);`) as (element: Element, roots: Element[]) => boolean;
+  const inside = pageFunction('element', 'roots', `${source()}; return element.isConnected && roots.every(root => root.isConnected) && JevDOM.withinSemanticRoots(element, roots);`) as (element: Element, roots: Element[]) => boolean;
   return ref.handle.evaluate(inside, boundary.roots).catch(() => false);
 }
 /** Re-check observed-target authority after an await: Page, document, frame, scope and element identity. */
@@ -228,7 +239,7 @@ export async function readbackIsCurrent(page: Page, captured: Captured, recordId
 /** Wait locally for an owned exact option, then capture that actual node and its control. */
 export async function captureComboboxChoice(page: Page, ref: ElementRef, value: string,
   limits: {maxElements:number;maxTexts:number}, operation: {signal:AbortSignal;timeoutMs:number}, anchor?: Captured): Promise<Captured> {
-  const ready = new Function('args', `${source()}; return !args.element.isConnected || JevDOM.matchingComboboxOptions(args.element,args.value).length > 0;`) as (args:{element:Element;value:string})=>boolean;
+  const ready = pageFunction('args', `${source()}; return !args.element.isConnected || JevDOM.matchingComboboxOptions(args.element,args.value).length > 0;`) as (args:{element:Element;value:string})=>boolean;
   const args={element:ref.handle,value};let appeared=false;
   try {
     const wait=await ref.frame.waitForFunction(ready,args,{timeout:operation.timeoutMs,signal:operation.signal,polling:Math.min(50,Math.max(1,Math.floor(operation.timeoutMs/4)))});
@@ -241,7 +252,7 @@ export async function captureComboboxChoice(page: Page, ref: ElementRef, value: 
   if(!appeared)appeared=await ref.frame.evaluate(ready,args).catch(()=>false);
   if(!appeared)throw new BrowserError('NO_MATCH','No enabled exact option appeared in the bound control\'s declared popup.');
   if(!await ref.handle.evaluate(el=>el.isConnected))throw new BrowserError('STALE_TARGET','The combobox was replaced while its options loaded.');
-  const matching=new Function('element',`${source()}; return JevDOM.matchingComboboxOptions(element,${JSON.stringify(value)});`) as (element:Element)=>Element[];
+  const matching=pageFunction('element',`${source()}; return JevDOM.matchingComboboxOptions(element,${JSON.stringify(value)});`) as (element:Element)=>Element[];
   const result=await ref.handle.evaluateHandle(matching);
   const properties=await result.getProperties();
   const handles=[...properties.values()];
@@ -266,13 +277,13 @@ export async function captureRegions(page:Page):Promise<RegionIndex>{
   const dispose=async()=>{await Promise.allSettled(owned.splice(0).map(handle=>handle.dispose()));refs.clear();};
   try{
     for(const [frameIndex,frame]of page.frames().entries()){
-      const find=new Function(`${source()}; return JevDOM.regionNodes();`) as ()=>Element[];
+      const find=pageFunction(`${source()}; return JevDOM.regionNodes();`) as ()=>Element[];
       const result=await frame.evaluateHandle(find);owned.push(result);
       const props=await result.getProperties();owned.push(...props.values());
       for(const handle of props.values()){
         const element=handle.asElement() as ElementHandle<Element>|null;if(!element)continue;
         if(data.length>=64)throw new BrowserError('OBSERVATION_LIMIT','More than 64 semantic regions are present. A caller scope is required.');
-        const describe=new Function('element',`${source()}; return JevDOM.regionDescription(element);`) as (element:Element)=>ReturnType<typeof DOM.describe>;
+        const describe=pageFunction('element',`${source()}; return JevDOM.regionDescription(element);`) as (element:Element)=>ReturnType<typeof DOM.describe>;
         const described=await element.evaluate(describe),id=`region_${frameIndex}_${data.length}`;
         const info={...described.info,id,frame:frameIndex};refs.set(id,{frame,handle:element,info,signature:described.signature});
         data.push({id,role:info.role,name:info.name,context:info.context,frame:frameIndex});
@@ -284,7 +295,7 @@ export async function captureRegions(page:Page):Promise<RegionIndex>{
 export async function verifyOwnedOption(control:ElementRef,option:ElementRef):Promise<void>{
   await verifyTarget(control);
   if(control.frame!==option.frame)throw new BrowserError('STALE_TARGET','Option and its owner belong to different frames.');
-  const check=new Function('element','option',`${source()}; const matches=JevDOM.matchingComboboxOptions(element,${JSON.stringify(option.info.name)}); return matches.length===1&&matches[0]===option;`) as (element:Element,option:Element)=>boolean;
+  const check=pageFunction('element','option',`${source()}; const matches=JevDOM.matchingComboboxOptions(element,${JSON.stringify(option.info.name)}); return matches.length===1&&matches[0]===option;`) as (element:Element,option:Element)=>boolean;
   if(!await control.handle.evaluate(check,option.handle))throw new BrowserError('STALE_TARGET','The option no longer uniquely belongs to the observed combobox.');
 }
 
@@ -302,7 +313,7 @@ export async function currentSemanticEvidence(page: Page, captured: Captured, ev
       return {...evidence};
     }
     if(!text)return;
-    const read = new Function('element','kind', `${source()}; return JevDOM.readSemanticText(element,kind);`) as (element:Element,kind:DOM.SemanticTextKind)=>ReturnType<typeof DOM.readSemanticText>;
+    const read = pageFunction('element','kind', `${source()}; return JevDOM.readSemanticText(element,kind);`) as (element:Element,kind:DOM.SemanticTextKind)=>ReturnType<typeof DOM.readSemanticText>;
     const value = await ref.handle.evaluate(read,text.kind);
     return value ? {sourceId:evidence.sourceId,frame:evidence.frame,...value} : undefined;
   } catch { return; }
@@ -328,7 +339,7 @@ export async function readLocatorEvidence(page:Page,locator:Locator,property:Sem
     if(!frame||page.url()!==rawURL)throw new BrowserError('STALE_TARGET','The semantic Locator page changed during observation.');
     const frameURL=frame.url();
     if(options.scope)roots.push(...await scopeHandles(frame,options.scope));
-    const read=new Function('element','args',`${source()}; return JevDOM.readLocatorValue(element,args);`) as (element:Element,args:{property:string;attribute?:string;roots?:Element[]})=>ReturnType<typeof DOM.readLocatorValue>;
+    const read=pageFunction('element','args',`${source()}; return JevDOM.readLocatorValue(element,args);`) as (element:Element,args:{property:string;attribute?:string;roots?:Element[]})=>ReturnType<typeof DOM.readLocatorValue>;
     const value=await handle.evaluate(read,{property,attribute,...(options.scope?{roots}:{})});
     options.signal.throwIfAborted();
     if(value.error)throw new BrowserError(value.error as BrowserErrorCode,value.error==='INVALID_ARGUMENT'?'The Locator does not support the requested property.':'No visible semantic evidence is available within the caller scope.');
@@ -342,7 +353,7 @@ export async function semanticWithinScope(ref:{frame:Frame;handle:ElementHandle<
   if(!scope)return true;
   const roots=await scopeHandles(ref.frame,scope);
   try{
-    const check=new Function('element','roots',`${source()}; return element.isConnected && JevDOM.withinSemanticRoots(element,roots);`) as (element:Element,roots:Element[])=>boolean;
+    const check=pageFunction('element','roots',`${source()}; return element.isConnected && JevDOM.withinSemanticRoots(element,roots);`) as (element:Element,roots:Element[])=>boolean;
     return await ref.handle.evaluate(check,roots);
   }finally{await Promise.allSettled(roots.map(root=>root.dispose()));}
 }

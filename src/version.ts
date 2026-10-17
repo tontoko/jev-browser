@@ -1,2 +1,2 @@
-import { readFileSync } from 'node:fs';
-export const version: string = (JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string }).version;
+/** This package's version. Kept as a constant so the SDK loads where no package files exist (Cloudflare Workers); a test keeps it equal to package.json. */
+export const version = '0.17.0';

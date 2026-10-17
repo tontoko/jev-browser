@@ -1,7 +1,7 @@
 import { runGoal, type PendingCommitState, type RunSeed, type ResolvedInput } from './runner.js';
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
-import { chromium, firefox, webkit, type Page, type ElementHandle } from 'playwright-core';
+import type { Page, ElementHandle } from 'playwright-core';
 import { z } from 'zod';
 import type { EntryType } from '@typesafe-ai/sdk';
 import { DECISION_REQUEST_BYTES, JevDecisionEngine, decisionRequestBytes, type DecisionEngine, type DecisionRequest } from './decision.js';
@@ -21,6 +21,8 @@ import type { ActionPlan, ActOptions, ActResult, BrowserOptions, BrowserLaunchOp
 
 interface Operation { signal: AbortSignal; budget: AbortSignal; deadline: number; timeoutMs: number; effect?: boolean }
 const pageLeases = new WeakMap<Page, JevBrowser>();
+const externalPages = new WeakSet<Page>();
+const playwrightCoreModule: string = 'playwright-core';
 // Page evaluation has no Playwright timeout. After cancellation, work that ignores the signal gets this long to unwind.
 const SETTLE_GRACE_MS = 1_000;
 // Paused goals kept per core; the least recently used is dropped first.
@@ -108,7 +110,9 @@ export class JevBrowser {
   private readonly startedAt = new Date().toISOString();
 
   constructor(options: BrowserOptions) {
-    assertPlaywrightCore();
+    // A Page from another Playwright build (Cloudflare Browser Run through @cloudflare/playwright) is attached by attachExternal,
+    // which skips the playwright-core check: that build is not playwright-core and jev's own deadline bounds cancellation.
+    if (!externalPages.has(options.page)) assertPlaywrightCore();
     this.currentPage = options.page;
     const { apiKey, vision, judge, ...rest } = options;
     this.options = rest; this.#apiKey = apiKey;
@@ -135,12 +139,25 @@ export class JevBrowser {
     if(this.active){pageLeases.set(page,this);this.leasedPages.add(page);}
     await this.invalidate(); this.currentPage = page;
   }
+  /**
+   * @internal Attach a Page from a Playwright build other than playwright-core (see `@tontoko/jev-browser/workers`).
+   * `cleanup` runs on close, like the browser launch() owns.
+   */
+  static attachExternal(options: BrowserOptions, cleanup: () => Promise<void>): JevBrowser {
+    externalPages.add(options.page);
+    const core = new JevBrowser(options);
+    core.ownedCleanup = cleanup;
+    return core;
+  }
   static async launch(options: BrowserLaunchOptions = {}): Promise<JevBrowser> {
     assertPlaywrightCore();
     if ([options.userDataDir, options.cdpEndpoint, options.wsEndpoint].filter(Boolean).length > 1)
       throw new BrowserError('CONFIG', 'Choose only one persistent profile, CDP endpoint, or WebSocket endpoint.');
     const name = options.browser ?? process.env.JEV_BROWSER ?? 'chromium';
     if (!['chromium', 'firefox', 'webkit'].includes(name)) throw new BrowserError('CONFIG', 'Browser must be chromium, firefox or webkit.');
+    // Loaded here, not at import: a caller that brings its own Page (for example from @cloudflare/playwright in Workers) never needs it.
+    // The specifier is a variable so bundlers (Wrangler/esbuild) do not pull playwright-core into a Worker that never launches.
+    const { chromium, firefox, webkit } = await import(playwrightCoreModule) as typeof import('playwright-core');
     const type = { chromium, firefox, webkit }[name as 'chromium' | 'firefox' | 'webkit'];
     const start = <T>(open: () => Promise<T>): Promise<T> => open().catch(error => { throw launchError(error, name); });
     const contextOptions = { ...options.contextOptions, ...(options.storageState ? { storageState: options.storageState } : {}) };

@@ -329,7 +329,7 @@ export class ScreenController {
     const page = this.page(), browser = page.context().browser(), launch = launchEvidence(this.launch);
     return JSON.stringify({
       action: { id: randomUUID(), kind: 'header', startedAt: this.startedAt, durationMs: 0, outcome: 'observed' }, input: {}, frames: [],
-      header: { jevBrowser: version, playwright: playwrightCoreVersion, ...(browser ? { browser: { name: browser.browserType().name(), version: browser.version() } } : {}),
+      header: { jevBrowser: version, playwright: playwrightCoreVersion() ?? 'unresolved', ...(browser ? { browser: { name: browser.browserType().name(), version: browser.version() } } : {}),
         viewport: page.viewportSize(), ...(launch ? { launch } : {}) },
     })+'\n';
   }
