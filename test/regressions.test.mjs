@@ -133,3 +133,41 @@ test('repeated unproductive confirmation openers stay bounded by the step budget
   assert.equal(result.status,'stopped');
   assert.equal(result.reason,'step-limit');
 });
+test('a submit chosen before quoted inputs are filled is sent back once, then the fields fill and the form saves',async t=>{
+  const page=await browser.newPage();
+  await page.setContent(`<form id="f"><label>Your name<input name="name" required></label>
+    <label>Email address<input name="email" type="email" required></label><button>Get tickets</button></form><p id="out"></p>
+    <script>document.getElementById('f').onsubmit=e=>{e.preventDefault();document.getElementById('out').textContent='saved '+new FormData(e.target).get('name');};</script>`);
+  const decider=engine((question,request,name)=>{
+    if(name.startsWith('effect_'))return request.state.actions?.[name.slice('effect_'.length)]?.target?.name==='Get tickets'?'commit':'advance';
+    if(name!=='action')return '__none__';
+    const filled=new Set(request.state.history.filter(step=>step.kind==='fill').map(step=>step.target?.name));
+    const premature=!decider.requests.some(r=>r.state.submitRefused);
+    return candidate=>{
+      if(premature)return candidate?.kind==='click'&&candidate.target?.name==='Get tickets';
+      if(!filled.has('Your name'))return candidate?.kind==='fill'&&candidate.target?.name==='Your name'&&candidate.valueKey==='quoted_0';
+      if(!filled.has('Email address'))return candidate?.kind==='fill'&&candidate.target?.name==='Email address'&&candidate.valueKey==='quoted_1';
+      return candidate?.kind==='click'&&candidate.target?.name==='Get tickets';
+    };
+  });
+  const core=new JevBrowser({page,engine:decider});
+  t.after(async()=>{await core.close();await page.close();});
+  const result=await core.run('Book in the name "Mika" (the first quoted value) with "mika@example.test" (the second quoted value).',{settleTimeoutMs:250,timeoutMs:8000,until:page=>page.evaluate(()=>document.getElementById('out').textContent==='saved Mika')});
+  assert.equal(result.status,'complete');
+  assert.ok(decider.requests.some(request=>request.state.submitRefused?.form==='invalid'));
+});
+test('a second premature submit with no step between still stops missing-input',async t=>{
+  const page=await browser.newPage();
+  await page.setContent('<form><label>Your name<input name="name" required></label><button>Get tickets</button></form>');
+  const decider=engine((question,request,name)=>{
+    if(name.startsWith('effect_'))return 'commit';
+    if(name==='action')return candidate=>candidate?.kind==='click'&&candidate.target?.name==='Get tickets';
+    return '__none__';
+  });
+  const core=new JevBrowser({page,engine:decider});
+  t.after(async()=>{await core.close();await page.close();});
+  const result=await core.run('Book in the name "Mika".',{settleTimeoutMs:150,timeoutMs:6000,until:()=>false});
+  assert.equal(result.status,'stopped');
+  assert.equal(result.reason,'missing-input');
+  assert.equal(decider.requests.filter(request=>request.state.submitRefused).length>=1,true);
+});

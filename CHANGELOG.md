@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.18.2
+
+- `run` no longer stops `missing-input` the first time the actor chooses a submission while the form is still invalid or supplied current-stage inputs are unapplied, as long as the form offers a way to fill them (a fill candidate for a goal's quoted values, or a binding question for `values`). The submission is not executed; the same screen is sent back for one more decision whose state carries `submitRefused` (`{ form: 'invalid' }` or `{ inputs: [paths] }`). A second premature submission with no step in between still stops `missing-input`.
 ## 0.18.1
 
 - `run` with `until` no longer ends `unverified / condition-unmet` when a `commit`-classified control instead opens an in-page confirmation UI: with no save evidence, a quiet settle window and the caller condition still false, the changed screen is sent back to the actor for a fresh decision (the same `callerCompletion: false` send-back as a save read through without the goal achieved), so the confirmation control the click made visible can be decided on. Repeated unproductive openers stay bounded by `maxSteps`. Reconciling a resumed unknown save is unchanged: it still returns `unverified` without a new browser mutation.
