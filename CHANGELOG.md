@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.18.1
+
+- `run` with `until` no longer ends `unverified / condition-unmet` when a `commit`-classified control instead opens an in-page confirmation UI: with no save evidence, a quiet settle window and the caller condition still false, the changed screen is sent back to the actor for a fresh decision (the same `callerCompletion: false` send-back as a save read through without the goal achieved), so the confirmation control the click made visible can be decided on. Repeated unproductive openers stay bounded by `maxSteps`. Reconciling a resumed unknown save is unchanged: it still returns `unverified` without a new browser mutation.
 ## 0.18.0
 
 - New entry `@tontoko/jev-browser/workers` runs the SDK inside Cloudflare Workers, Durable Objects and Agents against Cloudflare Browser Run: `launchBrowserRun(env.BROWSER, { recording, keepAlive, contextOptions, ... })` through `@cloudflare/playwright` (new optional peer dependency), and `attachBrowserRunPage(page)` for a caller-owned page.
