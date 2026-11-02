@@ -12,7 +12,7 @@ before(async () => {
   cwd = await mkdtemp(join(tmpdir(), 'jev-session-test-'));
   service = await httpServer((req, res) => { res.setHeader('Content-Type', 'text/html; charset=utf-8'); res.end(`<h1>Pending</h1><label>Name<input></label><button onclick="document.querySelector('h1').textContent=document.querySelector('input').value">Save</button>`); });
 });
-after(async () => { await service?.close(); await rm(cwd, { recursive: true, force: true }); });
+after(async () => { await service?.close(); await rm(cwd, { recursive: true, force: true, maxRetries: 8, retryDelay: 125 }); });
 const cliFile = fileURLToPath(new URL('../dist/cli.js', import.meta.url));
 async function cli(args, input = '') {
   return new Promise((resolve, reject) => {

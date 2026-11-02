@@ -34,7 +34,7 @@ test('LIVE release: persistent CLI performs a real AI operation across separate 
    const timer = setTimeout(() => { child.kill('SIGKILL'); reject(new Error('Live session CLI did not finish')); }, 60000);
    child.once('error', e => { clearTimeout(timer); reject(e); }); child.once('close', code => { clearTimeout(timer); resolve({ code, stdout, stderr }); });
  });
- t.after(async () => { await cli(['close', '--session', 'live']); await site.close(); await rm(directory, { recursive: true, force: true }); });
+ t.after(async () => { await cli(['close', '--session', 'live']); await site.close(); await rm(directory, { recursive: true, force: true, maxRetries: 8, retryDelay: 125 }); });
  let r = await cli(['open', site.url, '--session', 'live']); assert.equal(r.code, 0, r.stdout + r.stderr);
  r = await cli(['act', 'Fill the Name field with name.', '--values', JSON.stringify({ name: 'Live CLI Student' }), '--session', 'live']); assert.equal(r.code, 0, r.stdout + r.stderr);
  const model = JSON.parse(r.stdout).result.plan.decision.model;

@@ -21,7 +21,7 @@ before(async () => {
   await writeFile(join(cwd, 'upload.txt'), 'upload content');
   service = await httpServer((req, res) => { res.setHeader('Content-Type', 'text/html; charset=utf-8'); res.end('<h1>Caps</h1><input type=file>'); });
 });
-after(async () => { await service?.close(); await rm(cwd, { recursive: true, force: true }); });
+after(async () => { await service?.close(); await rm(cwd, { recursive: true, force: true, maxRetries: 8, retryDelay: 125 }); });
 async function cli(args) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [cliFile, ...args], { cwd, env: { ...process.env, JEV_API_KEY: '', TYPESAFE_API_KEY: '', JEV_SESSION_DIR: join(cwd, 'sessions') }, stdio: ['ignore', 'pipe', 'pipe'] });

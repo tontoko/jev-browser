@@ -1,6 +1,6 @@
 # Observed progress and supplied input resolution
 
-The runtime waits on the same visible text eligibility it uses for observation. A result in a paragraph, inline span, definition value or output element must not require a special status role to be noticed. Native checked state and visible link destinations also participate. Waiting itself does not ask the model whether work succeeded: caller conditions and result evidence still decide that. Before returning `condition-unmet` after a quiet settle window, the current caller condition is checked again. No save is replayed to compensate for a missed observation.
+The runtime waits on the same visible text eligibility it uses for observation. A result in a paragraph, inline span, definition value or output element must not require a special status role to be noticed. Native checked state and visible link destinations also participate. Waiting itself does not ask the model whether work succeeded: caller conditions and result evidence still decide that. Before returning `condition-unmet` after a quiet settle window, the current caller condition is checked again. When the attempted control was classified `commit` but instead opened a confirmation UI, `run` with `until` sends the changed screen back to the actor (`callerCompletion: false`) rather than ending, so the confirmation control it made visible can be decided on; a resumed unknown save still reconciles to `unverified` without a new browser mutation. No save is replayed to compensate for a missed observation.
 
 ## Exact inputs remain private by default
 

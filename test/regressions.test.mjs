@@ -98,3 +98,38 @@ test('missing optional and nullable fields still remain absent rather than inven
   const result=await core.extract('Amounts',z.object({optional:z.number().optional(),nullable:z.number().nullable()}));
   assert.deepEqual(result.data,{nullable:null});assert.deepEqual(result.evidence,{});
 });
+test('a commit-classified confirmation opener hands the changed screen back instead of ending condition-unmet',async t=>{
+  const page=await browser.newPage();
+  await page.setContent(`<p>Lesson end review</p>
+    <button id="open" type="button">End lesson</button>
+    <div id="confirm" hidden><p>End this lesson?</p><button id="confirm-save" type="button">Confirm</button></div>
+    <script>
+      window.saved=false;
+      document.getElementById('open').addEventListener('click',()=>{document.getElementById('confirm').hidden=false;});
+      document.getElementById('confirm-save').addEventListener('click',()=>{window.saved=true;document.getElementById('confirm').hidden=true;});
+    </script>`);
+  const decider=engine((question,request,name)=>{
+    if(name==='action')return candidate=>candidate?.kind==='click'&&candidate.target?.name===(decider.requests.length>1?'Confirm':'End lesson');
+    if(name.startsWith('effect_'))return request.state.actions?.[name.slice('effect_'.length)]?.target?.name==='End lesson'?'commit':'advance';
+    return '__none__';
+  });
+  const core=new JevBrowser({page,engine:decider});
+  t.after(async()=>{await core.close();await page.close();});
+  const result=await core.run('End the lesson.',{settleTimeoutMs:250,timeoutMs:6000,until:page=>page.evaluate(()=>window.saved===true)});
+  assert.equal(result.status,'complete');
+  assert.equal(await page.evaluate(()=>window.saved),true);
+});
+test('repeated unproductive confirmation openers stay bounded by the step budget',async t=>{
+  const page=await browser.newPage();
+  await page.setContent('<button id="open" type="button">Save</button>');
+  const decider=engine((question,request,name)=>{
+    if(name==='action')return candidate=>candidate?.kind==='click'&&candidate.target?.name==='Save';
+    if(name.startsWith('effect_'))return 'commit';
+    return '__none__';
+  });
+  const core=new JevBrowser({page,engine:decider});
+  t.after(async()=>{await core.close();await page.close();});
+  const result=await core.run('Save once.',{settleTimeoutMs:150,timeoutMs:6000,maxSteps:3,until:()=>false});
+  assert.equal(result.status,'stopped');
+  assert.equal(result.reason,'step-limit');
+});

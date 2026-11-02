@@ -167,7 +167,7 @@ export async function runGoal(host: RunHost, instruction: string, options: RunOp
     host.rememberCheckpointAction?.(actionKey);verifiedActionKeys.add(actionKey);
     commit=undefined;activeRegions.clear();
   }
-  async function readCommitted(before: Map<string,number>|undefined, actionKey: string): Promise<RunResult | undefined> {
+  async function readCommitted(before: Map<string,number>|undefined, actionKey: string, reconcile = false): Promise<RunResult | undefined> {
     if(await callerCondition()){checkpoint(verification!,actionKey);return finish('complete','verified');}
     if(!before&&!options.until&&!options.expect)return finish('unverified','observation-limit');
     let observed=await capture('readback');
@@ -199,6 +199,12 @@ export async function runGoal(host: RunHost, instruction: string, options: RunOp
     }
     if(await callerCondition()){checkpoint(verification!,actionKey);return finish('complete','verified');}
     if(options.expect&&!options.until&&await callerAssertions()){checkpoint(verification!,actionKey);return finish('complete','verified');}
+    // A commit-classified control can instead open a confirmation UI: the settle window went quiet
+    // with no verified record and the caller condition still false. Hand the changed screen back to
+    // the actor rather than ending the run, so the confirmation step it just made visible can be
+    // decided on; its steps stay bounded by the run's own budgets. Reconciling a resumed unknown
+    // save keeps returning unknown instead: a resume makes no new browser mutation.
+    if(options.until&&!reconcile){verification=undefined;callerRejectedDone=true;return undefined;}
     return finish('unverified',options.until?'condition-unmet':'effect-unknown');
   }
   try {
@@ -208,7 +214,7 @@ export async function runGoal(host: RunHost, instruction: string, options: RunOp
         throw new BrowserError('CONTINUATION_CONFLICT','Pending commit inputs are missing.');
       for(const input of inputs)if(paths.has(input.path))input.applied=true;
       commit={id:pending.effectId,kind:'commit',status:'unknown'};effects.push(commit);
-      const reconciled=await readCommitted(pending.before?new Map(pending.before):undefined,pending.actionKey);
+      const reconciled=await readCommitted(pending.before?new Map(pending.before):undefined,pending.actionKey,true);
       if(reconciled)return reconciled;
     }
     let lastRequest='';
