@@ -67,7 +67,11 @@ export async function capture(page: Page, options: CaptureOptions): Promise<Capt
       options.signal?.throwIfAborted();
       const wait = Math.min(2_000, Math.floor((options.deadline ?? Infinity) - performance.now()));
       if (attempt >= 3 || wait <= 0) throw new BrowserError('STALE_SNAPSHOT', 'Page kept navigating while it was being observed. Observe again.', { retryable: true });
-      await page.waitForLoadState('domcontentloaded', { timeout: wait, ...(options.signal ? { signal: options.signal } : {}) }).catch(() => undefined);
+      const signal = options.signal ? { signal: options.signal } : {};
+      await page.waitForLoadState('domcontentloaded', { timeout: wait, ...signal }).catch(() => undefined);
+      // The load state can already hold while the document has no root element, so also wait for one within what is left of the budget.
+      const left = Math.floor((options.deadline ?? Infinity) - performance.now());
+      if (left > 0) await page.waitForFunction(() => document.documentElement !== null, undefined, { timeout: Math.min(wait, left), ...signal }).catch(() => undefined);
       options.signal?.throwIfAborted();
     }
   }
@@ -80,10 +84,14 @@ async function captureOnce(page: Page, options: CaptureOptions): Promise<Capture
   const owned: JSHandle[] = [];
   const dispose = async () => { await Promise.allSettled(owned.splice(0).map(handle => handle.dispose())); refs.clear(); textRefs.clear(); frames.clear(); };
   const rawURL = page.url();
+  const title = await page.title();
+  // A document without a root element is one whose replacement has not been parsed yet, so it is retaken like any other navigation.
+  const scroll = await page.evaluate(() => { const root = document.documentElement; return root && { y: window.scrollY, maxY: Math.max(0, root.scrollHeight - window.innerHeight), height: window.innerHeight }; });
+  if (!scroll) throw new BrowserError('STALE_SNAPSHOT', 'Page was replaced while it was being observed. Observe again.', { retryable: true });
   const data: Snapshot = {
-    id: randomUUID(), url: publicURL(rawURL), title: await page.title(), elements: [], texts: [], records: [],
+    id: randomUUID(), url: publicURL(rawURL), title, elements: [], texts: [], records: [],
     truncated: false, truncatedElements: false, truncatedTexts: false, recordInventoryComplete:true,
-    scroll: await page.evaluate(() => ({ y: window.scrollY, maxY: Math.max(0, document.documentElement.scrollHeight - window.innerHeight), height: window.innerHeight })),
+    scroll,
   };
   let scopeFound = false;
   // Selection roots belong to the caller and may be released before this capture is; keep our own handles to the same elements.

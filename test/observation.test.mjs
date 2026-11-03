@@ -13,6 +13,7 @@ let browser;
 before(async()=>{browser=await fixtureBrowser();});
 after(async()=>{await browser?.close();});
 const forbidden={decide(){throw new Error('This observation must not reach a decision request.');}};
+const bound=(target,key)=>{const value=Reflect.get(target,key);return typeof value==='function'?value.bind(target):value;};
 const long='Terms '+'x'.repeat(994);
 
 // Schedule a real browser change between two reads of one capture; the browser outcome is not simulated.
@@ -53,6 +54,21 @@ test('a URL change during capture is retaken instead of failing with STALE_SNAPS
   const {core}=await interrupted(t,page=>page.evaluate(()=>history.pushState({},'','/moved')));
   const snapshot=await core.snapshot();
   assert.equal(new URL(snapshot.url).pathname,'/moved');assert.ok(snapshot.texts.some(source=>source.text==='First page'));
+});
+test('a capture that finds the document without a root element waits for the page to load and captures again',async t=>{
+  const page=await browser.newPage();await page.setContent('<h1>First page</h1><button>Start</button>');t.after(()=>page.close());
+  // document.open() leaves the document with no root element until the replacement is written, as a navigation in flight does.
+  let replaced=false;
+  const racing=new Proxy(page,{get(target,key){
+    if(key!=='evaluate')return bound(target,key);
+    return async(...args)=>{
+      if(!replaced){replaced=true;await target.evaluate(()=>{document.open();setTimeout(()=>{document.write('<h1>Next page</h1><button>Continue</button>');document.close();},200);});}
+      return target.evaluate(...args);
+    };
+  }});
+  const observed=await capture(racing,{maxElements:120,maxTexts:160});t.after(()=>observed.dispose());
+  assert.ok(observed.data.texts.some(source=>source.text==='Next page'));
+  assert.deepEqual(observed.data.elements.map(element=>element.name),['Continue']);
 });
 test('a page that keeps navigating fails with STALE_SNAPSHOT after bounded retries',async t=>{
   let changes=0;
