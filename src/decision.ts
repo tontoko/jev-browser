@@ -24,6 +24,12 @@ export interface JevOptions {
   model?: string;
   timeoutMs?: number;
   fetch?: Fetch;
+  /**
+   * Request body compression. Off by default: bodies are sent as plain JSON. `'zstd'` sends bodies of 1 KiB or more
+   * zstd-compressed with `Content-Encoding: zstd`; use it only with an endpoint that decodes that encoding. A Workers
+   * AI run URL does not accept it. Environment fallback: `JEV_COMPRESSION=zstd`.
+   */
+  compression?: 'zstd' | false;
 }
 const choiceAnswer = z.object({ choice: z.string(), confidence: z.number().min(0).max(1) });
 const wireResult = z.object({
@@ -101,18 +107,29 @@ export class JevDecisionEngine implements DecisionEngine {
       throw new BrowserError('CONFIG', 'A Workers AI run URL needs a Cloudflare API token in apiKey or JEV_ENDPOINT_API_KEY.');
     if (apiKey && url.protocol === 'http:' && !loopback(url.hostname))
       throw new BrowserError('CONFIG', 'An API key is sent only over HTTPS or to a loopback endpoint. Use an https:// decision baseURL.');
-    this.client = new TypeSafeClient({
-      apiKey: apiKey ?? 'local',
-      // Always explicit, so the SDK's own TYPESAFE_BASE_URL cannot redirect a hosted key.
-      baseURL: workersModel ? url.origin : url.href,
-      defaultModel: workersModel ?? setting(options.model) ?? setting(process.env.JEV_MODEL),
-      timeout: options.timeoutMs ?? 15_000,
-      retry: { maxRetries: 0 },
-      logLevel: 'off',
-      // Bodies stay uncompressed JSON: custom System One endpoints and the Workers AI adapter read them as text.
-      compression: false,
-      fetch: workersModel ? workersAiFetch(url.href, workersModel, options.fetch) : options.fetch,
-    });
+    const compression: string | false = options.compression ?? setting(process.env.JEV_COMPRESSION) ?? false;
+    if (compression !== false && compression !== 'zstd')
+      throw new BrowserError('CONFIG', 'compression must be "zstd" or false (JEV_COMPRESSION=zstd).');
+    if (compression === 'zstd' && workersModel)
+      throw new BrowserError('CONFIG', 'A Workers AI run URL does not accept compressed request bodies. Leave compression off.');
+    try {
+      this.client = new TypeSafeClient({
+        apiKey: apiKey ?? 'local',
+        // Always explicit, so the SDK's own TYPESAFE_BASE_URL cannot redirect a hosted key.
+        baseURL: workersModel ? url.origin : url.href,
+        defaultModel: workersModel ?? setting(options.model) ?? setting(process.env.JEV_MODEL),
+        timeout: options.timeoutMs ?? 15_000,
+        retry: { maxRetries: 0 },
+        logLevel: 'off',
+        // Off unless asked for: custom System One endpoints and the Workers AI adapter read bodies as JSON text.
+        compression,
+        fetch: workersModel ? workersAiFetch(url.href, workersModel, options.fetch) : options.fetch,
+      });
+    } catch (error) {
+      if (compression !== 'zstd') throw error;
+      // The SDK rejects zstd on a runtime without zlib.zstdCompress (Node.js before 22.15).
+      throw new BrowserError('CONFIG', 'zstd compression needs a runtime with zlib zstd support (Node.js 22.15 or newer).', { cause: error });
+    }
   }
   async decide(request: DecisionRequest, options: { signal?: AbortSignal; maxRetries?: number } = {}): Promise<DecisionResult> {
     options.signal?.throwIfAborted();

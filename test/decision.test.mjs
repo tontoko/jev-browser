@@ -4,6 +4,7 @@ import * as sdk from '../dist/index.js';
 import { publicError } from '../dist/errors.js';
 import { workersAiModel } from '../dist/decision.js';
 import { apiResult } from './helpers.mjs';
+import { zstdDecompressSync } from 'node:zlib';
 const request = {state:{screen:'synthetic test'},questions:{action:{type:'choice',instructions:'Choose a button',criteria:{a:'Submit',__none__:'No match'}}}};
 
 test('Jev uses the official systemOne payload and validates the chosen ID', async () => {
@@ -79,7 +80,7 @@ test('default hosted endpoint still requires an API key', () => {
   finally { for(const [key,value] of Object.entries(saved)) value===undefined?delete process.env[key]:process.env[key]=value; }
 });
 
-const providerEnv=['JEV_API_KEY','TYPESAFE_API_KEY','JEV_BASE_URL','TYPESAFE_BASE_URL','JEV_ENDPOINT_API_KEY'];
+const providerEnv=['JEV_API_KEY','TYPESAFE_API_KEY','JEV_BASE_URL','TYPESAFE_BASE_URL','JEV_ENDPOINT_API_KEY','JEV_COMPRESSION'];
 async function withEnv(values,body){
   const saved=Object.fromEntries(providerEnv.map(key=>[key,process.env[key]]));
   for(const key of providerEnv) delete process.env[key];
@@ -206,4 +207,50 @@ test('a request over 1 KiB is sent as uncompressed JSON to a System One endpoint
     assert.equal(encoding,null,baseURL);
     assert.deepEqual(body.state,large.state,baseURL);
   }
+});
+const capture = options => {
+  const seen = [];
+  const engine = new sdk.JevDecisionEngine({ baseURL: 'https://system-one.example/v1', apiKey: 'test-only', model: 'pinned-model', ...options, fetch: async (_u, init) => {
+    const encoding = new Headers(init.headers).get('content-encoding');
+    const text = encoding === 'zstd' ? zstdDecompressSync(init.body).toString('utf8') : init.body;
+    seen.push({ encoding, raw: init.body, text });
+    return Response.json(apiResult(JSON.parse(text)));
+  } });
+  return { engine, seen };
+};
+test('compression zstd is opt-in and sends the same JSON, zstd-encoded, for bodies of 1 KiB or more', async () => {
+  const large = { ...request, state: { screen: 'x'.repeat(4096) } };
+  await withEnv({}, async () => {
+    const { engine, seen } = capture({ compression: 'zstd' });
+    const result = await engine.decide(large);
+    await engine.decide(request);
+    assert.equal(seen[0].encoding, 'zstd');
+    assert.ok(seen[0].raw instanceof Uint8Array && seen[0].raw.byteLength < 1024, 'compressed body is smaller than the 4 KiB JSON');
+    assert.deepEqual(JSON.parse(seen[0].text).state, large.state);
+    assert.equal(result.answers.action.choice, 'a');
+    assert.equal(seen[1].encoding, null, 'a body under 1 KiB is sent as is');
+    assert.equal(typeof seen[1].raw, 'string');
+    const off = capture({ compression: false });
+    await off.engine.decide(large);
+    assert.equal(off.seen[0].encoding, null);
+  });
+});
+test('JEV_COMPRESSION=zstd enables compression; blank or absent leaves it off; an explicit option wins', async () => {
+  const large = { ...request, state: { screen: 'x'.repeat(4096) } };
+  for (const [env, option, expected] of [['zstd', undefined, 'zstd'], [' zstd ', undefined, 'zstd'], ['', undefined, null], [undefined, undefined, null], ['zstd', false, null]]) {
+    await withEnv(env === undefined ? {} : { JEV_COMPRESSION: env }, async () => {
+      const { engine, seen } = capture(option === undefined ? {} : { compression: option });
+      await engine.decide(large);
+      assert.equal(seen[0].encoding, expected, JSON.stringify({ env, option }));
+    });
+  }
+});
+test('an unknown compression, or zstd with a Workers AI run URL, is a CONFIG error at construction', async () => {
+  await withEnv({}, () => {
+    assert.throws(() => new sdk.JevDecisionEngine({ apiKey: 'test-only', compression: 'gzip' }), { code: 'CONFIG' });
+    assert.throws(() => new sdk.JevDecisionEngine({ baseURL: runUrl, apiKey: 'cf', compression: 'zstd' }), { code: 'CONFIG' });
+    assert.doesNotThrow(() => new sdk.JevDecisionEngine({ baseURL: runUrl, apiKey: 'cf', compression: false }));
+  });
+  await withEnv({ JEV_COMPRESSION: 'gzip' }, () => assert.throws(() => new sdk.JevDecisionEngine({ apiKey: 'test-only' }), { code: 'CONFIG' }));
+  await withEnv({ JEV_COMPRESSION: 'zstd', JEV_BASE_URL: runUrl, JEV_ENDPOINT_API_KEY: 'cf' }, () => assert.throws(() => new sdk.JevDecisionEngine(), { code: 'CONFIG' }));
 });
