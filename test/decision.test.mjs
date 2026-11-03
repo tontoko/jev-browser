@@ -194,3 +194,27 @@ test('only a Cloudflare v4 run path for an @cf model is read as Workers AI', () 
   for (const other of ['https://api.cloudflare.com/client/v4/accounts/acc/ai/models','http://api.cloudflare.com/client/v4/accounts/acc/ai/run/@cf/cloudflare/clef','https://example.com/client/v4/accounts/acc/ai/run/@cf/cloudflare/clef'])
     assert.equal(workersAiModel(new URL(other)),undefined,other);
 });
+
+test('decision bodies over 1 KiB stay uncompressed JSON on every endpoint kind', async () => {
+  // SDK 0.7.0 zstd-compresses bodies of 1 KiB or more unless compression is false; custom System One and Workers AI
+  // endpoints are not known to decode Content-Encoding, and the Workers AI adapter parses the body as a JSON string.
+  const large = {...request,state:{screen:'synthetic test',padding:'x'.repeat(4096)}};
+  const kinds = [
+    {apiKey:'test-only'},
+    {baseURL:'http://127.0.0.1:8765'},
+    {baseURL:'https://api.cloudflare.com/client/v4/accounts/acc/ai/run/@cf/cloudflare/clef-flash',apiKey:'test-only'},
+  ];
+  for (const options of kinds) {
+    let seen;
+    const engine = new sdk.JevDecisionEngine({...options,fetch:async(_u,init)=>{
+      seen={body:init.body,encoding:new Headers(init.headers).get('content-encoding')};
+      const result=apiResult(JSON.parse(init.body));
+      return Response.json(options.baseURL?.includes('/ai/run/')?{success:true,result}:result);
+    }});
+    const result = await engine.decide(large);
+    assert.equal(typeof seen.body,'string',JSON.stringify(options));
+    assert.equal(seen.encoding,null,JSON.stringify(options));
+    assert.equal(JSON.parse(seen.body).state.padding.length,4096);
+    assert.equal(result.answers.action.choice,'a');
+  }
+});

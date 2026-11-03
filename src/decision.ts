@@ -3,7 +3,8 @@ import { z } from 'zod';
 import { BrowserError } from './errors.js';
 
 export interface DecisionRequest {
-  state: EntryType;
+  /** System One rejects a null state (SDK 0.7.0 types it as non-null). */
+  state: NonNullable<EntryType>;
   questions: Record<string, ChoiceQuestion>;
 }
 export interface DecisionResult {
@@ -108,6 +109,10 @@ export class JevDecisionEngine implements DecisionEngine {
       timeout: options.timeoutMs ?? 15_000,
       retry: { maxRetries: 0 },
       logLevel: 'off',
+      // SDK 0.7.0 zstd-compresses bodies of 1 KiB or more by default. Workers AI run URLs and custom System One
+      // endpoints (e.g. a Clef judge) may not decode Content-Encoding, and workersAiFetch reads the body as a JSON
+      // string, so bodies stay uncompressed JSON, exactly as with SDK 0.6.0.
+      compression: false,
       fetch: workersModel ? workersAiFetch(url.href, workersModel, options.fetch) : options.fetch,
     });
   }
