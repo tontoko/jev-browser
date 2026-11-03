@@ -14,8 +14,8 @@ test('Playwright and zod are peer dependencies the caller shares, not bundled co
   assert.deepEqual(pkg.peerDependenciesMeta, { '@cloudflare/playwright': { optional: true } });
   assert.equal(pkg.devDependencies['@cloudflare/playwright'], '1.3.6');
   // Development pins the newest supported versions exactly.
-  assert.equal(pkg.devDependencies['playwright-core'], '1.63.0');
-  assert.equal(pkg.devDependencies['@playwright/test'], '1.63.0');
+  assert.equal(pkg.devDependencies['playwright-core'], '1.64.1');
+  assert.equal(pkg.devDependencies['@playwright/test'], '1.64.1');
   assert.match(pkg.devDependencies.zod, /^\d+\.\d+\.\d+$/);
   assert.equal(pkg.devDependencies.playwright, undefined);
 });
