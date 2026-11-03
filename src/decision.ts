@@ -95,6 +95,7 @@ const tokenLimitRejection = (error: unknown): boolean => {
 
 export class JevDecisionEngine implements DecisionEngine {
   private readonly client: TypeSafeClient;
+  private readonly compression: 'zstd' | false;
   constructor(options: JevOptions = {}) {
     const url = URL.parse(setting(options.baseURL) ?? setting(process.env.JEV_BASE_URL) ?? hostedOrigin);
     if (!url || !['http:', 'https:'].includes(url.protocol)) throw new BrowserError('CONFIG', 'The decision baseURL must be an HTTP(S) URL.');
@@ -115,6 +116,7 @@ export class JevDecisionEngine implements DecisionEngine {
     // The SDK's own check (node:zlib read without an import, so workerd still loads this module), made a CONFIG error.
     if (compression === 'zstd' && typeof (globalThis.process?.getBuiltinModule?.('node:zlib') as { zstdCompress?: unknown } | undefined)?.zstdCompress !== 'function')
       throw new BrowserError('CONFIG', 'zstd compression needs a runtime with zlib zstd support (Node.js 22.15 or newer).');
+    this.compression = compression;
     this.client = new TypeSafeClient({
       apiKey: apiKey ?? 'local',
       // Always explicit, so the SDK's own TYPESAFE_BASE_URL cannot redirect a hosted key.
@@ -141,7 +143,9 @@ export class JevDecisionEngine implements DecisionEngine {
       if (status === 400 && tokenLimitRejection(error))
         throw new BrowserError('OBSERVATION_LIMIT', 'The decision request exceeds the Jev input token limit; no browser action was retried. Narrow scope or exclude, or lower maxElements/maxTexts/maxCandidates.', { cause: error });
       // Transport failures, 408, 429 and 5xx may succeed unchanged; the core clears this once a browser effect started.
-      throw new BrowserError('PROVIDER_ERROR', `Jev request failed${status === undefined ? '' : ` (HTTP ${status})`}; no browser action was retried.`, { cause: error, retryable: status === undefined || status === 408 || status === 429 || status >= 500 });
+      // An endpoint that cannot decode a zstd body rejects it as malformed; say so instead of a bare HTTP status.
+      const encodingHint = this.compression === 'zstd' && (status === 400 || status === 415) ? ' Request compression is on (zstd): the endpoint may not decode Content-Encoding: zstd; turn compression off for it.' : '';
+      throw new BrowserError('PROVIDER_ERROR', `Jev request failed${status === undefined ? '' : ` (HTTP ${status})`}; no browser action was retried.${encodingHint}`, { cause: error, retryable: status === undefined || status === 408 || status === 429 || status >= 500 });
     }
     const parsed = wireResult.safeParse(raw);
     if (!parsed.success) throw new BrowserError('INVALID_DECISION', 'Jev returned an invalid decision envelope.');

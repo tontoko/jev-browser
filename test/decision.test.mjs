@@ -263,5 +263,16 @@ test('zstd on a runtime without zlib zstd support is a CONFIG error, not an SDK 
       assert.doesNotThrow(() => new sdk.JevDecisionEngine({ apiKey: 'test-only' }));
     });
   } finally { process.getBuiltinModule = original; }
-  await withEnv({}, () => assert.throws(() => new sdk.JevDecisionEngine({ apiKey: 'test-only', compression: 'zstd', timeoutMs: -1 }), error => error.code !== 'CONFIG' || !/zstd/.test(error.message)));
+  // An unrelated SDK constructor error keeps its own message instead of being relabeled as a zstd problem.
+  for (const compression of [false, 'zstd'])
+    await withEnv({}, () => assert.throws(() => new sdk.JevDecisionEngine({ apiKey: 'test-only', compression, timeoutMs: -1 }), { name: 'TypeSafeError', message: /`timeout` must be a positive number/ }));
+});
+test('with zstd on, a 400 or 415 from the endpoint names compression; with it off, the message does not', async () => {
+  const large = { ...request, state: { screen: 'x'.repeat(4096) } };
+  for (const [compression, status, hint] of [['zstd', 400, true], ['zstd', 415, true], ['zstd', 500, false], [false, 400, false]]) {
+    await withEnv({}, async () => {
+      const engine = new sdk.JevDecisionEngine({ baseURL: 'https://system-one.example/v1', apiKey: 'test-only', model: 'pinned-model', compression, fetch: async () => new Response('Bad request', { status }) });
+      await assert.rejects(engine.decide(large), error => error.code === 'PROVIDER_ERROR' && error.message.includes(`HTTP ${status}`) && /compression is on/.test(error.message) === hint, JSON.stringify({ compression, status }));
+    });
+  }
 });
