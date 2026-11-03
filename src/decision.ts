@@ -112,24 +112,21 @@ export class JevDecisionEngine implements DecisionEngine {
       throw new BrowserError('CONFIG', 'compression must be "zstd" or false (JEV_COMPRESSION=zstd).');
     if (compression === 'zstd' && workersModel)
       throw new BrowserError('CONFIG', 'A Workers AI run URL does not accept compressed request bodies. Leave compression off.');
-    try {
-      this.client = new TypeSafeClient({
-        apiKey: apiKey ?? 'local',
-        // Always explicit, so the SDK's own TYPESAFE_BASE_URL cannot redirect a hosted key.
-        baseURL: workersModel ? url.origin : url.href,
-        defaultModel: workersModel ?? setting(options.model) ?? setting(process.env.JEV_MODEL),
-        timeout: options.timeoutMs ?? 15_000,
-        retry: { maxRetries: 0 },
-        logLevel: 'off',
-        // Off unless asked for: custom System One endpoints and the Workers AI adapter read bodies as JSON text.
-        compression,
-        fetch: workersModel ? workersAiFetch(url.href, workersModel, options.fetch) : options.fetch,
-      });
-    } catch (error) {
-      if (compression !== 'zstd') throw error;
-      // The SDK rejects zstd on a runtime without zlib.zstdCompress (Node.js before 22.15).
-      throw new BrowserError('CONFIG', 'zstd compression needs a runtime with zlib zstd support (Node.js 22.15 or newer).', { cause: error });
-    }
+    // The SDK's own check (node:zlib read without an import, so workerd still loads this module), made a CONFIG error.
+    if (compression === 'zstd' && typeof (globalThis.process?.getBuiltinModule?.('node:zlib') as { zstdCompress?: unknown } | undefined)?.zstdCompress !== 'function')
+      throw new BrowserError('CONFIG', 'zstd compression needs a runtime with zlib zstd support (Node.js 22.15 or newer).');
+    this.client = new TypeSafeClient({
+      apiKey: apiKey ?? 'local',
+      // Always explicit, so the SDK's own TYPESAFE_BASE_URL cannot redirect a hosted key.
+      baseURL: workersModel ? url.origin : url.href,
+      defaultModel: workersModel ?? setting(options.model) ?? setting(process.env.JEV_MODEL),
+      timeout: options.timeoutMs ?? 15_000,
+      retry: { maxRetries: 0 },
+      logLevel: 'off',
+      // Off unless asked for: custom System One endpoints and the Workers AI adapter read bodies as JSON text.
+      compression,
+      fetch: workersModel ? workersAiFetch(url.href, workersModel, options.fetch) : options.fetch,
+    });
   }
   async decide(request: DecisionRequest, options: { signal?: AbortSignal; maxRetries?: number } = {}): Promise<DecisionResult> {
     options.signal?.throwIfAborted();

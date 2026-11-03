@@ -254,3 +254,14 @@ test('an unknown compression, or zstd with a Workers AI run URL, is a CONFIG err
   await withEnv({ JEV_COMPRESSION: 'gzip' }, () => assert.throws(() => new sdk.JevDecisionEngine({ apiKey: 'test-only' }), { code: 'CONFIG' }));
   await withEnv({ JEV_COMPRESSION: 'zstd', JEV_BASE_URL: runUrl, JEV_ENDPOINT_API_KEY: 'cf' }, () => assert.throws(() => new sdk.JevDecisionEngine(), { code: 'CONFIG' }));
 });
+test('zstd on a runtime without zlib zstd support is a CONFIG error, not an SDK TypeError', async () => {
+  const original = process.getBuiltinModule;
+  process.getBuiltinModule = id => id === 'node:zlib' ? {} : original.call(process, id);
+  try {
+    await withEnv({}, () => {
+      assert.throws(() => new sdk.JevDecisionEngine({ apiKey: 'test-only', compression: 'zstd' }), { code: 'CONFIG', message: /Node\.js 22\.15/ });
+      assert.doesNotThrow(() => new sdk.JevDecisionEngine({ apiKey: 'test-only' }));
+    });
+  } finally { process.getBuiltinModule = original; }
+  await withEnv({}, () => assert.throws(() => new sdk.JevDecisionEngine({ apiKey: 'test-only', compression: 'zstd', timeoutMs: -1 }), error => error.code !== 'CONFIG' || !/zstd/.test(error.message)));
+});
