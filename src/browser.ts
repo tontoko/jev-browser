@@ -44,7 +44,7 @@ interface Pending { plan: ActionPlan; captured: Captured; values: Record<string,
 interface CarriedState { inputPaths: string[]; context: string }
 interface ContinuationState { resolutions?: ResolvedInput[]; carried?: CarriedState; page: Page; origin: string; instruction: string; options: RunOptions; checkpoints: GoalCheckpoint[]; checkpointedInputs: string[]; pendingUnknown?: PendingCommitState; verifiedActionKeys?: string[] }
 interface GoalExecution { resolutions?: ResolvedInput[]; carried?: CarriedState; result: RunResult; error?: BrowserError; pendingUnknown?: PendingCommitState; verifiedActionKeys?: string[] }
-const json = (value: unknown): EntryType => JSON.parse(JSON.stringify(value)) as EntryType;
+const json = (value: unknown): NonNullable<EntryType> => JSON.parse(JSON.stringify(value)) as NonNullable<EntryType>;
 interface Limits { maxElements: number; maxTexts: number; maxCandidates: number }
 /** Effective observation settings for one call: core limits with per-call overrides, and excluded subtrees. */
 interface View extends Limits { exclude?: string[] }
