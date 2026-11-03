@@ -194,3 +194,16 @@ test('only a Cloudflare v4 run path for an @cf model is read as Workers AI', () 
   for (const other of ['https://api.cloudflare.com/client/v4/accounts/acc/ai/models','http://api.cloudflare.com/client/v4/accounts/acc/ai/run/@cf/cloudflare/clef','https://example.com/client/v4/accounts/acc/ai/run/@cf/cloudflare/clef'])
     assert.equal(workersAiModel(new URL(other)),undefined,other);
 });
+test('a request over 1 KiB is sent as uncompressed JSON to a System One endpoint and a Workers AI run URL', async () => {
+  const large = {...request,state:{screen:'x'.repeat(4096)}};
+  for (const baseURL of ['https://system-one.example/v1',runUrl]) {
+    let body, encoding;
+    const engine = new sdk.JevDecisionEngine({baseURL,apiKey:'test-only',model:'pinned-model',fetch:async(_u,init)=>{
+      encoding=new Headers(init.headers).get('content-encoding'); body=JSON.parse(init.body);
+      return Response.json(baseURL===runUrl?{result:apiResult(body),success:true}:apiResult(body));
+    }});
+    await engine.decide(large);
+    assert.equal(encoding,null,baseURL);
+    assert.deepEqual(body.state,large.state,baseURL);
+  }
+});

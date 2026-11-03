@@ -3,7 +3,8 @@ import { z } from 'zod';
 import { BrowserError } from './errors.js';
 
 export interface DecisionRequest {
-  state: EntryType;
+  /** What the questions are about. The SDK rejects a `null` state, so it is never `null`. */
+  state: NonNullable<EntryType>;
   questions: Record<string, ChoiceQuestion>;
 }
 export interface DecisionResult {
@@ -108,6 +109,8 @@ export class JevDecisionEngine implements DecisionEngine {
       timeout: options.timeoutMs ?? 15_000,
       retry: { maxRetries: 0 },
       logLevel: 'off',
+      // Bodies stay uncompressed JSON: custom System One endpoints and the Workers AI adapter read them as text.
+      compression: false,
       fetch: workersModel ? workersAiFetch(url.href, workersModel, options.fetch) : options.fetch,
     });
   }
