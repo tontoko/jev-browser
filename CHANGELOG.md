@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Opt-in request compression: `compression: 'zstd'` (SDK option) or `JEV_COMPRESSION=zstd` (CLI, MCP) sends decision request bodies of 1 KiB or more zstd-compressed with `Content-Encoding: zstd`. Off by default; bodies stay plain JSON. A Workers AI run URL with `'zstd'`, an unknown value, or `'zstd'` without runtime zstd support is `CONFIG`.
+
 ## 0.18.2
 
 - `run` no longer stops `missing-input` the first time the actor chooses a submission while the form is still invalid or supplied current-stage inputs are unapplied, as long as the form offers a way to fill them (a fill candidate for a goal's quoted values, or a binding question for `values`). The submission is not executed; the same screen is sent back for one more decision whose state carries `submitRefused` (`{ form: 'invalid' }` or `{ inputs: [paths] }`). A second premature submission with no step in between still stops `missing-input`.
