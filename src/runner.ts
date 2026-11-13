@@ -235,6 +235,12 @@ export async function runGoal(host: RunHost, instruction: string, options: RunOp
       const quoted=inputs.length?{}:inputBindings(instruction).values;
       const offered=actionCandidates(observed.data,quoted,host.candidateLimit);
       const actions=new Map([...offered].filter(([,action])=>(!inputs.length||!['fill','press'].includes(action.kind))&&!verifiedActionKeys.has(actionAuthorityKey(action,observed.data.url))));
+      // The observation shows only `filled`, so a field holding its quoted value looks unchanged by the fill.
+      // Like a supplied input that already matches, that fill has nothing left to do; the field's value is not shown.
+      for(const[id,action]of actions)if(action.kind==='fill'&&action.valueKey!==undefined&&Object.hasOwn(quoted,action.valueKey)){
+        const ref=observed.refs.get(action.target!.id),state=ref&&await readControl(ref).catch(()=>undefined);
+        if(state&&matchesControl(state,quoted[action.valueKey]))actions.delete(id);
+      }
       const bindings=bindingQuestions(observed.data,inputs,true);
       if(!actions.size&&!Object.keys(bindings).length&&steps.length&&await wait(observed))continue;
       const criteria=Object.fromEntries([...actions].map(([id,action])=>[id,encode(actionDescription(action))]));
