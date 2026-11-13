@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.18.3
+
+- `run` without `values` no longer offers a fill of a quoted value for a field that already holds exactly that value. The observation shows such a field only as `filled`, so it looked the same before and after the fill, and the actor could choose the same fill again until `maxSteps` ran out. The field is read locally, and the value is not sent in the decision request. If the field later changes, the fill is offered again.
 ## 0.18.2
 
 - `run` no longer stops `missing-input` the first time the actor chooses a submission while the form is still invalid or supplied current-stage inputs are unapplied, as long as the form offers a way to fill them (a fill candidate for a goal's quoted values, or a binding question for `values`). The submission is not executed; the same screen is sent back for one more decision whose state carries `submitRefused` (`{ form: 'invalid' }` or `{ inputs: [paths] }`). A second premature submission with no step in between still stops `missing-input`.
