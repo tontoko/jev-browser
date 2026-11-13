@@ -171,3 +171,37 @@ test('a second premature submit with no step between still stops missing-input',
   assert.equal(result.reason,'missing-input');
   assert.equal(decider.requests.filter(request=>request.state.submitRefused).length>=1,true);
 });
+const prefilledSchedule=`<label>Date<input id="d" type="date" value="2026-11-13"></label>
+  <label>Time<input id="t" type="time" value="09:00"></label><button onclick="document.getElementById('out').textContent='next'">Next</button><p id="out"></p>`;
+// Prefers a fill while one is offered, as an actor does when every observation looks the same.
+const fillFirst=()=>engine((question,request,name)=>{
+  if(name.startsWith('effect_'))return 'advance';
+  if(name!=='action')return '__none__';
+  const pick=wanted=>Object.entries(question.criteria).find(([,c])=>wanted(c))?.[0];
+  return pick(c=>c?.kind==='fill'&&c.target?.name==='Date'&&c.valueKey==='quoted_0')
+    ??pick(c=>c?.kind==='fill'&&c.target?.name==='Time'&&c.valueKey==='quoted_1')
+    ??pick(c=>c?.kind==='click'&&c.target?.name==='Next')??'__none__';
+});
+const fills=(result,name)=>result.steps.filter(step=>step.plan.action.kind==='fill'&&step.plan.action.target?.name===name).length;
+const scheduleTask='Schedule on "2026-11-20" (the first quoted value) at "10:30" (the second quoted value), then choose Next.';
+test('a quoted fill whose field already shows that value is not offered again',async t=>{
+  const page=await browser.newPage();await page.setContent(prefilledSchedule);
+  const core=new JevBrowser({page,engine:fillFirst()});
+  t.after(async()=>{await core.close();await page.close();});
+  const result=await core.run(scheduleTask,{settleTimeoutMs:150,timeoutMs:8000,maxSteps:6,until:page=>page.evaluate(()=>document.getElementById('out').textContent==='next')});
+  assert.equal(result.status,'complete',`${result.status}/${result.reason}, Date fills ${fills(result,'Date')}, Time fills ${fills(result,'Time')}`);
+  assert.equal(fills(result,'Date'),1);
+  assert.equal(fills(result,'Time'),1);
+  assert.equal(await page.inputValue('#d'),'2026-11-20');
+});
+test('a quoted fill is offered again after the page changes that field',async t=>{
+  const page=await browser.newPage();await page.setContent(prefilledSchedule+`<script>
+    let reset=false;document.getElementById('t').addEventListener('change',()=>{if(!reset){reset=true;document.getElementById('d').value='2026-11-13';}});</script>`);
+  const core=new JevBrowser({page,engine:fillFirst()});
+  t.after(async()=>{await core.close();await page.close();});
+  const result=await core.run(scheduleTask,{settleTimeoutMs:150,timeoutMs:8000,maxSteps:6,until:page=>page.evaluate(()=>document.getElementById('out').textContent==='next')});
+  assert.equal(result.status,'complete',`${result.status}/${result.reason}, Date fills ${fills(result,'Date')}, Time fills ${fills(result,'Time')}`);
+  assert.equal(fills(result,'Date'),2);
+  assert.equal(fills(result,'Time'),1);
+  assert.equal(await page.inputValue('#d'),'2026-11-20');
+});
